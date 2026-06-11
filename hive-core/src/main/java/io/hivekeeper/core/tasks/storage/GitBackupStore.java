@@ -6,6 +6,7 @@ import io.hivekeeper.core.spi.BackupStore;
 import org.eclipse.jgit.api.Git;
 import org.eclipse.jgit.api.errors.GitAPIException;
 import org.eclipse.jgit.revwalk.RevCommit;
+import lombok.extern.slf4j.Slf4j;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
@@ -19,6 +20,7 @@ import java.nio.file.Path;
  * <p>v0.1 commits every run (including unchanged captures) so each backup leaves an audit record;
  * de-duplicating identical snapshots is a later refinement.
  */
+@Slf4j
 public final class GitBackupStore implements BackupStore {
 
     private static final String STORE_ID = "git";
@@ -54,6 +56,7 @@ public final class GitBackupStore implements BackupStore {
                     .call();
 
             String relPath = root.relativize(runningFile).toString().replace('\\', '/');
+            log.debug("committed backup for {} -> {}", snapshot.deviceId(), commit.getName());
             return new BackupRef(STORE_ID, commit.getName(), relPath);
         } catch (GitAPIException e) {
             throw new IOException("git backup failed: " + e.getMessage(), e);

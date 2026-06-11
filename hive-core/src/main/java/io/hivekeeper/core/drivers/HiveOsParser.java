@@ -41,16 +41,17 @@ final class HiveOsParser {
             model = firstGroup(ver, "(?im)^\\s*Platform\\s*:?\\s*(\\S+)");
         }
 
-        return new Device(
-                id,
-                null,  // hostname is not exposed by these commands (default/unset on the test AP)
-                model,
-                firstGroup(hw, "(?im)^\\s*Serial number\\s*:?\\s*(\\S+)"),
-                firstGroup(ver, "(?im)\\bHiveOS\\s+([0-9][^\\s]*)"),
-                firstGroup(ver, "(?im)^\\s*Uptime\\s*:?\\s*(.+?)\\s*$"),
-                firstGroup(mgt, "(?im)\\bIP addr\\s*=\\s*(\\d{1,3}(?:\\.\\d{1,3}){3})"),
-                List.of(),
-                parseStations(c.showStation()));
+        return Device.builder()
+                .id(id)
+                .hostname(null)  // not exposed by these commands (default/unset on the test AP)
+                .model(model)
+                .serial(firstGroup(hw, "(?im)^\\s*Serial number\\s*:?\\s*(\\S+)"))
+                .firmwareVersion(firstGroup(ver, "(?im)\\bHiveOS\\s+([0-9][^\\s]*)"))
+                .uptime(firstGroup(ver, "(?im)^\\s*Uptime\\s*:?\\s*(.+?)\\s*$"))
+                .managementIp(firstGroup(mgt, "(?im)\\bIP addr\\s*=\\s*(\\d{1,3}(?:\\.\\d{1,3}){3})"))
+                .radios(List.of())
+                .stations(parseStations(c.showStation()))
+                .build();
     }
 
     static List<Station> parseStations(String showStation) {

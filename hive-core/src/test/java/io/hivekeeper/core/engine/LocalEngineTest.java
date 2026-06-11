@@ -19,9 +19,6 @@ import org.junit.jupiter.api.Test;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
-import java.time.Clock;
-import java.time.Instant;
-import java.time.ZoneOffset;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
@@ -74,12 +71,11 @@ class LocalEngineTest {
     private final SshTransport transport = (device, creds) -> new FakeSession();
     private final CredentialProvider creds = id -> Optional.of(new Credentials("admin", "secret"));
     private final DriverRegistry drivers = new DriverRegistry(List.of(new HiveOsDriver()));
-    private final Clock clock = Clock.fixed(Instant.parse("2026-06-11T00:00:00Z"), ZoneOffset.UTC);
 
     @Test
     void inventoryParsesDeviceAndStreamsEvents() {
         CapturingStore store = new CapturingStore();
-        Engine engine = new LocalEngine(transport, creds, drivers, store, clock);
+        Engine engine = new LocalEngine(transport, creds, drivers, store);
 
         List<Event> events = new ArrayList<>();
         DeviceRef ref = DeviceRef.ssh("192.168.1.10");
@@ -98,7 +94,7 @@ class LocalEngineTest {
     @Test
     void backupCapturesConfigAndUsersThenPersists() {
         CapturingStore store = new CapturingStore();
-        Engine engine = new LocalEngine(transport, creds, drivers, store, clock);
+        Engine engine = new LocalEngine(transport, creds, drivers, store);
 
         DeviceRef ref = DeviceRef.ssh("192.168.1.10");
         Result result = engine.execute(Command.BackupConfig.of(ref), ev -> { });

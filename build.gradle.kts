@@ -9,6 +9,7 @@ allprojects {
 
 subprojects {
     apply(plugin = "java-library")
+    apply(plugin = "jacoco")
 
     configure<JavaPluginExtension> {
         toolchain {
@@ -18,11 +19,21 @@ subprojects {
         }
     }
 
+    // Lombok: used judiciously — @Slf4j for loggers and @Builder for wide value types.
+    // Records already cover getter/equals/hashCode/toString/constructor, so we do not use @Value/@Data.
+    dependencies {
+        "compileOnly"("org.projectlombok:lombok:1.18.38")
+        "annotationProcessor"("org.projectlombok:lombok:1.18.38")
+        "testCompileOnly"("org.projectlombok:lombok:1.18.38")
+        "testAnnotationProcessor"("org.projectlombok:lombok:1.18.38")
+    }
+
     tasks.withType<JavaCompile>().configureEach {
         options.encoding = "UTF-8"
     }
 
     tasks.withType<Test>().configureEach {
         useJUnitPlatform()
+        finalizedBy("jacocoTestReport")
     }
 }

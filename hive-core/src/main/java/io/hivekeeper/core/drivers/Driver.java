@@ -1,49 +1,33 @@
 package io.hivekeeper.core.drivers;
 
+import io.hivekeeper.core.model.ConfigSnapshot;
 import io.hivekeeper.core.model.Device;
 import io.hivekeeper.core.model.DeviceId;
+import java.io.IOException;
 
 /**
- * Vendor/OS driver SPI — the project's key extensibility seam. Supporting a new AP family (e.g. an
- * AP410 in WiNG persona, or another vendor entirely) means adding one {@code Driver} implementation,
- * registered via {@link java.util.ServiceLoader}, with no change to the engine or tasks.
+ * Vendor/OS driver SPI — the project's key extensibility seam. Supporting a new device family (another
+ * HiveOS-incompatible vendor, an AP410 in WiNG persona, etc.) means adding one {@code Driver}
+ * implementation registered via {@link java.util.ServiceLoader}; nothing in the engine or transport
+ * changes.
  *
- * <p>A driver knows two things: how to recognize a device, and how to translate its CLI output into
- * the vendor-neutral {@link Device} model. The command vocabulary is overridable per driver.
+ * <p>Crucially, a driver owns BOTH which CLI commands to run AND how to parse them. It receives only a
+ * {@link CliExecutor}, so no vendor-specific command vocabulary or capture type leaks into the shared
+ * contract. This is what makes the design genuinely multi-model rather than HiveOS-shaped.
  */
 public interface Driver {
 
+    /** Stable identifier, e.g. {@code "hiveos"}. */
     String id();
 
-    /** True if this driver recognizes the device from its {@code show version} output. */
-    boolean supports(String showVersionOutput);
+    /** Runs whatever probe this driver needs (e.g. {@code show version}) and reports whether it
+     *  recognizes the device. */
+    boolean recognizes(CliExecutor exec) throws IOException;
 
-    Device parseDevice(DeviceId id, HiveOsCapture capture);
+    /** Collects a vendor-neutral inventory snapshot. */
+    Device inventory(DeviceId id, CliExecutor exec, ProgressReporter progress) throws IOException;
 
-    // --- CLI command vocabulary (overridable per driver) ---
-
-    default String showVersionCommand() {
-        return "show version";
-    }
-
-    default String showHwInfoCommand() {
-        return "show hw-info";
-    }
-
-    default String showInterfaceMgt0Command() {
-        return "show interface mgt0";
-    }
-
-    default String showStationCommand() {
-        return "show station";
-    }
-
-    default String runningConfigCommand(boolean includeSecrets) {
-        return includeSecrets ? "show running-config password" : "show running-config";
-    }
-
-    /** The separate, TPM-backed PPSK/users channel. */
-    default String usersConfigCommand() {
-        return "show running-config users password";
-    }
+    /** Captures the device configuration (and, per {@code scope}, the separate user/PPSK channel). */
+    ConfigSnapshot captureConfig(DeviceId id, CliExecutor exec, ConfigScope scope, ProgressReporter progress)
+            throws IOException;
 }

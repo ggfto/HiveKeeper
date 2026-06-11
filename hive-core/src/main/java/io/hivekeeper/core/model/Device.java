@@ -1,8 +1,14 @@
 package io.hivekeeper.core.model;
 
+import lombok.Builder;
 import java.util.List;
 
-/** Vendor-neutral inventory snapshot of an access point. Immutable, serializable, no live handles. */
+/**
+ * Vendor-neutral inventory snapshot of an access point. Immutable, serializable, no live handles. A
+ * record (so getters/equals/hashCode/toString/constructor are free) plus a Lombok {@code @Builder} for
+ * readable construction — it has enough fields that positional construction is error-prone.
+ */
+@Builder
 public record Device(
         DeviceId id,
         String hostname,

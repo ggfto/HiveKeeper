@@ -1,10 +1,9 @@
 package io.hivekeeper.core.drivers;
 
 /**
- * Raw CLI text captured for inventory, keyed by the HiveOS show-commands that actually carry the
- * fields we need (confirmed against a live AP230): {@code show version} (firmware, uptime, platform),
- * {@code show hw-info} (serial, product name), {@code show interface mgt0} (management IP), and
- * {@code show station} (associated clients).
+ * Raw CLI text captured for HiveOS inventory. Package-private — it is an internal detail of
+ * {@link HiveOsDriver}, never part of the {@link Driver} SPI, so other vendors' drivers are unaffected
+ * by HiveOS's command shape.
  */
-public record HiveOsCapture(String showVersion, String showHwInfo, String showInterfaceMgt0, String showStation) {
+record HiveOsCapture(String showVersion, String showHwInfo, String showInterfaceMgt0, String showStation) {
 }

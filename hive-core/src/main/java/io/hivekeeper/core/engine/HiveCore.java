@@ -6,7 +6,6 @@ import io.hivekeeper.core.spi.BackupStore;
 import io.hivekeeper.core.spi.CredentialProvider;
 import io.hivekeeper.core.transport.SshTransport;
 import io.hivekeeper.core.transport.SshjTransport;
-import java.time.Clock;
 
 /**
  * Composition root: assembles a ready-to-use local {@link Engine} from its on-prem collaborators.
@@ -22,6 +21,6 @@ public final class HiveCore {
     public static Engine localEngine(CredentialProvider credentials, BackupStore backupStore) {
         SshTransport transport = new SshjTransport();
         DriverRegistry drivers = DriverRegistry.fromServiceLoader();
-        return new LocalEngine(transport, credentials, drivers, backupStore, Clock.systemUTC());
+        return new LocalEngine(transport, credentials, drivers, backupStore);
     }
 }

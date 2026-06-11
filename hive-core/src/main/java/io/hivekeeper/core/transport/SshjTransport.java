@@ -5,6 +5,7 @@ import io.hivekeeper.core.spi.Credentials;
 import net.schmizz.sshj.DefaultConfig;
 import net.schmizz.sshj.SSHClient;
 import net.schmizz.sshj.transport.verification.PromiscuousVerifier;
+import lombok.extern.slf4j.Slf4j;
 import java.io.IOException;
 
 /**
@@ -12,6 +13,7 @@ import java.io.IOException;
  * HiveOS's restricted CLI does not service the SSH exec channel (it returns empty output). See
  * {@link SshjShellSession}.
  */
+@Slf4j
 public final class SshjTransport implements SshTransport {
 
     private final HostKeyPolicy hostKeyPolicy;
@@ -37,9 +39,11 @@ public final class SshjTransport implements SshTransport {
             client.loadKnownHosts();
         }
         client.setConnectTimeout(connectTimeoutMs);
+        log.debug("connecting to {}:{}", device.host(), device.port());
         client.connect(device.host(), device.port());
         try {
             client.authPassword(credentials.username(), credentials.password());
+            log.debug("authenticated as '{}' on {}", credentials.username(), device.host());
             return new SshjShellSession(client, quietMillis);
         } catch (IOException e) {
             safeDisconnect(client);
