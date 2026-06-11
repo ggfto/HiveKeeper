@@ -6,6 +6,7 @@ import io.hivekeeper.wire.JsonCodec;
 import lombok.extern.slf4j.Slf4j;
 import org.java_websocket.client.WebSocketClient;
 import org.java_websocket.handshake.ServerHandshake;
+import javax.net.ssl.SSLContext;
 import java.net.URI;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
@@ -30,6 +31,7 @@ public final class WebSocketFrameChannel implements FrameChannel {
                 return t;
             });
 
+    private final SSLContext sslContext;
     private volatile Consumer<Frame> handler = frame -> { };
     private volatile Runnable onConnected = () -> { };
     private volatile InnerClient client;
@@ -37,7 +39,13 @@ public final class WebSocketFrameChannel implements FrameChannel {
     private int attempt = 0;
 
     public WebSocketFrameChannel(URI gatewayUri) {
+        this(gatewayUri, null);
+    }
+
+    /** @param sslContext mTLS context for {@code wss://} (client cert + CA trust); {@code null} for plain ws. */
+    public WebSocketFrameChannel(URI gatewayUri, SSLContext sslContext) {
         this.gatewayUri = gatewayUri;
+        this.sslContext = sslContext;
     }
 
     /** Hook invoked after each successful (re)connect — typically {@code agentRuntime::announce}. */
@@ -55,6 +63,9 @@ public final class WebSocketFrameChannel implements FrameChannel {
         }
         log.info("connecting to gateway {}", gatewayUri);
         InnerClient c = new InnerClient(gatewayUri);
+        if (sslContext != null) {
+            c.setSocketFactory(sslContext.getSocketFactory());
+        }
         this.client = c;
         c.connect();
     }

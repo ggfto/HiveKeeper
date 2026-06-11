@@ -27,6 +27,9 @@ Thumbs.db
 *.key
 *.p12
 *.jks
+*.crt
+*.csr
 secrets.properties
 hivekeeper-backups/
 captures/local/
+dev-pki/

@@ -5,23 +5,35 @@ import java.net.URI;
 /**
  * Agent configuration, sourced from environment variables (container/service friendly):
  * <ul>
- *   <li>{@code HIVEKEEPER_GATEWAY_URL} — the gateway WebSocket URL (e.g. wss://gw.example/agent)</li>
+ *   <li>{@code HIVEKEEPER_GATEWAY_URL} — gateway WebSocket URL (ws:// or wss://)</li>
  *   <li>{@code HIVEKEEPER_AGENT_ID} — stable agent identifier (defaults to the hostname)</li>
  *   <li>{@code HIVEKEEPER_DEFAULT_USER} / {@code HIVEKEEPER_DEFAULT_PASSWORD} — fallback device creds
- *       used by the v1 lab credential provider (production resolves per-device from a local keystore)</li>
+ *       for the v1 lab provider (production resolves per-device from a local keystore)</li>
  *   <li>{@code HIVEKEEPER_BACKUP_DIR} — local git backup directory</li>
+ *   <li>{@code HIVEKEEPER_TLS_KEYSTORE} (+ {@code _PASSWORD}) — client keystore for mTLS (PKCS12)</li>
+ *   <li>{@code HIVEKEEPER_TLS_TRUSTSTORE} (+ {@code _PASSWORD}) — CA truststore (PKCS12)</li>
  * </ul>
+ * mTLS is enabled when a keystore is configured (use a {@code wss://} gateway URL).
  */
 public record AgentConfig(URI gatewayUri, String agentId, String defaultUser, String defaultPassword,
-                          String backupDir) {
+                          String backupDir, String tlsKeystore, String tlsKeystorePassword,
+                          String tlsTruststore, String tlsTruststorePassword) {
+
+    public boolean mtlsEnabled() {
+        return tlsKeystore != null && !tlsKeystore.isBlank();
+    }
 
     public static AgentConfig fromEnv() {
-        String url = env("HIVEKEEPER_GATEWAY_URL", "ws://127.0.0.1:8090/agent");
-        String id = env("HIVEKEEPER_AGENT_ID", defaultAgentId());
-        String user = env("HIVEKEEPER_DEFAULT_USER", "admin");
-        String password = env("HIVEKEEPER_DEFAULT_PASSWORD", "");
-        String backupDir = env("HIVEKEEPER_BACKUP_DIR", "hivekeeper-backups");
-        return new AgentConfig(URI.create(url), id, user, password, backupDir);
+        return new AgentConfig(
+                URI.create(env("HIVEKEEPER_GATEWAY_URL", "ws://127.0.0.1:8090/agent")),
+                env("HIVEKEEPER_AGENT_ID", defaultAgentId()),
+                env("HIVEKEEPER_DEFAULT_USER", "admin"),
+                env("HIVEKEEPER_DEFAULT_PASSWORD", ""),
+                env("HIVEKEEPER_BACKUP_DIR", "hivekeeper-backups"),
+                env("HIVEKEEPER_TLS_KEYSTORE", null),
+                env("HIVEKEEPER_TLS_KEYSTORE_PASSWORD", "changeit"),
+                env("HIVEKEEPER_TLS_TRUSTSTORE", null),
+                env("HIVEKEEPER_TLS_TRUSTSTORE_PASSWORD", "changeit"));
     }
 
     private static String env(String key, String fallback) {

@@ -7,6 +7,7 @@ import io.hivekeeper.core.spi.CredentialProvider;
 import io.hivekeeper.core.tasks.storage.GitBackupStore;
 import io.hivekeeper.protocol.AgentRuntime;
 import lombok.extern.slf4j.Slf4j;
+import javax.net.ssl.SSLContext;
 import java.nio.file.Path;
 import java.util.concurrent.CountDownLatch;
 
@@ -22,16 +23,21 @@ public final class AgentMain {
     private AgentMain() {
     }
 
-    public static void main(String[] args) throws InterruptedException {
+    public static void main(String[] args) throws Exception {
         AgentConfig config = AgentConfig.fromEnv();
-        log.info("starting HiveKeeper agent '{}' -> {}", config.agentId(), config.gatewayUri());
+        log.info("starting HiveKeeper agent '{}' -> {} (mTLS={})",
+                config.agentId(), config.gatewayUri(), config.mtlsEnabled());
 
         CredentialProvider credentials =
                 new DefaultCredentialProvider(config.defaultUser(), config.defaultPassword());
         BackupStore backupStore = new GitBackupStore(Path.of(config.backupDir()));
         Engine engine = HiveCore.localEngine(credentials, backupStore);
 
-        WebSocketFrameChannel channel = new WebSocketFrameChannel(config.gatewayUri());
+        SSLContext sslContext = config.mtlsEnabled()
+                ? TlsSupport.fromKeystores(config.tlsKeystore(), config.tlsKeystorePassword().toCharArray(),
+                        config.tlsTruststore(), config.tlsTruststorePassword().toCharArray())
+                : null;
+        WebSocketFrameChannel channel = new WebSocketFrameChannel(config.gatewayUri(), sslContext);
         AgentRuntime agent = new AgentRuntime(engine, channel, config.agentId());
 
         agent.start();                          // register the job handler once

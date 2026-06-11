@@ -57,8 +57,23 @@ channel — no socket.)
   mTLS client cert (CA-pinned, short-lived, auto-renewed). `tenantId` is derived server-side from the
   agent record, never trusted from the client.
 
+## Implemented
+
+- **`hive-agent`** — `WebSocketFrameChannel` (Java-WebSocket, auto-reconnect) wrapping `AgentRuntime`;
+  service + container packaging.
+- **`hive-gateway`** — Spring WebSocket server wrapping `RemoteEngine`, tenant-scoped REST.
+- **mTLS** — the agent presents a client certificate; the gateway derives the agent identity from the
+  cert CN and the tenant from the enrollment record (server-side, never from `Hello`). A bearer
+  enrollment token is the fallback/bootstrap. Dev PKI: `scripts/gen-dev-pki.ps1`; gateway TLS via the
+  `mtls` Spring profile (`application-mtls.properties`, `client-auth=want`).
+- **Multi-tenancy** — `(tenantId, agentId)`-keyed registry; REST scoped by `X-Tenant-Key`; cross-tenant
+  lookups 404 with no existence leakage.
+
+Proven live end-to-end: HTTPS (operator) → mTLS WebSocket (agent, cert identity) → SSH (agent → AP230).
+
 ## Not yet implemented
 
-`Frame` versioning is a single `Protocol.VERSION` string today. Still to build: the WebSocket
-`FrameChannel`, the gateway job DB + redelivery, mTLS enrollment, and the `hive-agent` (service +
-container) / `hive-gateway` (Spring) deployables that wrap `AgentRuntime` / `RemoteEngine`.
+`TenantStore` is in-memory (production = Postgres + shared-schema + `tenant_id` + RLS). Still to build:
+automated enrollment (one-time token → CSR → issued cert) instead of pre-provisioned dev certs; the
+gateway **job DB + redelivery/idempotency** and `Resume` handling; operator auth via OIDC instead of the
+`X-Tenant-Key` bootstrap; and SSE progress forwarded through the gateway.
