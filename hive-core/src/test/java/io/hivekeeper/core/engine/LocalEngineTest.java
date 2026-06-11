@@ -4,11 +4,13 @@ import io.hivekeeper.core.api.Command;
 import io.hivekeeper.core.api.Engine;
 import io.hivekeeper.core.api.Event;
 import io.hivekeeper.core.api.Result;
+import io.hivekeeper.core.discovery.Scanner;
 import io.hivekeeper.core.drivers.DriverRegistry;
 import io.hivekeeper.core.drivers.HiveOsDriver;
 import io.hivekeeper.core.model.BackupRef;
 import io.hivekeeper.core.model.ConfigSnapshot;
 import io.hivekeeper.core.model.DeviceRef;
+import io.hivekeeper.core.model.DiscoveryResult;
 import io.hivekeeper.core.spi.BackupStore;
 import io.hivekeeper.core.spi.CredentialProvider;
 import io.hivekeeper.core.spi.Credentials;
@@ -74,11 +76,14 @@ class LocalEngineTest {
     private final SshTransport transport = (device, creds) -> new FakeSession();
     private final CredentialProvider creds = id -> Optional.of(new Credentials("admin", "secret"));
     private final DriverRegistry drivers = new DriverRegistry(List.of(new HiveOsDriver()));
+    private final Scanner scanner = (hosts, port, timeoutMillis) -> List.of(
+            new DiscoveryResult("192.168.1.101", 22, true, "SSH-2.0-OpenSSH_8.0", true),
+            new DiscoveryResult("192.168.1.5", 22, false, null, false));
 
     @Test
     void inventoryParsesDeviceAndStreamsEvents() {
         CapturingStore store = new CapturingStore();
-        Engine engine = new LocalEngine(transport, creds, drivers, store);
+        Engine engine = new LocalEngine(transport, creds, drivers, store, scanner);
 
         List<Event> events = new ArrayList<>();
         DeviceRef ref = DeviceRef.ssh("192.168.1.10");
@@ -97,7 +102,7 @@ class LocalEngineTest {
     @Test
     void backupCapturesConfigAndUsersThenPersists() {
         CapturingStore store = new CapturingStore();
-        Engine engine = new LocalEngine(transport, creds, drivers, store);
+        Engine engine = new LocalEngine(transport, creds, drivers, store, scanner);
 
         DeviceRef ref = DeviceRef.ssh("192.168.1.10");
         Result result = engine.execute(Command.BackupConfig.of(ref), ev -> { });
@@ -111,5 +116,17 @@ class LocalEngineTest {
         assertTrue(store.captured.runningConfig().contains("LabWifi"));
         assertEquals("10.6r1a", store.captured.firmwareVersion());
         assertNotNull(store.captured.usersConfig());
+    }
+
+    @Test
+    void discoverReturnsOnlyReachableHostsWithoutOpeningASession() {
+        Engine engine = new LocalEngine(transport, creds, drivers, new CapturingStore(), scanner);
+
+        Result result = engine.execute(Command.Discover.of("192.168.1.0/24", 22, 500), ev -> { });
+
+        Result.Discovered discovered = assertInstanceOf(Result.Discovered.class, result);
+        assertEquals(1, discovered.hosts().size());
+        assertEquals("192.168.1.101", discovered.hosts().get(0).host());
+        assertEquals("192.168.1.0/24", discovered.deviceId().value());
     }
 }

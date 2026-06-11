@@ -6,6 +6,7 @@ import io.hivekeeper.core.api.Result;
 import io.hivekeeper.core.model.Device;
 import io.hivekeeper.core.model.DeviceId;
 import io.hivekeeper.core.model.DeviceRef;
+import io.hivekeeper.core.model.DiscoveryResult;
 import io.hivekeeper.core.model.Station;
 import org.junit.jupiter.api.Test;
 import java.util.List;
@@ -29,6 +30,16 @@ class JsonCodecTest {
     void roundTripsBackupCommand() {
         Command c = new Command.BackupConfig(UUID.randomUUID(), DeviceRef.ssh("10.0.0.2", 2222), true, false);
         assertEquals(c, codec.fromJson(codec.toJson(c), Command.class));
+    }
+
+    @Test
+    void roundTripsNetworkScopedDiscover() {
+        Command c = Command.Discover.of("192.168.1.0/24", 22, 800);
+        assertEquals(c, codec.fromJson(codec.toJson(c), Command.class));
+
+        Result r = new Result.Discovered(UUID.randomUUID(), DeviceId.of("192.168.1.0/24"),
+                List.of(new DiscoveryResult("192.168.1.101", 22, true, "SSH-2.0-OpenSSH_8.0", true)));
+        assertEquals(r, codec.fromJson(codec.toJson(r), Result.class));
     }
 
     @Test

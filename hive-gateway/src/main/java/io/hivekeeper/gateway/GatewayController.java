@@ -34,6 +34,10 @@ public class GatewayController {
     public record DeviceRequest(String host, Integer port) {
     }
 
+    /** Ask the agent to sweep a subnet of its own LAN. */
+    public record DiscoverRequest(String cidr, Integer port, Integer timeoutMillis) {
+    }
+
     public record ApiError(String error, String detail) {
     }
 
@@ -65,6 +69,31 @@ public class GatewayController {
     public ResponseEntity<String> backup(@RequestHeader(value = "X-Tenant-Key", required = false) String apiKey,
                                          @PathVariable String agentId, @RequestBody DeviceRequest req) {
         return dispatch(apiKey, agentId, req, Command.BackupConfig::of);
+    }
+
+    @PostMapping("/api/agents/{agentId}/discover")
+    public ResponseEntity<String> discover(@RequestHeader(value = "X-Tenant-Key", required = false) String apiKey,
+                                           @PathVariable String agentId, @RequestBody DiscoverRequest req) {
+        Optional<Tenant> tenant = tenants.tenantByApiKey(apiKey);
+        if (tenant.isEmpty()) {
+            return unauthorized();
+        }
+        Optional<RemoteEngine> engine = registry.engine(tenant.get().tenantId(), agentId);
+        if (engine.isEmpty()) {
+            return status(404, new ApiError("agent_not_connected", agentId));
+        }
+        if (req == null || req.cidr() == null || req.cidr().isBlank()) {
+            return status(400, new ApiError("bad_request", "cidr is required"));
+        }
+        try {
+            Command cmd = Command.Discover.of(req.cidr().trim(),
+                    req.port() == null ? 22 : req.port(),
+                    req.timeoutMillis() == null ? 800 : req.timeoutMillis());
+            return json(engine.get().execute(cmd, EventSink.NOOP));
+        } catch (Exception e) {
+            log.warn("discover via agent '{}' failed: {}", agentId, e.getMessage());
+            return status(502, new ApiError(e.getClass().getSimpleName(), e.getMessage() == null ? "" : e.getMessage()));
+        }
     }
 
     private ResponseEntity<String> dispatch(String apiKey, String agentId, DeviceRequest req,

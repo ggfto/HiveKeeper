@@ -6,6 +6,8 @@ import io.hivekeeper.core.api.Event;
 import io.hivekeeper.core.api.EventSink;
 import io.hivekeeper.core.api.HiveException;
 import io.hivekeeper.core.api.Result;
+import io.hivekeeper.core.discovery.Scanner;
+import io.hivekeeper.core.discovery.Subnets;
 import io.hivekeeper.core.drivers.CliExecutor;
 import io.hivekeeper.core.drivers.ConfigScope;
 import io.hivekeeper.core.drivers.Driver;
@@ -16,6 +18,7 @@ import io.hivekeeper.core.model.ConfigSnapshot;
 import io.hivekeeper.core.model.Device;
 import io.hivekeeper.core.model.DeviceId;
 import io.hivekeeper.core.model.DeviceRef;
+import io.hivekeeper.core.model.DiscoveryResult;
 import io.hivekeeper.core.session.CommandRunner;
 import io.hivekeeper.core.spi.BackupStore;
 import io.hivekeeper.core.spi.CredentialProvider;
@@ -26,14 +29,15 @@ import lombok.extern.slf4j.Slf4j;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 
 /**
- * The only {@link Engine} implementation in v0.1: runs everything in-process against a
- * directly-reachable device. It is tenant-unaware and stateless. It opens a session, adapts it to a
- * {@link CliExecutor}, picks a {@link Driver} by probing, and delegates the vendor-specific work to the
- * driver. A future RemoteEngine will implement the same interface over an agent channel.
+ * The only {@link Engine} implementation in v0.1: runs everything in-process. Device-scoped commands
+ * open an SSH session (driver picked by probing); the network-scoped {@link Command.Discover} runs a
+ * subnet scan with no session. Tenant-unaware and stateless. A future RemoteEngine implements the same
+ * interface over an agent channel — callers never learn which one they hold.
  */
 @Slf4j
 public final class LocalEngine implements Engine {
@@ -42,21 +46,27 @@ public final class LocalEngine implements Engine {
     private final CredentialProvider credentials;
     private final DriverRegistry drivers;
     private final BackupStore backupStore;
+    private final Scanner scanner;
 
-    public LocalEngine(SshTransport transport, CredentialProvider credentials,
-                       DriverRegistry drivers, BackupStore backupStore) {
+    public LocalEngine(SshTransport transport, CredentialProvider credentials, DriverRegistry drivers,
+                       BackupStore backupStore, Scanner scanner) {
         this.transport = transport;
         this.credentials = credentials;
         this.drivers = drivers;
         this.backupStore = backupStore;
+        this.scanner = scanner;
     }
 
     @Override
     public Result execute(Command command, EventSink sink) throws HiveException {
         UUID id = command.commandId();
-        DeviceRef ref = command.device();
-        DeviceId deviceId = ref.id();
 
+        if (command instanceof Command.Discover discover) {
+            return discover(id, discover, sink);
+        }
+
+        DeviceRef ref = deviceRefOf(command);
+        DeviceId deviceId = ref.id();
         sink.emit(new Event.Started(id, deviceId, command.getClass().getSimpleName()));
         try {
             Credentials creds = credentials.resolve(deviceId)
@@ -81,6 +91,28 @@ public final class LocalEngine implements Engine {
             log.warn("execute failed for {}: {}", deviceId, detail);
             sink.emit(new Event.Failed(id, deviceId, e.getClass().getSimpleName(), detail));
             throw new HiveException(id, deviceId, "execute failed: " + detail, e);
+        }
+    }
+
+    private Result discover(UUID id, Command.Discover command, EventSink sink) throws HiveException {
+        DeviceId scope = DeviceId.of(command.cidr());
+        sink.emit(new Event.Started(id, scope, "Discover"));
+        try {
+            sink.emit(new Event.Progress(id, scope, "Scanning " + command.cidr(), 20));
+            List<DiscoveryResult> hosts = scanner
+                    .scan(Subnets.hostsForCidr(command.cidr()), command.port(), command.timeoutMillis())
+                    .stream()
+                    .filter(DiscoveryResult::reachable)
+                    .toList();
+            Result result = new Result.Discovered(id, scope, hosts);
+            sink.emit(new Event.Progress(id, scope, hosts.size() + " host(s) reachable", 100));
+            sink.emit(new Event.Completed(id, scope, result));
+            return result;
+        } catch (Exception e) {
+            String detail = e.getMessage() == null ? "" : e.getMessage();
+            log.warn("discover failed for {}: {}", command.cidr(), detail);
+            sink.emit(new Event.Failed(id, scope, e.getClass().getSimpleName(), detail));
+            throw new HiveException(id, scope, "discover failed: " + detail, e);
         }
     }
 
@@ -109,6 +141,16 @@ public final class LocalEngine implements Engine {
                 }
                 yield new Result.RawCapture(id, deviceId, outputs);
             }
+            case Command.Discover ignored -> throw new IllegalStateException("discover is handled without a session");
+        };
+    }
+
+    private static DeviceRef deviceRefOf(Command command) {
+        return switch (command) {
+            case Command.Inventory c -> c.device();
+            case Command.BackupConfig c -> c.device();
+            case Command.RunRaw c -> c.device();
+            case Command.Discover ignored -> throw new IllegalStateException("discover is network-scoped");
         };
     }
 }

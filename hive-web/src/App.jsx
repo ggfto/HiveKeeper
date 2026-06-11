@@ -81,6 +81,7 @@ export default function App() {
   // gateway mode
   const [tenantKey, setTenantKey] = useState('acme-key')
   const [agents, setAgents] = useState(null)
+  const [cidr, setCidr] = useState('192.168.1.0/24')
 
   const update = (k) => (e) => setConn({ ...conn, [k]: e.target.value })
 
@@ -149,6 +150,20 @@ export default function App() {
     } catch (e) { setStatus(`Request failed: ${e.message}`) } finally { setBusy(false) }
   }
 
+  async function dispatchDiscover(agentId) {
+    setBusy(true); setDiscovered([]); setStatus(`Discovering ${cidr} via ${agentId}…`)
+    try {
+      const res = await gw(`/api/agents/${agentId}/discover`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ cidr, port: 22, timeoutMillis: 600 })
+      })
+      const r = await res.json()
+      if (!res.ok) { setStatus(`Error ${res.status}: ${r.error || ''}`); return }
+      setDiscovered(r.hosts || [])
+      setStatus(`${r.hosts?.length || 0} host(s) reachable (scanned by ${agentId}).`)
+    } catch (e) { setStatus(`Request failed: ${e.message}`) } finally { setBusy(false) }
+  }
+
   // populate on load so the dashboard isn't empty
   useEffect(() => { refreshAgents() }, []) // eslint-disable-line
 
@@ -171,6 +186,7 @@ export default function App() {
         <section className="panel">
           <div className="row">
             <Field label="Tenant key" value={tenantKey} onChange={(e) => setTenantKey(e.target.value)} placeholder="acme-key" />
+            <Field label="Scan CIDR" value={cidr} onChange={(e) => setCidr(e.target.value)} placeholder="192.168.1.0/24" />
             <button onClick={refreshAgents} disabled={busy}>Refresh agents</button>
           </div>
           <h3>Agents {agents == null ? '(gateway offline?)' : `(${agents.length})`}</h3>
@@ -182,6 +198,8 @@ export default function App() {
                 <button className="link" onClick={() => dispatch(a, 'inventory')} disabled={busy || !conn.host}>inventory</button>
                 {' · '}
                 <button className="link" onClick={() => dispatch(a, 'backup')} disabled={busy || !conn.host}>backup</button>
+                {' · '}
+                <button className="link" onClick={() => dispatchDiscover(a)} disabled={busy}>discover</button>
               </li>
             ))}
             {agents != null && agents.length === 0 && <li className="muted">no agents for this tenant (try acme-key, and start the agent)</li>}

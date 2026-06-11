@@ -5,6 +5,7 @@ import io.hivekeeper.core.api.Engine;
 import io.hivekeeper.core.api.EventSink;
 import io.hivekeeper.core.api.HiveException;
 import io.hivekeeper.core.api.Result;
+import io.hivekeeper.core.model.DeviceId;
 import lombok.extern.slf4j.Slf4j;
 import java.time.Duration;
 import java.util.Map;
@@ -45,11 +46,20 @@ public final class RemoteEngine implements Engine {
             return future.get(timeout.toMillis(), TimeUnit.MILLISECONDS);
         } catch (Exception e) {
             log.warn("remote job {} failed: {}", jobId, e.getMessage());
-            throw new HiveException(command.commandId(), command.device().id(),
+            throw new HiveException(command.commandId(), deviceIdOf(command),
                     "remote execute failed: " + e.getMessage(), e);
         } finally {
             inFlight.remove(jobId);
         }
+    }
+
+    private static DeviceId deviceIdOf(Command command) {
+        return switch (command) {
+            case Command.Inventory c -> c.device().id();
+            case Command.BackupConfig c -> c.device().id();
+            case Command.RunRaw c -> c.device().id();
+            case Command.Discover c -> DeviceId.of(c.cidr());
+        };
     }
 
     private void onFrame(Frame frame) {

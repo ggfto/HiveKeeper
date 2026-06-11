@@ -1,6 +1,8 @@
 package io.hivekeeper.core.engine;
 
 import io.hivekeeper.core.api.Engine;
+import io.hivekeeper.core.discovery.Scanner;
+import io.hivekeeper.core.discovery.TcpBannerScanner;
 import io.hivekeeper.core.drivers.DriverRegistry;
 import io.hivekeeper.core.spi.BackupStore;
 import io.hivekeeper.core.spi.CredentialProvider;
@@ -21,6 +23,7 @@ public final class HiveCore {
     public static Engine localEngine(CredentialProvider credentials, BackupStore backupStore) {
         SshTransport transport = new SshjTransport();
         DriverRegistry drivers = DriverRegistry.fromServiceLoader();
-        return new LocalEngine(transport, credentials, drivers, backupStore);
+        Scanner scanner = new TcpBannerScanner();
+        return new LocalEngine(transport, credentials, drivers, backupStore, scanner);
     }
 }

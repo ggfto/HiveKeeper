@@ -24,7 +24,7 @@ class LoopbackProtocolTest {
     void remoteEngineRoundTripsThroughAgentEngine() {
         Engine agentEngine = (command, sink) -> {
             var id = command.commandId();
-            var deviceId = command.device().id();
+            var deviceId = ((Command.Inventory) command).device().id();
             sink.emit(new Event.Started(id, deviceId, "stub"));
             sink.emit(new Event.Progress(id, deviceId, "working", 50));
             Device device = Device.builder().id(deviceId).model("AP230").build();

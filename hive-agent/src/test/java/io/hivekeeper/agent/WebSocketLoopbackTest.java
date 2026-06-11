@@ -67,9 +67,10 @@ class WebSocketLoopbackTest {
         assertTrue(serverReady.await(5, TimeUnit.SECONDS), "gateway should start");
 
         Engine stubEngine = (command, sink) -> {
-            sink.emit(new Event.Progress(command.commandId(), command.device().id(), "working", 50));
-            Device device = Device.builder().id(command.device().id()).model("AP230").build();
-            return new Result.Inventory(command.commandId(), command.device().id(), device);
+            var deviceId = ((Command.Inventory) command).device().id();
+            sink.emit(new Event.Progress(command.commandId(), deviceId, "working", 50));
+            Device device = Device.builder().id(deviceId).model("AP230").build();
+            return new Result.Inventory(command.commandId(), deviceId, device);
         };
 
         WebSocketFrameChannel channel = new WebSocketFrameChannel(URI.create("ws://127.0.0.1:" + port));

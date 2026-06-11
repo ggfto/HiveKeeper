@@ -1,7 +1,7 @@
 package io.hivekeeper.cli;
 
-import io.hivekeeper.core.discovery.DiscoveryResult;
 import io.hivekeeper.core.discovery.Subnets;
+import io.hivekeeper.core.model.DiscoveryResult;
 import io.hivekeeper.core.discovery.TcpBannerScanner;
 import picocli.CommandLine;
 import java.util.Comparator;

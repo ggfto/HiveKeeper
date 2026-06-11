@@ -5,17 +5,17 @@ import java.util.List;
 import java.util.UUID;
 
 /**
- * A unit of work to run against a device. Serializable and carries no live handles — it references the
- * target by {@link DeviceRef}, never an open session. This is the exact value the CLI builds from argv
- * and (later) the value a cloud control plane serializes into a job for an agent.
+ * A unit of work. Serializable and carrying no live handles. Most commands are device-scoped (they
+ * reference a target by {@link DeviceRef}, never an open session); {@link Discover} is network-scoped,
+ * which is why {@code device()} lives on the device commands rather than on this base interface.
+ * This is the exact value the CLI builds from argv and a cloud control plane serializes into a job.
  */
-public sealed interface Command permits Command.Inventory, Command.BackupConfig, Command.RunRaw {
+public sealed interface Command
+        permits Command.Inventory, Command.BackupConfig, Command.RunRaw, Command.Discover {
 
     UUID commandId();
 
-    DeviceRef device();
-
-    /** Collect an inventory snapshot (show version / interface / station). */
+    /** Collect an inventory snapshot (show version / hw-info / interface / station). */
     record Inventory(UUID commandId, DeviceRef device) implements Command {
         public static Inventory of(DeviceRef device) {
             return new Inventory(UUID.randomUUID(), device);
@@ -31,8 +31,7 @@ public sealed interface Command permits Command.Inventory, Command.BackupConfig,
         }
     }
 
-    /** Run a list of raw CLI commands and return their verbatim output. Used to build golden fixtures
-     *  and as the basis of a future terminal/passthrough feature. */
+    /** Run a list of raw CLI commands and return their verbatim output. */
     record RunRaw(UUID commandId, DeviceRef device, List<String> commands) implements Command {
 
         public RunRaw {
@@ -41,6 +40,14 @@ public sealed interface Command permits Command.Inventory, Command.BackupConfig,
 
         public static RunRaw of(DeviceRef device, List<String> commands) {
             return new RunRaw(UUID.randomUUID(), device, commands);
+        }
+    }
+
+    /** Sweep a subnet for reachable hosts (runs on whichever node holds the engine — locally, or on the
+     *  on-prem agent in the cloud topology, which is exactly where a LAN scan belongs). */
+    record Discover(UUID commandId, String cidr, int port, int timeoutMillis) implements Command {
+        public static Discover of(String cidr, int port, int timeoutMillis) {
+            return new Discover(UUID.randomUUID(), cidr, port, timeoutMillis);
         }
     }
 }
