@@ -17,6 +17,7 @@ public record Device(
         String firmwareVersion,
         String uptime,
         String managementIp,
+        String hiveName,
         List<Radio> radios,
         List<Station> stations) {
 

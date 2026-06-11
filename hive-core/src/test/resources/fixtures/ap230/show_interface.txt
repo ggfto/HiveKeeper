@@ -1,0 +1,15 @@
+State=Operational state; Chan=Channel;
+Radio=Radio profile; U=up; D=down;
+
+Name           MAC addr      Mode       State  Chan(Width)  VLAN   Radio       Hive                  SSID
+----------- -------------- ------------ ----- ------------- ---- ----------- -------------------- ----------
+Mgt0        d854:a282:7200    -           U     -              1      -             hive0              -
+Agg0        d854:a282:7203 backhaul       D     -              1      -             hive0              -
+Eth0        d854:a282:7200 backhaul       U     -              1      -             hive0              -
+Eth1        d854:a282:7201 backhaul       D     -              1      -             hive0              -
+Red0        d854:a282:7202 backhaul       D     -              1      -             hive0              -
+Wifi0       d854:a282:7210 access         U       1(20MHz)     -  radio_ng0           -                -
+Wifi0.1     d854:a282:7214 access         U       1(20MHz)     -  radio_ng0         hive0            TESTE
+Wifi1       d854:a282:7220 dual           U     165(20MHz)     -  radio_ac0           -                -
+Wifi1.1     d854:a282:7220 backhaul       U     165(20MHz)     1  radio_ac0         hive0              -
+Wifi1.2     d854:a282:7224 access         U     165(20MHz)     -  radio_ac0         hive0            TESTE

@@ -35,6 +35,22 @@ class HiveOsDriverTest {
     }
 
     @Test
+    void inventoryParsesHiveNameAndRadios() throws Exception {
+        Device d = driver.inventory(DeviceId.of("192.168.1.101"), ap230, ProgressReporter.NOOP);
+
+        assertEquals("hive0", d.hiveName());
+        assertEquals(2, d.radios().size());
+
+        var wifi0 = d.radios().stream().filter(r -> r.name().equals("Wifi0")).findFirst().orElseThrow();
+        assertEquals("access", wifi0.mode());
+        assertEquals(1, wifi0.channel());
+
+        var wifi1 = d.radios().stream().filter(r -> r.name().equals("Wifi1")).findFirst().orElseThrow();
+        assertEquals("dual", wifi1.mode());
+        assertEquals(165, wifi1.channel());
+    }
+
+    @Test
     void inventoryParsesStationWithAerohiveMacAndSsid() throws Exception {
         Device d = driver.inventory(DeviceId.of("192.168.1.101"), ap230, ProgressReporter.NOOP);
 

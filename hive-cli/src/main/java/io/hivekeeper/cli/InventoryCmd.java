@@ -7,6 +7,7 @@ import io.hivekeeper.core.api.Result;
 import io.hivekeeper.core.engine.HiveCore;
 import io.hivekeeper.core.model.Device;
 import io.hivekeeper.core.model.DeviceRef;
+import io.hivekeeper.core.model.Radio;
 import io.hivekeeper.core.model.Station;
 import picocli.CommandLine;
 import java.util.concurrent.Callable;
@@ -43,10 +44,17 @@ final class InventoryCmd implements Callable<Integer> {
         System.out.println("Hostname: " + CliSupport.orDash(d.hostname()));
         System.out.println("Uptime:   " + CliSupport.orDash(d.uptime()));
         System.out.println("Mgmt IP:  " + CliSupport.orDash(d.managementIp()));
+        System.out.println("Hive:     " + CliSupport.orDash(d.hiveName()));
+        System.out.println("Radios:   " + d.radios().size());
+        for (Radio r : d.radios()) {
+            String chan = r.channel() == null ? "-" : r.channel().toString();
+            System.out.println("  - " + r.name() + " (" + CliSupport.orDash(r.mode()) + ", ch " + chan + ")");
+        }
         System.out.println("Stations: " + d.stations().size());
         for (Station s : d.stations()) {
             String ip = s.ipAddress() == null ? "" : " (" + s.ipAddress() + ")";
-            System.out.println("  - " + s.mac() + ip);
+            String ssid = s.ssid() == null ? "" : " on " + s.ssid();
+            System.out.println("  - " + s.mac() + ip + ssid);
         }
     }
 }

@@ -36,7 +36,7 @@ class JsonCodecTest {
         DeviceId id = DeviceId.of("ap1");
         UUID cid = UUID.randomUUID();
         Device device = new Device(id, "ap230-lab-1", "AP230", "SER123", "10.0r7a", "1 day",
-                "192.168.1.10", List.of(),
+                "192.168.1.10", "hive0", List.of(),
                 List.of(new Station("aa:bb:cc:dd:ee:ff", "192.168.1.50", null, "LabWifi", null, -50)));
 
         Result result = new Result.Inventory(cid, id, device);

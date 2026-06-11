@@ -44,8 +44,11 @@ class LocalEngineTest {
             if (command.contains("station")) {
                 return Fixtures.load("/fixtures/ap230/show_station.txt");
             }
-            if (command.contains("interface")) {
+            if (command.contains("interface") && command.contains("mgt0")) {
                 return Fixtures.load("/fixtures/ap230/show_interface_mgt0.txt");
+            }
+            if (command.contains("interface")) {
+                return Fixtures.load("/fixtures/ap230/show_interface.txt");
             }
             if (command.contains("version")) {
                 return Fixtures.load("/fixtures/ap230/show_version.txt");

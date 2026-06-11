@@ -18,6 +18,7 @@ public final class HiveOsDriver implements Driver {
     private static final String SHOW_VERSION = "show version";
     private static final String SHOW_HW_INFO = "show hw-info";
     private static final String SHOW_INTERFACE_MGT0 = "show interface mgt0";
+    private static final String SHOW_INTERFACE = "show interface";
     private static final String SHOW_STATION = "show station";
     private static final String RUNNING_CONFIG = "show running-config";
     private static final String RUNNING_CONFIG_SECRETS = "show running-config password";
@@ -49,12 +50,14 @@ public final class HiveOsDriver implements Driver {
         String version = exec.run(SHOW_VERSION);
         progress.report(35, "Reading hardware info");
         String hwInfo = exec.run(SHOW_HW_INFO);
-        progress.report(60, "Reading management interface");
+        progress.report(55, "Reading management interface");
         String mgt0 = exec.run(SHOW_INTERFACE_MGT0);
-        progress.report(85, "Reading stations");
+        progress.report(70, "Reading interfaces");
+        String iface = exec.run(SHOW_INTERFACE);
+        progress.report(90, "Reading stations");
         String stations = exec.run(SHOW_STATION);
 
-        Device device = HiveOsParser.parse(id, new HiveOsCapture(version, hwInfo, mgt0, stations));
+        Device device = HiveOsParser.parse(id, new HiveOsCapture(version, hwInfo, mgt0, iface, stations));
         progress.report(100, "Parsed inventory");
         return device;
     }
@@ -64,7 +67,7 @@ public final class HiveOsDriver implements Driver {
             throws IOException {
         progress.report(10, "Fingerprinting device");
         String version = exec.run(SHOW_VERSION);
-        String firmware = HiveOsParser.parse(id, new HiveOsCapture(version, "", "", "")).firmwareVersion();
+        String firmware = HiveOsParser.parse(id, new HiveOsCapture(version, "", "", "", "")).firmwareVersion();
 
         progress.report(45, "Capturing running-config");
         String running = exec.run(scope.includeSecrets() ? RUNNING_CONFIG_SECRETS : RUNNING_CONFIG);

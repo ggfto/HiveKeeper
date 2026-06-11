@@ -5,5 +5,10 @@ package io.hivekeeper.core.drivers;
  * {@link HiveOsDriver}, never part of the {@link Driver} SPI, so other vendors' drivers are unaffected
  * by HiveOS's command shape.
  */
-record HiveOsCapture(String showVersion, String showHwInfo, String showInterfaceMgt0, String showStation) {
+record HiveOsCapture(
+        String showVersion,
+        String showHwInfo,
+        String showInterfaceMgt0,
+        String showInterface,
+        String showStation) {
 }
