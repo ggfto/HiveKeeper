@@ -18,8 +18,17 @@ body {
 
 .app { max-width: 760px; margin: 0 auto; padding: 2rem 1rem 4rem; }
 
+.top { display: flex; align-items: center; justify-content: space-between; gap: 1rem; flex-wrap: wrap; }
 h1 { margin: 0; font-size: 1.6rem; }
 .sub { color: var(--muted); margin-top: .25rem; }
+
+.modeswitch { display: flex; gap: .25rem; background: var(--panel); border: 1px solid var(--border); border-radius: 8px; padding: .25rem; }
+.modeswitch button { background: transparent; color: var(--muted); font-weight: 600; }
+.modeswitch button.on { background: var(--accent); color: #1a1206; }
+
+.row { display: flex; gap: .75rem; align-items: flex-end; }
+.row .field { flex: 1; }
+.muted { color: var(--muted); }
 
 .panel {
   background: var(--panel);

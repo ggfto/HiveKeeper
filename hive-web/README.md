@@ -1,24 +1,35 @@
 # hive-web
 
-The HiveKeeper web UI — a small Vite + React app that talks to `hive-server` over `/api`.
+The HiveKeeper web UI — a small Vite + React app. It has two modes:
+
+- **Direct** — talks to `hive-server` (`/api`): discover the LAN, then inventory/backup an AP directly.
+- **Gateway** — talks to `hive-gateway` (`/gw`): enter a tenant key, pick a connected agent, and
+  inventory/backup an AP **through** it (cloud → agent → AP; credentials stay on the agent).
+
 It is intentionally NOT a Gradle module; it's a standalone npm/pnpm project.
 
-## Dev
+## Run the whole stack (one command)
 
-Two terminals:
+From the repo root:
 
-```sh
-# 1) the local server (REST + SSE on 127.0.0.1:8080)
-./gradlew :hive-server:run
-
-# 2) the web UI (Vite dev server on http://localhost:5173, proxies /api -> 8080)
-cd hive-web
-pnpm install
-pnpm dev
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts/run-local.ps1
 ```
 
-Open http://localhost:5173, enter an AP's host/credentials, and use **Inventory**
-(live progress via SSE), **Backup**, or **Discover LAN**.
+This builds + starts `hive-server` (:8080), `hive-gateway` (:8090), an enrolled `hive-agent`, and the
+Vite UI, then opens **http://localhost:5173** (use `localhost`, not `127.0.0.1` — Vite binds IPv6).
+Press Enter in that window to stop everything.
+
+- **Direct mode**: enter `192.168.1.101` → Discover / Inventory / Backup.
+- **Gateway mode**: tenant key `acme-key` → pick `lab-agent` → inventory the AP through it.
+  (`globex-key` is a second tenant that sees no agents — tenant isolation.)
+
+## Dev (manual)
+
+```sh
+./gradlew :hive-server:run          # and/or :hive-gateway:run + the agent
+cd hive-web && pnpm install && pnpm dev
+```
 
 ## Build
 
