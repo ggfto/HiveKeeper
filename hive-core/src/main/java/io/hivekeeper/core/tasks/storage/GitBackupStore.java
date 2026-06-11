@@ -4,7 +4,9 @@ import io.hivekeeper.core.model.BackupRef;
 import io.hivekeeper.core.model.ConfigSnapshot;
 import io.hivekeeper.core.spi.BackupStore;
 import org.eclipse.jgit.api.Git;
+import org.eclipse.jgit.api.Status;
 import org.eclipse.jgit.api.errors.GitAPIException;
+import org.eclipse.jgit.lib.ObjectId;
 import org.eclipse.jgit.revwalk.RevCommit;
 import lombok.extern.slf4j.Slf4j;
 import java.io.IOException;
@@ -17,8 +19,8 @@ import java.nio.file.Path;
  * capture. This gives diff / history / rollback for free, which is the single most valuable property
  * of a homelab backup tool. The only {@link BackupStore} implementation in v0.1.
  *
- * <p>v0.1 commits every run (including unchanged captures) so each backup leaves an audit record;
- * de-duplicating identical snapshots is a later refinement.
+ * <p>Unchanged captures are de-duplicated: if a backup produces no diff against {@code HEAD}, no new
+ * commit is made and the existing {@code HEAD} is returned — history stays meaningful.
  */
 @Slf4j
 public final class GitBackupStore implements BackupStore {
@@ -48,14 +50,24 @@ public final class GitBackupStore implements BackupStore {
             }
 
             git.add().addFilepattern(".").call();
+            String relPath = root.relativize(runningFile).toString().replace('\\', '/');
+
+            Status status = git.status().call();
+            ObjectId head = git.getRepository().resolve("HEAD");
+            boolean unchanged = head != null
+                    && status.getAdded().isEmpty() && status.getChanged().isEmpty()
+                    && status.getModified().isEmpty() && status.getRemoved().isEmpty()
+                    && status.getMissing().isEmpty();
+            if (unchanged) {
+                log.debug("backup for {} unchanged; reusing commit {}", snapshot.deviceId(), head.getName());
+                return new BackupRef(STORE_ID, head.getName(), relPath);
+            }
+
             RevCommit commit = git.commit()
-                    .setAllowEmpty(true)
                     .setMessage("backup " + snapshot.deviceId().value() + " @ " + snapshot.capturedAt())
                     .setAuthor("hivekeeper", "hivekeeper@localhost")
                     .setCommitter("hivekeeper", "hivekeeper@localhost")
                     .call();
-
-            String relPath = root.relativize(runningFile).toString().replace('\\', '/');
             log.debug("committed backup for {} -> {}", snapshot.deviceId(), commit.getName());
             return new BackupRef(STORE_ID, commit.getName(), relPath);
         } catch (GitAPIException e) {

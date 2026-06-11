@@ -27,7 +27,7 @@ public final class AgentRuntime implements AutoCloseable {
         this.engine = engine;
         this.channel = channel;
         this.agentId = agentId;
-        this.jobs = Executors.newCachedThreadPool(runnable -> {
+        this.jobs = Executors.newFixedThreadPool(8, runnable -> {
             Thread thread = new Thread(runnable, "agent-job");
             thread.setDaemon(true);
             return thread;

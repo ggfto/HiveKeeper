@@ -18,6 +18,7 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RestController;
 import java.util.Optional;
+import java.util.concurrent.Callable;
 import java.util.function.Function;
 
 /**
@@ -59,21 +60,31 @@ public class GatewayController {
         return json(registry.agentIds(tenant.get().tenantId()));
     }
 
+    // These do an agent round-trip (seconds); returning a Callable lets Spring run them on a bounded
+    // async executor (see AsyncConfig) so the servlet container threads are not held while waiting.
+
     @PostMapping("/api/agents/{agentId}/inventory")
-    public ResponseEntity<String> inventory(@RequestHeader(value = "X-Tenant-Key", required = false) String apiKey,
-                                            @PathVariable String agentId, @RequestBody DeviceRequest req) {
-        return dispatch(apiKey, agentId, req, Command.Inventory::of);
+    public Callable<ResponseEntity<String>> inventory(
+            @RequestHeader(value = "X-Tenant-Key", required = false) String apiKey,
+            @PathVariable String agentId, @RequestBody DeviceRequest req) {
+        return () -> dispatch(apiKey, agentId, req, Command.Inventory::of);
     }
 
     @PostMapping("/api/agents/{agentId}/backup")
-    public ResponseEntity<String> backup(@RequestHeader(value = "X-Tenant-Key", required = false) String apiKey,
-                                         @PathVariable String agentId, @RequestBody DeviceRequest req) {
-        return dispatch(apiKey, agentId, req, Command.BackupConfig::of);
+    public Callable<ResponseEntity<String>> backup(
+            @RequestHeader(value = "X-Tenant-Key", required = false) String apiKey,
+            @PathVariable String agentId, @RequestBody DeviceRequest req) {
+        return () -> dispatch(apiKey, agentId, req, Command.BackupConfig::of);
     }
 
     @PostMapping("/api/agents/{agentId}/discover")
-    public ResponseEntity<String> discover(@RequestHeader(value = "X-Tenant-Key", required = false) String apiKey,
-                                           @PathVariable String agentId, @RequestBody DiscoverRequest req) {
+    public Callable<ResponseEntity<String>> discover(
+            @RequestHeader(value = "X-Tenant-Key", required = false) String apiKey,
+            @PathVariable String agentId, @RequestBody DiscoverRequest req) {
+        return () -> doDiscover(apiKey, agentId, req);
+    }
+
+    private ResponseEntity<String> doDiscover(String apiKey, String agentId, DiscoverRequest req) {
         Optional<Tenant> tenant = tenants.tenantByApiKey(apiKey);
         if (tenant.isEmpty()) {
             return unauthorized();

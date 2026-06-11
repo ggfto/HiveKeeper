@@ -12,6 +12,7 @@ import io.hivekeeper.core.model.DeviceRef;
 import io.hivekeeper.core.spi.BackupStore;
 import io.hivekeeper.core.tasks.storage.GitBackupStore;
 import io.hivekeeper.wire.JsonCodec;
+import jakarta.annotation.PreDestroy;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
@@ -38,7 +39,16 @@ import java.util.concurrent.Executors;
 public class ApiController {
 
     private final JsonCodec codec = new JsonCodec();
-    private final ExecutorService executor = Executors.newCachedThreadPool();
+    private final ExecutorService executor = Executors.newFixedThreadPool(16, runnable -> {
+        Thread thread = new Thread(runnable, "sse-worker");
+        thread.setDaemon(true);
+        return thread;
+    });
+
+    @PreDestroy
+    void shutdown() {
+        executor.shutdownNow();
+    }
 
     /** What I/O type this represents — a backup store error wrapped in a record for JSON. */
     public record ApiError(String error, String detail) {

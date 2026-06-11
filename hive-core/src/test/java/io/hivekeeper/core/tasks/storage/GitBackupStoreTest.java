@@ -38,9 +38,23 @@ class GitBackupStoreTest {
         assertTrue(Files.exists(users));
         assertTrue(Files.readString(running).contains("LabWifi"));
 
-        // A second backup appends to history with a distinct commit.
+        // An identical capture is de-duplicated: no new commit, same ref.
         BackupRef ref2 = store.write(snapshot);
-        assertNotEquals(ref.commitId(), ref2.commitId());
+        assertEquals(ref.commitId(), ref2.commitId());
+    }
+
+    @Test
+    void changedConfigProducesANewCommit(@TempDir Path tmp) throws Exception {
+        Path repo = tmp.resolve("repo");
+        GitBackupStore store = new GitBackupStore(repo);
+        Instant when = Instant.parse("2026-06-11T00:00:00Z");
+
+        BackupRef first = store.write(new ConfigSnapshot(
+                DeviceId.of("ap1"), "ssid A\n", null, "10.6r1a", when));
+        BackupRef second = store.write(new ConfigSnapshot(
+                DeviceId.of("ap1"), "ssid B\n", null, "10.6r1a", when));
+
+        assertNotEquals(first.commitId(), second.commitId());
     }
 
     @Test
