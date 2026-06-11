@@ -1,4 +1,0 @@
-Interface  Status  IP Address      Netmask          MAC
-mgt0       up      192.168.1.10    255.255.255.0    1c:36:bb:00:00:01
-wifi0      up      -               -                1c:36:bb:00:00:02
-wifi1      up      -               -                1c:36:bb:00:00:03

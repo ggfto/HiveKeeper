@@ -1,0 +1,10 @@
+Admin state=enabled; Operational state=up;
+DHCP client=enabled;
+Default IP subnet=192.168.0.0/255.255.0.0;
+IP addr=192.168.1.101; Netmask=255.255.255.0; Default Gateway:192.168.1.1;
+IPV6 address autoconfig enable
+IPV6 link local addr=fe80::da54:a2ff:fe82:7200/64
+VLAN id=1;  Native vlan id=1; MAC addr=d854:a282:7200; MTU=1500;
+Rx packets=19328; errors=0; dropped=0;
+Tx packets= 6790; errors=0; dropped=0;
+Rx bytes=3237990 (3.088 MB); Tx bytes=593190 (579.287 KB);

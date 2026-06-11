@@ -1,7 +1,9 @@
-Aerohive Networks, Inc. HiveOS
-Current version: HiveOS 10.0r7a build-123456
-Platform: AP230
-Serial number: 01234567890ABCDE
-Hostname: ap230-lab-1
-Uptime: 5 days, 03:14:09
-Bootloader version: 1.0.10
+Copyright (c) 2006-2021 Extreme Networks, Inc.
+
+Version:            HiveOS 10.6r1a build--build-dev
+Build time:         Fri 10 Nov 2023 05:30:44 PM UTC
+Build cookie:       2311100930-hiveos-build-dev
+Platform:           AP230
+Bootloader ver:     v0.0.4.71
+TPM ver:            v1.2.37.17
+Uptime:             0 weeks, 0 days, 9 hours, 24 minutes, 24 seconds

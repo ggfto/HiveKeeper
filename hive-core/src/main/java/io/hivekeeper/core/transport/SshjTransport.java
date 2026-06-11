@@ -7,21 +7,25 @@ import net.schmizz.sshj.SSHClient;
 import net.schmizz.sshj.transport.verification.PromiscuousVerifier;
 import java.io.IOException;
 
-/** sshj implementation of {@link SshTransport}. */
+/**
+ * sshj implementation of {@link SshTransport}. Opens a PTY-backed interactive shell session, because
+ * HiveOS's restricted CLI does not service the SSH exec channel (it returns empty output). See
+ * {@link SshjShellSession}.
+ */
 public final class SshjTransport implements SshTransport {
 
     private final HostKeyPolicy hostKeyPolicy;
     private final int connectTimeoutMs;
-    private final int commandTimeoutSeconds;
+    private final int quietMillis;
 
     public SshjTransport() {
-        this(HostKeyPolicy.ACCEPT_ALL, 10_000, 30);
+        this(HostKeyPolicy.ACCEPT_ALL, 10_000, 2_000);
     }
 
-    public SshjTransport(HostKeyPolicy hostKeyPolicy, int connectTimeoutMs, int commandTimeoutSeconds) {
+    public SshjTransport(HostKeyPolicy hostKeyPolicy, int connectTimeoutMs, int quietMillis) {
         this.hostKeyPolicy = hostKeyPolicy;
         this.connectTimeoutMs = connectTimeoutMs;
-        this.commandTimeoutSeconds = commandTimeoutSeconds;
+        this.quietMillis = quietMillis;
     }
 
     @Override
@@ -36,11 +40,11 @@ public final class SshjTransport implements SshTransport {
         client.connect(device.host(), device.port());
         try {
             client.authPassword(credentials.username(), credentials.password());
+            return new SshjShellSession(client, quietMillis);
         } catch (IOException e) {
             safeDisconnect(client);
             throw e;
         }
-        return new SshjSession(client, commandTimeoutSeconds);
     }
 
     private static void safeDisconnect(SSHClient client) {

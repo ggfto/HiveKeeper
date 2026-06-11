@@ -41,11 +41,14 @@ class LocalEngineTest {
             if (command.contains("running-config")) {
                 return "hostname ap230-lab-1\nssid LabWifi\n";
             }
+            if (command.contains("hw-info")) {
+                return Fixtures.load("/fixtures/ap230/show_hw_info.txt");
+            }
             if (command.contains("station")) {
                 return Fixtures.load("/fixtures/ap230/show_station.txt");
             }
             if (command.contains("interface")) {
-                return Fixtures.load("/fixtures/ap230/show_interface.txt");
+                return Fixtures.load("/fixtures/ap230/show_interface_mgt0.txt");
             }
             if (command.contains("version")) {
                 return Fixtures.load("/fixtures/ap230/show_version.txt");
@@ -84,7 +87,9 @@ class LocalEngineTest {
 
         Result.Inventory inv = assertInstanceOf(Result.Inventory.class, result);
         assertEquals("AP230", inv.device().model());
-        assertEquals(2, inv.device().stations().size());
+        assertEquals("02301512211756", inv.device().serial());
+        assertEquals("192.168.1.101", inv.device().managementIp());
+        assertEquals(1, inv.device().stations().size());
 
         assertInstanceOf(Event.Started.class, events.get(0));
         assertInstanceOf(Event.Completed.class, events.get(events.size() - 1));
@@ -105,7 +110,7 @@ class LocalEngineTest {
 
         assertNotNull(store.captured);
         assertTrue(store.captured.runningConfig().contains("LabWifi"));
-        assertEquals("10.0r7a", store.captured.firmwareVersion());
+        assertEquals("10.6r1a", store.captured.firmwareVersion());
         assertNotNull(store.captured.usersConfig());
     }
 }

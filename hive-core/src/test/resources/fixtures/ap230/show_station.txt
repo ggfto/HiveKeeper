@@ -1,3 +1,13 @@
-MAC Address        IP Address     Channel  SSID      RSSI
-1c:36:bb:00:11:22  192.168.1.50   36       LabWifi   -52
-48:51:c5:aa:bb:cc  192.168.1.51   36       LabWifi   -61
+Chan=channel number; Pow=Power in dBm;
+A-Mode=Authentication mode; Cipher=Encryption mode;
+A-Time=Associated time; Auth=Authenticated;
+UPID=User profile Identifier; Phymode=Physical mode;
+
+Ifname=wifi0.1, Ifindex=14, SSID=TESTE:
+Mac Addr       IP Addr          Chan   Tx Rate Rx Rate Pow(SNR)         A-Mode   Cipher  A-Time  VLAN Auth UPID Phymode LDPC Tx-STBC Rx-STBC    SM-PS Chan-width Release Station-State
+-------------- --------------- ------- ------- ------- -------- -------------- -------- -------- ---- ---- ---- ------- ---- ------- ------- -------- ---------- ------- -------------
+
+Ifname=wifi1.2, Ifindex=16, SSID=TESTE:
+Mac Addr       IP Addr          Chan   Tx Rate Rx Rate Pow(SNR)         A-Mode   Cipher  A-Time  VLAN Auth UPID Phymode LDPC Tx-STBC Rx-STBC    SM-PS Chan-width Release Station-State
+-------------- --------------- ------- ------- ------- -------- -------------- -------- -------- ---- ---- ---- ------- ---- ------- ------- -------- ---------- ------- -------------
+d0c6:37e5:9250 192.168.1.102     165      156M      9M  -73(22)       wpa2-psk aes ccmp 09:15:05    1  Yes    0    11ac  Yes   Yes     Yes     static    20MHz        No Good

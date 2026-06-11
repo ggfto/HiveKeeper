@@ -34,13 +34,16 @@ public final class InventoryService {
                 .orElseThrow(() -> new IOException("No driver recognizes this device from 'show version'"));
         sink.emit(new Event.Log(commandId, ref.id(), "Matched driver: " + driver.id()));
 
-        sink.emit(new Event.Progress(commandId, ref.id(), "Reading interfaces", 45));
-        String iface = runner.run(driver.showInterfaceCommand());
+        sink.emit(new Event.Progress(commandId, ref.id(), "Reading hardware info", 35));
+        String hwInfo = runner.run(driver.showHwInfoCommand());
 
-        sink.emit(new Event.Progress(commandId, ref.id(), "Reading stations", 75));
+        sink.emit(new Event.Progress(commandId, ref.id(), "Reading management interface", 60));
+        String mgt0 = runner.run(driver.showInterfaceMgt0Command());
+
+        sink.emit(new Event.Progress(commandId, ref.id(), "Reading stations", 85));
         String stations = runner.run(driver.showStationCommand());
 
-        Device device = driver.parseDevice(ref.id(), new HiveOsCapture(version, iface, stations));
+        Device device = driver.parseDevice(ref.id(), new HiveOsCapture(version, hwInfo, mgt0, stations));
         sink.emit(new Event.Progress(commandId, ref.id(), "Parsed inventory", 100));
         return device;
     }

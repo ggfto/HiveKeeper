@@ -61,7 +61,7 @@ public final class BackupService {
             }
         }
 
-        String firmware = driver.parseDevice(ref.id(), new HiveOsCapture(version, "", "")).firmwareVersion();
+        String firmware = driver.parseDevice(ref.id(), new HiveOsCapture(version, "", "", "")).firmwareVersion();
         ConfigSnapshot snapshot = new ConfigSnapshot(ref.id(), running, users, firmware, Instant.now(clock));
 
         sink.emit(new Event.Progress(commandId, ref.id(), "Persisting backup", 90));

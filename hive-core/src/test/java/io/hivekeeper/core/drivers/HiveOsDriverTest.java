@@ -2,6 +2,7 @@ package io.hivekeeper.core.drivers;
 
 import io.hivekeeper.core.model.Device;
 import io.hivekeeper.core.model.DeviceId;
+import io.hivekeeper.core.model.Station;
 import io.hivekeeper.core.testsupport.Fixtures;
 import org.junit.jupiter.api.Test;
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -12,6 +13,14 @@ class HiveOsDriverTest {
 
     private final HiveOsDriver driver = new HiveOsDriver();
 
+    private static HiveOsCapture ap230Capture() {
+        return new HiveOsCapture(
+                Fixtures.load("/fixtures/ap230/show_version.txt"),
+                Fixtures.load("/fixtures/ap230/show_hw_info.txt"),
+                Fixtures.load("/fixtures/ap230/show_interface_mgt0.txt"),
+                Fixtures.load("/fixtures/ap230/show_station.txt"));
+    }
+
     @Test
     void recognizesHiveOsFromVersionOutput() {
         assertTrue(driver.supports(Fixtures.load("/fixtures/ap230/show_version.txt")));
@@ -20,23 +29,25 @@ class HiveOsDriverTest {
     }
 
     @Test
-    void parsesInventoryFromFixtures() {
-        HiveOsCapture capture = new HiveOsCapture(
-                Fixtures.load("/fixtures/ap230/show_version.txt"),
-                Fixtures.load("/fixtures/ap230/show_interface.txt"),
-                Fixtures.load("/fixtures/ap230/show_station.txt"));
-
-        Device d = driver.parseDevice(DeviceId.of("ap230-lab-1"), capture);
+    void parsesInventoryFromRealAp230Captures() {
+        Device d = driver.parseDevice(DeviceId.of("192.168.1.101"), ap230Capture());
 
         assertEquals("AP230", d.model());
-        assertEquals("01234567890ABCDE", d.serial());
-        assertEquals("10.0r7a", d.firmwareVersion());
-        assertEquals("ap230-lab-1", d.hostname());
-        assertTrue(d.uptime().contains("5 days"), "uptime was: " + d.uptime());
-        assertEquals("192.168.1.10", d.managementIp());
+        assertEquals("02301512211756", d.serial());
+        assertEquals("10.6r1a", d.firmwareVersion());
+        assertEquals("192.168.1.101", d.managementIp());
+        assertTrue(d.uptime().contains("hours"), "uptime was: " + d.uptime());
+    }
 
-        assertEquals(2, d.stations().size());
-        assertEquals("1c:36:bb:00:11:22", d.stations().get(0).mac());
-        assertEquals("192.168.1.50", d.stations().get(0).ipAddress());
+    @Test
+    void parsesStationsWithAerohiveMacAndSsidGrouping() {
+        Device d = driver.parseDevice(DeviceId.of("192.168.1.101"), ap230Capture());
+
+        assertEquals(1, d.stations().size());
+        Station s = d.stations().get(0);
+        assertEquals("d0c6:37e5:9250", s.mac());
+        assertEquals("192.168.1.102", s.ipAddress());
+        assertEquals("TESTE", s.ssid());
+        assertEquals(-73, s.rssi());
     }
 }

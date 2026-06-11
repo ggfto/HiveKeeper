@@ -1,6 +1,7 @@
 package io.hivekeeper.core.api;
 
 import io.hivekeeper.core.model.DeviceRef;
+import java.util.List;
 import java.util.UUID;
 
 /**
@@ -8,7 +9,7 @@ import java.util.UUID;
  * target by {@link DeviceRef}, never an open session. This is the exact value the CLI builds from argv
  * and (later) the value a cloud control plane serializes into a job for an agent.
  */
-public sealed interface Command permits Command.Inventory, Command.BackupConfig {
+public sealed interface Command permits Command.Inventory, Command.BackupConfig, Command.RunRaw {
 
     UUID commandId();
 
@@ -27,6 +28,19 @@ public sealed interface Command permits Command.Inventory, Command.BackupConfig 
 
         public static BackupConfig of(DeviceRef device) {
             return new BackupConfig(UUID.randomUUID(), device, true, true);
+        }
+    }
+
+    /** Run a list of raw CLI commands and return their verbatim output. Used to build golden fixtures
+     *  and as the basis of a future terminal/passthrough feature. */
+    record RunRaw(UUID commandId, DeviceRef device, List<String> commands) implements Command {
+
+        public RunRaw {
+            commands = List.copyOf(commands);
+        }
+
+        public static RunRaw of(DeviceRef device, List<String> commands) {
+            return new RunRaw(UUID.randomUUID(), device, commands);
         }
     }
 }

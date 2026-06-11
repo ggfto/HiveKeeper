@@ -63,6 +63,19 @@ public final class LocalEngine implements Engine {
                         yield new Result.Backup(id, deviceId, outcome.ref(),
                                 outcome.usersIncluded(), outcome.configBytes());
                     }
+                    case Command.RunRaw c -> {
+                        io.hivekeeper.core.session.CommandRunner runner =
+                                new io.hivekeeper.core.session.CommandRunner(session);
+                        java.util.Map<String, String> outputs = new java.util.LinkedHashMap<>();
+                        int total = Math.max(1, c.commands().size());
+                        int i = 0;
+                        for (String raw : c.commands()) {
+                            int pct = (int) Math.round(++i * 100.0 / total);
+                            sink.emit(new Event.Progress(id, deviceId, "Running: " + raw, pct));
+                            outputs.put(raw, runner.run(raw));
+                        }
+                        yield new Result.RawCapture(id, deviceId, outputs);
+                    }
                 };
                 sink.emit(new Event.Completed(id, deviceId, result));
                 return result;

@@ -16,4 +16,5 @@ dependencies {
 
 application {
     mainClass.set("io.hivekeeper.cli.Main")
+    applicationName = "hivekeeper"
 }

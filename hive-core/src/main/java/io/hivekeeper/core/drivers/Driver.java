@@ -26,8 +26,12 @@ public interface Driver {
         return "show version";
     }
 
-    default String showInterfaceCommand() {
-        return "show interface";
+    default String showHwInfoCommand() {
+        return "show hw-info";
+    }
+
+    default String showInterfaceMgt0Command() {
+        return "show interface mgt0";
     }
 
     default String showStationCommand() {

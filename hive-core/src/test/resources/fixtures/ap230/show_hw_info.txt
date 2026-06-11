@@ -1,0 +1,12 @@
+Ethernet MAC address:         d854:a282:7200
+Serial number:                02301512211756
+Hardware revision:            01
+Product name:                 AP230
+Hardware ID:                  0
+Manufacturing date:           20151221
+Number of MAC addresses:      64
+Manufacturing version:        1
+Antenna ID:                   0
+Aerohive hardware key:        ??????????????
+HW Auth Device Status:        success
+TPM Status:                   success
