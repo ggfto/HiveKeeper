@@ -2,38 +2,47 @@ package io.hivekeeper.gateway;
 
 import io.hivekeeper.protocol.RemoteEngine;
 import org.springframework.stereotype.Component;
+import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
-import java.util.Map;
+import java.util.stream.Collectors;
 
 /**
- * Tracks connected agents: agentId -&gt; the {@link RemoteEngine} bound to that agent's channel. This is
- * the in-memory v1; a full gateway persists agent identity + a per-agent job queue for redelivery.
+ * Tracks connected agents, keyed by (tenantId, agentId) so lookups are always tenant-scoped — an
+ * operator can never reach another tenant's agent. v1 is in-memory; a full gateway persists agent
+ * identity + a per-agent job queue for redelivery.
  */
 @Component
 class AgentRegistry {
 
-    private final Map<String, RemoteEngine> byAgentId = new ConcurrentHashMap<>();
-    private final Map<String, String> agentBySession = new ConcurrentHashMap<>();
+    private record AgentKey(String tenantId, String agentId) {
+    }
 
-    void register(String agentId, String sessionId, RemoteEngine engine) {
-        byAgentId.put(agentId, engine);
-        agentBySession.put(sessionId, agentId);
+    private final Map<AgentKey, RemoteEngine> byKey = new ConcurrentHashMap<>();
+    private final Map<String, AgentKey> bySession = new ConcurrentHashMap<>();
+
+    void register(String tenantId, String agentId, String sessionId, RemoteEngine engine) {
+        AgentKey key = new AgentKey(tenantId, agentId);
+        byKey.put(key, engine);
+        bySession.put(sessionId, key);
     }
 
     void unregisterBySession(String sessionId) {
-        String agentId = agentBySession.remove(sessionId);
-        if (agentId != null) {
-            byAgentId.remove(agentId);
+        AgentKey key = bySession.remove(sessionId);
+        if (key != null) {
+            byKey.remove(key);
         }
     }
 
-    Optional<RemoteEngine> engine(String agentId) {
-        return Optional.ofNullable(byAgentId.get(agentId));
+    Optional<RemoteEngine> engine(String tenantId, String agentId) {
+        return Optional.ofNullable(byKey.get(new AgentKey(tenantId, agentId)));
     }
 
-    Set<String> agentIds() {
-        return Set.copyOf(byAgentId.keySet());
+    Set<String> agentIds(String tenantId) {
+        return byKey.keySet().stream()
+                .filter(k -> k.tenantId().equals(tenantId))
+                .map(AgentKey::agentId)
+                .collect(Collectors.toUnmodifiableSet());
     }
 }

@@ -6,7 +6,6 @@ import io.hivekeeper.protocol.RemoteEngine;
 import org.junit.jupiter.api.Test;
 import java.time.Duration;
 import java.util.function.Consumer;
-import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -22,29 +21,33 @@ class AgentRegistryTest {
     }
 
     @Test
-    void registersAndLooksUpByAgentId() {
+    void registersAndLooksUpScopedByTenant() {
         AgentRegistry registry = new AgentRegistry();
         RemoteEngine engine = stubEngine();
 
-        registry.register("agent-1", "session-1", engine);
+        registry.register("acme", "lab-agent", "session-1", engine);
 
-        assertTrue(registry.agentIds().contains("agent-1"));
-        assertSame(engine, registry.engine("agent-1").orElseThrow());
+        assertSame(engine, registry.engine("acme", "lab-agent").orElseThrow());
+        assertTrue(registry.agentIds("acme").contains("lab-agent"));
+    }
+
+    @Test
+    void doesNotLeakAcrossTenants() {
+        AgentRegistry registry = new AgentRegistry();
+        registry.register("acme", "lab-agent", "session-1", stubEngine());
+
+        assertTrue(registry.engine("globex", "lab-agent").isEmpty(), "another tenant must not resolve the agent");
+        assertTrue(registry.agentIds("globex").isEmpty());
     }
 
     @Test
     void unregisterBySessionRemovesTheAgent() {
         AgentRegistry registry = new AgentRegistry();
-        registry.register("agent-1", "session-1", stubEngine());
+        registry.register("acme", "lab-agent", "session-1", stubEngine());
 
         registry.unregisterBySession("session-1");
 
-        assertTrue(registry.engine("agent-1").isEmpty());
-        assertEquals(0, registry.agentIds().size());
-    }
-
-    @Test
-    void unknownAgentResolvesEmpty() {
-        assertTrue(new AgentRegistry().engine("nope").isEmpty());
+        assertTrue(registry.engine("acme", "lab-agent").isEmpty());
+        assertTrue(registry.agentIds("acme").isEmpty());
     }
 }

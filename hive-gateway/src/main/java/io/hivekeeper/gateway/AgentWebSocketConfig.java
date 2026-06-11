@@ -11,13 +11,17 @@ import org.springframework.web.socket.config.annotation.WebSocketHandlerRegistry
 class AgentWebSocketConfig implements WebSocketConfigurer {
 
     private final AgentWebSocketHandler handler;
+    private final AgentAuthInterceptor authInterceptor;
 
-    AgentWebSocketConfig(AgentWebSocketHandler handler) {
+    AgentWebSocketConfig(AgentWebSocketHandler handler, AgentAuthInterceptor authInterceptor) {
         this.handler = handler;
+        this.authInterceptor = authInterceptor;
     }
 
     @Override
     public void registerWebSocketHandlers(WebSocketHandlerRegistry registry) {
-        registry.addHandler(handler, "/agent").setAllowedOrigins("*");
+        registry.addHandler(handler, "/agent")
+                .addInterceptors(authInterceptor)
+                .setAllowedOrigins("*");
     }
 }

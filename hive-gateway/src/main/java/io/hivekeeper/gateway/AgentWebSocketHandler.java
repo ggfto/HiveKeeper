@@ -14,9 +14,10 @@ import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 
 /**
- * Accepts outbound agent WebSocket connections. Each connection gets its own
- * {@link SpringWsFrameChannel} + {@link RemoteEngine}; when the agent sends {@link Frame.Hello}, it is
- * registered by id so the REST API can dispatch jobs to it. Inbound frames are routed to the engine.
+ * Accepts agent WebSocket connections that already passed {@link AgentAuthInterceptor} (so the session
+ * carries a server-verified agentId + tenantId). Each connection gets its own
+ * {@link SpringWsFrameChannel} + {@link RemoteEngine}, registered under its tenant. The agent's
+ * {@code Hello} is informational only — authorization uses the verified identity, never the claim.
  */
 @Component
 @Slf4j
@@ -32,11 +33,15 @@ class AgentWebSocketHandler extends TextWebSocketHandler {
 
     @Override
     public void afterConnectionEstablished(WebSocketSession session) {
+        String tenantId = (String) session.getAttributes().get(AgentAuthInterceptor.ATTR_TENANT_ID);
+        String agentId = (String) session.getAttributes().get(AgentAuthInterceptor.ATTR_AGENT_ID);
+
         SpringWsFrameChannel channel = new SpringWsFrameChannel(session, codec);
         RemoteEngine engine = new RemoteEngine(channel, Duration.ofSeconds(60));
         channel.attachEngine(engine);
         channels.put(session.getId(), channel);
-        log.info("agent socket connected: {}", session.getId());
+        registry.register(tenantId, agentId, session.getId(), engine);
+        log.info("agent '{}' connected for tenant '{}'", agentId, tenantId);
     }
 
     @Override
@@ -47,8 +52,11 @@ class AgentWebSocketHandler extends TextWebSocketHandler {
         }
         Frame frame = codec.fromJson(message.getPayload(), Frame.class);
         if (frame instanceof Frame.Hello hello) {
-            registry.register(hello.agentId(), session.getId(), channel.engine());
-            log.info("agent '{}' registered (protocol {})", hello.agentId(), hello.protocolVersion());
+            String verified = (String) session.getAttributes().get(AgentAuthInterceptor.ATTR_AGENT_ID);
+            if (!hello.agentId().equals(verified)) {
+                log.warn("agent claims id '{}' but verified id is '{}' — ignoring the claim",
+                        hello.agentId(), verified);
+            }
         }
         channel.deliver(frame);
     }

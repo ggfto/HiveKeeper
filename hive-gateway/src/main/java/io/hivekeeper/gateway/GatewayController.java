@@ -4,6 +4,8 @@ import io.hivekeeper.core.api.Command;
 import io.hivekeeper.core.api.EventSink;
 import io.hivekeeper.core.api.Result;
 import io.hivekeeper.core.model.DeviceRef;
+import io.hivekeeper.gateway.tenant.Tenant;
+import io.hivekeeper.gateway.tenant.TenantStore;
 import io.hivekeeper.protocol.RemoteEngine;
 import io.hivekeeper.wire.JsonCodec;
 import lombok.extern.slf4j.Slf4j;
@@ -13,13 +15,16 @@ import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RestController;
 import java.util.Optional;
+import java.util.function.Function;
 
 /**
- * The control-plane REST API. It dispatches work to a connected agent through that agent's
- * {@link RemoteEngine} — the gateway sends only intent ({host}); the agent resolves credentials locally
- * and does the SSH. Note there is NO password in the request: that is the whole point of the topology.
+ * The control-plane REST API, scoped by tenant via the {@code X-Tenant-Key} header (v1 operator auth;
+ * production = OIDC). It dispatches work to a connected agent through that agent's {@link RemoteEngine},
+ * sending ONLY intent (host) — credentials live on the agent. All registry lookups are tenant-scoped,
+ * so one tenant can never reach another's agents.
  */
 @RestController
 @Slf4j
@@ -34,36 +39,47 @@ public class GatewayController {
 
     private final JsonCodec codec = new JsonCodec();
     private final AgentRegistry registry;
+    private final TenantStore tenants;
 
-    public GatewayController(AgentRegistry registry) {
+    public GatewayController(AgentRegistry registry, TenantStore tenants) {
         this.registry = registry;
+        this.tenants = tenants;
     }
 
     @GetMapping("/api/agents")
-    public ResponseEntity<String> agents() {
-        return json(registry.agentIds());
+    public ResponseEntity<String> agents(@RequestHeader(value = "X-Tenant-Key", required = false) String apiKey) {
+        Optional<Tenant> tenant = tenants.tenantByApiKey(apiKey);
+        if (tenant.isEmpty()) {
+            return unauthorized();
+        }
+        return json(registry.agentIds(tenant.get().tenantId()));
     }
 
     @PostMapping("/api/agents/{agentId}/inventory")
-    public ResponseEntity<String> inventory(@PathVariable String agentId, @RequestBody DeviceRequest req) {
-        return dispatch(agentId, req, Command.Inventory::of);
+    public ResponseEntity<String> inventory(@RequestHeader(value = "X-Tenant-Key", required = false) String apiKey,
+                                            @PathVariable String agentId, @RequestBody DeviceRequest req) {
+        return dispatch(apiKey, agentId, req, Command.Inventory::of);
     }
 
     @PostMapping("/api/agents/{agentId}/backup")
-    public ResponseEntity<String> backup(@PathVariable String agentId, @RequestBody DeviceRequest req) {
-        return dispatch(agentId, req, Command.BackupConfig::of);
+    public ResponseEntity<String> backup(@RequestHeader(value = "X-Tenant-Key", required = false) String apiKey,
+                                         @PathVariable String agentId, @RequestBody DeviceRequest req) {
+        return dispatch(apiKey, agentId, req, Command.BackupConfig::of);
     }
 
-    private ResponseEntity<String> dispatch(String agentId, DeviceRequest req,
-                                            java.util.function.Function<DeviceRef, Command> commandFactory) {
-        Optional<RemoteEngine> engine = registry.engine(agentId);
+    private ResponseEntity<String> dispatch(String apiKey, String agentId, DeviceRequest req,
+                                            Function<DeviceRef, Command> commandFactory) {
+        Optional<Tenant> tenant = tenants.tenantByApiKey(apiKey);
+        if (tenant.isEmpty()) {
+            return unauthorized();
+        }
+        Optional<RemoteEngine> engine = registry.engine(tenant.get().tenantId(), agentId);
         if (engine.isEmpty()) {
-            return ResponseEntity.status(404).contentType(MediaType.APPLICATION_JSON)
-                    .body(codec.toJson(new ApiError("agent_not_connected", agentId)));
+            // 404 whether the agent is offline OR belongs to another tenant — no cross-tenant leakage.
+            return status(404, new ApiError("agent_not_connected", agentId));
         }
         if (req == null || req.host() == null || req.host().isBlank()) {
-            return ResponseEntity.badRequest().contentType(MediaType.APPLICATION_JSON)
-                    .body(codec.toJson(new ApiError("bad_request", "host is required")));
+            return status(400, new ApiError("bad_request", "host is required"));
         }
         try {
             DeviceRef ref = DeviceRef.ssh(req.host().trim(), req.port() == null ? 22 : req.port());
@@ -71,13 +87,20 @@ public class GatewayController {
             return json(result);
         } catch (Exception e) {
             log.warn("dispatch to agent '{}' failed: {}", agentId, e.getMessage());
-            return ResponseEntity.status(502).contentType(MediaType.APPLICATION_JSON)
-                    .body(codec.toJson(new ApiError(e.getClass().getSimpleName(),
-                            e.getMessage() == null ? "" : e.getMessage())));
+            return status(502, new ApiError(e.getClass().getSimpleName(),
+                    e.getMessage() == null ? "" : e.getMessage()));
         }
     }
 
     private ResponseEntity<String> json(Object value) {
         return ResponseEntity.ok().contentType(MediaType.APPLICATION_JSON).body(codec.toJson(value));
+    }
+
+    private ResponseEntity<String> unauthorized() {
+        return status(401, new ApiError("unauthorized", "missing or invalid X-Tenant-Key"));
+    }
+
+    private ResponseEntity<String> status(int code, ApiError error) {
+        return ResponseEntity.status(code).contentType(MediaType.APPLICATION_JSON).body(codec.toJson(error));
     }
 }
