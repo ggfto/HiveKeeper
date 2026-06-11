@@ -10,6 +10,7 @@ import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
 import io.hivekeeper.core.api.Command;
 import io.hivekeeper.core.api.Event;
 import io.hivekeeper.core.api.Result;
+import io.hivekeeper.protocol.Frame;
 
 /**
  * JSON (de)serialization for the core {@link Command} / {@link Event} / {@link Result} DTOs. This is
@@ -34,12 +35,14 @@ public final class JsonCodec {
         mapper.addMixIn(Command.class, SealedMixin.class);
         mapper.addMixIn(Event.class, SealedMixin.class);
         mapper.addMixIn(Result.class, SealedMixin.class);
+        mapper.addMixIn(Frame.class, SealedMixin.class);
 
         // SIMPLE_NAME needs the candidate subtypes registered. Derive them from the sealed hierarchy
-        // so adding a new Command/Event/Result variant requires no change here.
+        // so adding a new Command/Event/Result/Frame variant requires no change here.
         registerSealedSubtypes(Command.class);
         registerSealedSubtypes(Event.class);
         registerSealedSubtypes(Result.class);
+        registerSealedSubtypes(Frame.class);
     }
 
     private void registerSealedSubtypes(Class<?> sealedBase) {

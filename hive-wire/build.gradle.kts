@@ -1,6 +1,7 @@
 dependencies {
-    // hive-wire owns ALL serialization of the core DTOs. hive-core never depends on Jackson.
+    // hive-wire owns ALL serialization of the core DTOs and the protocol frames.
     api(project(":hive-core"))
+    implementation(project(":hive-protocol"))
     implementation(libs.jackson.databind)
     implementation(libs.jackson.jsr310)
 
