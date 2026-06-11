@@ -6,6 +6,7 @@ picocli = "4.7.6"
 jackson = "2.18.2"
 slf4j = "2.0.16"
 junit = "5.11.4"
+javaWebsocket = "1.6.0"
 
 [libraries]
 # transport
@@ -16,6 +17,8 @@ jsch-mwiede = { module = "com.github.mwiede:jsch", version.ref = "jschMwiede" }
 jgit = { module = "org.eclipse.jgit:org.eclipse.jgit", version.ref = "jgit" }
 # cli
 picocli = { module = "info.picocli:picocli", version.ref = "picocli" }
+# agent websocket transport
+java-websocket = { module = "org.java-websocket:Java-WebSocket", version.ref = "javaWebsocket" }
 # wire (serialization lives ONLY in hive-wire; hive-core must not depend on jackson)
 jackson-databind = { module = "com.fasterxml.jackson.core:jackson-databind", version.ref = "jackson" }
 jackson-jsr310 = { module = "com.fasterxml.jackson.datatype:jackson-datatype-jsr310", version.ref = "jackson" }

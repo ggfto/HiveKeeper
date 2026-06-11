@@ -34,11 +34,15 @@ public final class AgentRuntime implements AutoCloseable {
         });
     }
 
-    /** Begins serving jobs and announces the agent to the gateway. */
+    /** Registers the job handler. Call once. */
     public void start() {
         channel.onFrame(this::onFrame);
+        log.info("agent '{}' serving jobs (protocol {})", agentId, Protocol.VERSION);
+    }
+
+    /** Announces this agent to the gateway. Call on every (re)connect so the gateway re-identifies it. */
+    public void announce() {
         channel.send(new Frame.Hello(agentId, Protocol.VERSION));
-        log.info("agent '{}' started (protocol {})", agentId, Protocol.VERSION);
     }
 
     private void onFrame(Frame frame) {

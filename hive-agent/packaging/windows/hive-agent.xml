@@ -1,0 +1,31 @@
+<!--
+  WinSW service definition for the HiveKeeper agent on Windows.
+
+  Install:
+    1. Build the agent dist:  gradlew :hive-agent:installDist
+    2. Copy hive-agent\build\install\hive-agent\  next to this file (or adjust <executable>).
+    3. Download WinSW (https://github.com/winsw/winsw), rename WinSW.exe -> hive-agent-service.exe,
+       and place it beside this hive-agent.xml.
+    4. Run:  hive-agent-service.exe install   then   hive-agent-service.exe start
+-->
+<service>
+  <id>hivekeeper-agent</id>
+  <name>HiveKeeper Agent</name>
+  <description>HiveKeeper on-prem agent — dials out to the gateway over WebSocket to manage local APs.</description>
+
+  <executable>%BASE%\hive-agent\bin\hive-agent.bat</executable>
+
+  <env name="HIVEKEEPER_GATEWAY_URL" value="wss://gateway.example.com/agent"/>
+  <env name="HIVEKEEPER_AGENT_ID" value="%COMPUTERNAME%"/>
+  <env name="HIVEKEEPER_DEFAULT_USER" value="admin"/>
+  <env name="HIVEKEEPER_DEFAULT_PASSWORD" value=""/>
+  <env name="HIVEKEEPER_BACKUP_DIR" value="%BASE%\data\backups"/>
+
+  <log mode="roll-by-size">
+    <sizeThreshold>10240</sizeThreshold>
+    <keepFiles>8</keepFiles>
+  </log>
+
+  <onfailure action="restart" delay="10 sec"/>
+  <startmode>Automatic</startmode>
+</service>

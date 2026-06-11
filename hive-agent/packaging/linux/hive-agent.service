@@ -1,0 +1,29 @@
+# systemd unit for the HiveKeeper agent.
+#
+# Install:
+#   gradlew :hive-agent:installDist
+#   sudo cp -r hive-agent/build/install/hive-agent /opt/hivekeeper/hive-agent
+#   sudo useradd --system --no-create-home hivekeeper || true
+#   sudo cp hive-agent/packaging/linux/hive-agent.service /etc/systemd/system/
+#   sudoedit /etc/systemd/system/hive-agent.service   # set the gateway URL + credentials
+#   sudo systemctl daemon-reload && sudo systemctl enable --now hive-agent
+
+[Unit]
+Description=HiveKeeper on-prem agent
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+Environment=HIVEKEEPER_GATEWAY_URL=wss://gateway.example.com/agent
+Environment=HIVEKEEPER_DEFAULT_USER=admin
+Environment=HIVEKEEPER_DEFAULT_PASSWORD=
+Environment=HIVEKEEPER_BACKUP_DIR=/var/lib/hivekeeper/backups
+ExecStart=/opt/hivekeeper/hive-agent/bin/hive-agent
+Restart=always
+RestartSec=10
+User=hivekeeper
+# The agent makes only OUTBOUND connections; no ports need opening.
+
+[Install]
+WantedBy=multi-user.target
