@@ -30,6 +30,8 @@ subprojects {
 
     tasks.withType<JavaCompile>().configureEach {
         options.encoding = "UTF-8"
+        // Retain method parameter names: needed by Spring MVC @RequestParam and good for Jackson.
+        options.compilerArgs.add("-parameters")
     }
 
     tasks.withType<Test>().configureEach {
