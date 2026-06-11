@@ -11,7 +11,7 @@ import picocli.CommandLine;
         mixinStandardHelpOptions = true,
         version = "HiveKeeper 0.1.0-SNAPSHOT",
         description = "Manage standalone Aerohive / Extreme HiveOS access points over SSH.",
-        subcommands = {InventoryCmd.class, BackupCmd.class, CaptureCmd.class})
+        subcommands = {InventoryCmd.class, BackupCmd.class, CaptureCmd.class, DiscoverCmd.class})
 public final class Main {
 
     public static void main(String[] args) {
