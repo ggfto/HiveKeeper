@@ -1,0 +1,27 @@
+[versions]
+sshj = "0.40.0"
+jschMwiede = "0.2.25"
+jgit = "7.3.0.202506031305-r"
+picocli = "4.7.6"
+jackson = "2.18.2"
+slf4j = "2.0.16"
+junit = "5.11.4"
+
+[libraries]
+# transport
+sshj = { module = "com.hierynomus:sshj", version.ref = "sshj" }
+# opt-in fallback transport for APs that negotiate legacy ciphers/KEX (not wired in v0.1)
+jsch-mwiede = { module = "com.github.mwiede:jsch", version.ref = "jschMwiede" }
+# git-backed config backup store
+jgit = { module = "org.eclipse.jgit:org.eclipse.jgit", version.ref = "jgit" }
+# cli
+picocli = { module = "info.picocli:picocli", version.ref = "picocli" }
+# wire (serialization lives ONLY in hive-wire; hive-core must not depend on jackson)
+jackson-databind = { module = "com.fasterxml.jackson.core:jackson-databind", version.ref = "jackson" }
+jackson-jsr310 = { module = "com.fasterxml.jackson.datatype:jackson-datatype-jsr310", version.ref = "jackson" }
+# logging
+slf4j-api = { module = "org.slf4j:slf4j-api", version.ref = "slf4j" }
+slf4j-simple = { module = "org.slf4j:slf4j-simple", version.ref = "slf4j" }
+# test
+junit-bom = { module = "org.junit:junit-bom", version.ref = "junit" }
+junit-jupiter = { module = "org.junit.jupiter:junit-jupiter" }

@@ -1,0 +1,3 @@
+MAC Address        IP Address     Channel  SSID      RSSI
+1c:36:bb:00:11:22  192.168.1.50   36       LabWifi   -52
+48:51:c5:aa:bb:cc  192.168.1.51   36       LabWifi   -61

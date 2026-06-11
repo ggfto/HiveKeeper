@@ -1,0 +1,32 @@
+# Gradle
+.gradle/
+build/
+# keep the wrapper jar (it is intentionally committed)
+!gradle/wrapper/gradle-wrapper.jar
+
+# IDE
+.idea/
+*.iml
+*.ipr
+*.iws
+.vscode/
+.settings/
+.classpath
+.project
+
+# OS / logs
+*.log
+.DS_Store
+Thumbs.db
+
+# tooling caches
+.code-review-graph/
+
+# Local secrets, keystores, and captured device data — never commit
+*.pem
+*.key
+*.p12
+*.jks
+secrets.properties
+hivekeeper-backups/
+captures/local/
