@@ -1,0 +1,48 @@
+{
+  "realm": "hivekeeper",
+  "enabled": true,
+  "sslRequired": "none",
+  "clients": [
+    {
+      "clientId": "hive-gateway",
+      "enabled": true,
+      "publicClient": true,
+      "standardFlowEnabled": true,
+      "directAccessGrantsEnabled": true,
+      "redirectUris": ["http://localhost:5173/*"],
+      "webOrigins": ["+"]
+    }
+  ],
+  "users": [
+    {
+      "id": "11111111-1111-1111-1111-111111111111",
+      "username": "owner",
+      "email": "owner@acme.test",
+      "emailVerified": true,
+      "firstName": "Olivia",
+      "lastName": "Owner",
+      "enabled": true,
+      "credentials": [{ "type": "password", "value": "owner", "temporary": false }]
+    },
+    {
+      "id": "22222222-2222-2222-2222-222222222222",
+      "username": "op",
+      "email": "op@acme.test",
+      "emailVerified": true,
+      "firstName": "Otto",
+      "lastName": "Operator",
+      "enabled": true,
+      "credentials": [{ "type": "password", "value": "op", "temporary": false }]
+    },
+    {
+      "id": "33333333-3333-3333-3333-333333333333",
+      "username": "view",
+      "email": "view@acme.test",
+      "emailVerified": true,
+      "firstName": "Vera",
+      "lastName": "Viewer",
+      "enabled": true,
+      "credentials": [{ "type": "password", "value": "view", "temporary": false }]
+    }
+  ]
+}
