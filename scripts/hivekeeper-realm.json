@@ -10,7 +10,8 @@
       "standardFlowEnabled": true,
       "directAccessGrantsEnabled": true,
       "redirectUris": ["http://localhost:5173/*"],
-      "webOrigins": ["+"]
+      "webOrigins": ["+"],
+      "attributes": { "post.logout.redirect.uris": "+" }
     }
   ],
   "users": [

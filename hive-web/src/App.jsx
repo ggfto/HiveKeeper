@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { login, logout, resolveUser } from './auth'
 
 const initialConn = { host: '', port: 22, user: 'admin', password: 'aerohive' }
 
@@ -89,6 +90,11 @@ export default function App() {
   const [hive, setHive] = useState({ name: '', password: '' })
   const [configOut, setConfigOut] = useState(null)
 
+  // OIDC identity (SSO sign-in: who you are + which organizations you belong to)
+  const [account, setAccount] = useState(null)   // the oidc User (access_token + profile claims)
+  const [me, setMe] = useState(null)             // GET /api/me { userId, email, name, organizations }
+  const [activeOrg, setActiveOrg] = useState('')
+
   const update = (k) => (e) => setConn({ ...conn, [k]: e.target.value })
 
   // -- direct (hive-server) ----------------------------------------------------
@@ -130,8 +136,33 @@ export default function App() {
   }
 
   // -- gateway (hive-gateway -> agent) ----------------------------------------
+  // Carries the tenant key (service-principal ops) AND, when signed in, the user's bearer token (used by
+  // /api/me today; per-user enforcement on the rest is the next phase).
   const gw = (path, opts = {}) =>
-    fetch('/gw' + path, { ...opts, headers: { ...(opts.headers || {}), 'X-Tenant-Key': tenantKey } })
+    fetch('/gw' + path, {
+      ...opts,
+      headers: {
+        ...(opts.headers || {}),
+        'X-Tenant-Key': tenantKey,
+        ...(account?.access_token ? { Authorization: `Bearer ${account.access_token}` } : {}),
+      },
+    })
+
+  // -- OIDC identity ----------------------------------------------------------
+  async function loadMe(user) {
+    try {
+      const res = await fetch('/gw/api/me', { headers: { Authorization: `Bearer ${user.access_token}` } })
+      if (!res.ok) return
+      const m = await res.json()
+      setMe(m)
+      if (m.organizations?.length) setActiveOrg(m.organizations[0].tenantId)
+    } catch { /* gateway may be running without the oidc profile; identity falls back to id-token claims */ }
+  }
+
+  function signOut() {
+    logout()
+    setAccount(null); setMe(null); setActiveOrg('')
+  }
 
   async function refreshAgents() {
     try {
@@ -214,6 +245,11 @@ export default function App() {
     writeConfig('reboot', {}, `Reboot ${conn.host}`)
   }
 
+  // resolve the OIDC session on load: complete an auth-code callback, or restore a stored session
+  useEffect(() => {
+    resolveUser().then((user) => { if (user) { setAccount(user); loadMe(user) } })
+  }, []) // eslint-disable-line
+
   // populate on load so the dashboard isn't empty
   useEffect(() => { refreshAgents() }, []) // eslint-disable-line
   // default the config target to the first agent once they load
@@ -228,6 +264,26 @@ export default function App() {
         <div className="modeswitch">
           <button className={mode === 'direct' ? 'on' : ''} onClick={() => setMode('direct')}>Direct (local server)</button>
           <button className={mode === 'gateway' ? 'on' : ''} onClick={() => setMode('gateway')}>Gateway (cloud + agent)</button>
+        </div>
+        <div className="account">
+          {account ? (
+            <>
+              <div className="who">
+                <strong>{me?.name || account.profile?.name || account.profile?.preferred_username || 'Signed in'}</strong>
+                <span className="muted">{me?.email || account.profile?.email}</span>
+              </div>
+              {(me?.organizations?.length > 0) && (
+                <select value={activeOrg} onChange={(e) => setActiveOrg(e.target.value)} title="Active organization">
+                  {me.organizations.map((o) => (
+                    <option key={o.tenantId} value={o.tenantId}>{o.tenantName}</option>
+                  ))}
+                </select>
+              )}
+              <button className="link" onClick={signOut}>Sign out</button>
+            </>
+          ) : (
+            <button onClick={login}>Sign in</button>
+          )}
         </div>
       </header>
       <p className="sub">

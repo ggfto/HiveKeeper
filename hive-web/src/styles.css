@@ -26,6 +26,14 @@ h1 { margin: 0; font-size: 1.6rem; }
 .modeswitch button { background: transparent; color: var(--muted); font-weight: 600; }
 .modeswitch button.on { background: var(--accent); color: #1a1206; }
 
+.account { display: flex; align-items: center; gap: .6rem; }
+.account .who { display: flex; flex-direction: column; line-height: 1.15; text-align: right; }
+.account .who span { font-size: .75rem; }
+.account select {
+  background: #0f1115; color: var(--text);
+  border: 1px solid var(--border); border-radius: 6px; padding: .35rem .5rem;
+}
+
 .row { display: flex; gap: .75rem; align-items: flex-end; }
 .row .field { flex: 1; }
 .muted { color: var(--muted); }
