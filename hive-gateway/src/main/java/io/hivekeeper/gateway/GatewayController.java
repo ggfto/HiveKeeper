@@ -45,10 +45,24 @@ public class GatewayController {
     private final JsonCodec codec = new JsonCodec();
     private final AgentRegistry registry;
     private final TenantStore tenants;
+    private final Optional<OperationLog> operationLog;
 
-    public GatewayController(AgentRegistry registry, TenantStore tenants) {
+    public GatewayController(AgentRegistry registry, TenantStore tenants, Optional<OperationLog> operationLog) {
         this.registry = registry;
         this.tenants = tenants;
+        this.operationLog = operationLog;
+    }
+
+    @GetMapping("/api/operations")
+    public ResponseEntity<String> operations(@RequestHeader(value = "X-Tenant-Key", required = false) String apiKey) {
+        Optional<Tenant> tenant = tenants.tenantByApiKey(apiKey);
+        if (tenant.isEmpty()) {
+            return unauthorized();
+        }
+        if (operationLog.isEmpty()) {
+            return json(java.util.List.of());  // no DB profile -> no audit log
+        }
+        return json(operationLog.get().list(tenant.get().tenantId()));
     }
 
     @GetMapping("/api/agents")
@@ -67,14 +81,14 @@ public class GatewayController {
     public Callable<ResponseEntity<String>> inventory(
             @RequestHeader(value = "X-Tenant-Key", required = false) String apiKey,
             @PathVariable String agentId, @RequestBody DeviceRequest req) {
-        return () -> dispatch(apiKey, agentId, req, Command.Inventory::of);
+        return () -> dispatch(apiKey, agentId, "inventory", req, Command.Inventory::of);
     }
 
     @PostMapping("/api/agents/{agentId}/backup")
     public Callable<ResponseEntity<String>> backup(
             @RequestHeader(value = "X-Tenant-Key", required = false) String apiKey,
             @PathVariable String agentId, @RequestBody DeviceRequest req) {
-        return () -> dispatch(apiKey, agentId, req, Command.BackupConfig::of);
+        return () -> dispatch(apiKey, agentId, "backup", req, Command.BackupConfig::of);
     }
 
     @PostMapping("/api/agents/{agentId}/discover")
@@ -100,14 +114,17 @@ public class GatewayController {
             Command cmd = Command.Discover.of(req.cidr().trim(),
                     req.port() == null ? 22 : req.port(),
                     req.timeoutMillis() == null ? 800 : req.timeoutMillis());
-            return json(engine.get().execute(cmd, EventSink.NOOP));
+            Result result = engine.get().execute(cmd, EventSink.NOOP);
+            record(tenant.get().tenantId(), agentId, "discover", req.cidr().trim(),
+                    result.getClass().getSimpleName());
+            return json(result);
         } catch (Exception e) {
             log.warn("discover via agent '{}' failed: {}", agentId, e.getMessage());
             return status(502, new ApiError(e.getClass().getSimpleName(), e.getMessage() == null ? "" : e.getMessage()));
         }
     }
 
-    private ResponseEntity<String> dispatch(String apiKey, String agentId, DeviceRequest req,
+    private ResponseEntity<String> dispatch(String apiKey, String agentId, String opType, DeviceRequest req,
                                             Function<DeviceRef, Command> commandFactory) {
         Optional<Tenant> tenant = tenants.tenantByApiKey(apiKey);
         if (tenant.isEmpty()) {
@@ -124,12 +141,17 @@ public class GatewayController {
         try {
             DeviceRef ref = DeviceRef.ssh(req.host().trim(), req.port() == null ? 22 : req.port());
             Result result = engine.get().execute(commandFactory.apply(ref), EventSink.NOOP);
+            record(tenant.get().tenantId(), agentId, opType, req.host().trim(), result.getClass().getSimpleName());
             return json(result);
         } catch (Exception e) {
             log.warn("dispatch to agent '{}' failed: {}", agentId, e.getMessage());
             return status(502, new ApiError(e.getClass().getSimpleName(),
                     e.getMessage() == null ? "" : e.getMessage()));
         }
+    }
+
+    private void record(String tenantId, String agentId, String opType, String host, String summary) {
+        operationLog.ifPresent(log -> log.record(tenantId, agentId, opType, host, summary));
     }
 
     private ResponseEntity<String> json(Object value) {

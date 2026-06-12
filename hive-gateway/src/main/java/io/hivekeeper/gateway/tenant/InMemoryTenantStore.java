@@ -1,5 +1,6 @@
 package io.hivekeeper.gateway.tenant;
 
+import org.springframework.context.annotation.Profile;
 import org.springframework.stereotype.Component;
 import java.util.List;
 import java.util.Map;
@@ -8,11 +9,12 @@ import java.util.function.Function;
 import java.util.stream.Collectors;
 
 /**
- * v1 in-memory tenant store, seeded with two demo tenants and one enrolled agent. Replace with a
- * Postgres-backed store (shared-schema + tenant_id + RLS) for production — callers depend only on
- * {@link TenantStore}.
+ * In-memory tenant store (the default when no database is configured), seeded with two demo tenants
+ * and one enrolled agent. The {@code postgres} profile swaps in {@code PostgresTenantStore} — callers
+ * depend only on {@link TenantStore}.
  */
 @Component
+@Profile("!postgres")
 public class InMemoryTenantStore implements TenantStore {
 
     private final Map<String, Tenant> byId;
