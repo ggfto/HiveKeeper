@@ -1,27 +1,25 @@
 package io.hivekeeper.gateway.fleet;
 
+import io.hivekeeper.gateway.access.AccessGuard;
 import io.hivekeeper.gateway.access.AccessService;
+import io.hivekeeper.gateway.access.Principal;
 import io.hivekeeper.gateway.access.ResourceScope;
 import io.hivekeeper.gateway.access.Role;
-import io.hivekeeper.gateway.tenant.Tenant;
-import io.hivekeeper.gateway.tenant.TenantStore;
 import org.springframework.context.annotation.Profile;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
-import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 import java.util.Optional;
 
 /**
- * The organization's fleet + access API, scoped by tenant via {@code X-Tenant-Key}. In this phase the API
- * key is a service principal acting as organization owner, so these endpoints are reachable with a valid
- * key; per-user enforcement (the {@link AccessService} resolver applied to the caller's identity) arrives
- * with OIDC login. The {@code /api/access/effective} endpoint already exercises the resolver against any
- * seeded user, so the scoped-role logic is verifiable today. Only present under the {@code postgres} profile.
+ * The organization's fleet + access API. Every endpoint resolves the caller via {@link AccessGuard} (a
+ * user's bearer JWT + active org, or the {@code X-Tenant-Key} service principal) and requires a scoped role:
+ * reads need {@code viewer}, structural changes need {@code admin}. Cross-tenant writes are additionally
+ * impossible at the database (composite FKs). Only present under the {@code postgres} profile.
  */
 @RestController
 @Profile("postgres")
@@ -49,139 +47,136 @@ public class FleetController {
     public record ApiError(String error, String detail) {
     }
 
-    private final TenantStore tenants;
+    private final AccessGuard guard;
     private final FleetService fleet;
     private final AccessService access;
 
-    public FleetController(TenantStore tenants, FleetService fleet, AccessService access) {
-        this.tenants = tenants;
+    public FleetController(AccessGuard guard, FleetService fleet, AccessService access) {
+        this.guard = guard;
         this.fleet = fleet;
         this.access = access;
     }
 
     @GetMapping("/api/sites")
-    public ResponseEntity<?> listSites(@RequestHeader(value = "X-Tenant-Key", required = false) String apiKey) {
-        return withTenant(apiKey, tenant -> ResponseEntity.ok(fleet.listSites(tenant)));
+    public ResponseEntity<?> listSites() {
+        Principal p = guard.authenticate();
+        guard.require(p, Role.VIEWER, ResourceScope.org());
+        return ResponseEntity.ok(fleet.listSites(p.tenantId()));
     }
 
     @PostMapping("/api/sites")
-    public ResponseEntity<?> createSite(@RequestHeader(value = "X-Tenant-Key", required = false) String apiKey,
-                                        @RequestBody CreateSite req) {
-        return withTenant(apiKey, tenant -> {
-            if (isBlank(req.name())) {
-                return badRequest("name is required");
-            }
-            return ResponseEntity.ok(new IdResponse(fleet.createSite(tenant, req.name().trim())));
-        });
+    public ResponseEntity<?> createSite(@RequestBody CreateSite req) {
+        Principal p = guard.authenticate();
+        guard.require(p, Role.ADMIN, ResourceScope.org());
+        if (isBlank(req.name())) {
+            return badRequest("name is required");
+        }
+        return ResponseEntity.ok(new IdResponse(fleet.createSite(p.tenantId(), req.name().trim())));
     }
 
     @GetMapping("/api/groups")
-    public ResponseEntity<?> listGroups(@RequestHeader(value = "X-Tenant-Key", required = false) String apiKey) {
-        return withTenant(apiKey, tenant -> ResponseEntity.ok(fleet.listGroups(tenant)));
+    public ResponseEntity<?> listGroups() {
+        Principal p = guard.authenticate();
+        guard.require(p, Role.VIEWER, ResourceScope.org());
+        return ResponseEntity.ok(fleet.listGroups(p.tenantId()));
     }
 
     @PostMapping("/api/groups")
-    public ResponseEntity<?> createGroup(@RequestHeader(value = "X-Tenant-Key", required = false) String apiKey,
-                                         @RequestBody CreateGroup req) {
-        return withTenant(apiKey, tenant -> {
-            if (isBlank(req.name())) {
-                return badRequest("name is required");
-            }
-            // siteId optional: null => a cross-site tag group.
-            String siteId = isBlank(req.siteId()) ? null : req.siteId().trim();
-            return ResponseEntity.ok(new IdResponse(fleet.createGroup(tenant, req.name().trim(), siteId)));
-        });
+    public ResponseEntity<?> createGroup(@RequestBody CreateGroup req) {
+        Principal p = guard.authenticate();
+        if (isBlank(req.name())) {
+            return badRequest("name is required");
+        }
+        // A site-pinned group is admin-on-that-site; a cross-site tag group is an org-level change.
+        String siteId = isBlank(req.siteId()) ? null : req.siteId().trim();
+        guard.require(p, Role.ADMIN, siteId == null ? ResourceScope.org() : ResourceScope.site(siteId));
+        return ResponseEntity.ok(new IdResponse(fleet.createGroup(p.tenantId(), req.name().trim(), siteId)));
     }
 
     @GetMapping("/api/devices")
-    public ResponseEntity<?> listDevices(@RequestHeader(value = "X-Tenant-Key", required = false) String apiKey) {
-        return withTenant(apiKey, tenant -> ResponseEntity.ok(fleet.listDevices(tenant)));
+    public ResponseEntity<?> listDevices() {
+        Principal p = guard.authenticate();
+        guard.require(p, Role.VIEWER, ResourceScope.org());
+        return ResponseEntity.ok(fleet.listDevices(p.tenantId()));
     }
 
     @PostMapping("/api/devices")
-    public ResponseEntity<?> registerDevice(@RequestHeader(value = "X-Tenant-Key", required = false) String apiKey,
-                                            @RequestBody RegisterDevice req) {
-        return withTenant(apiKey, tenant -> {
-            if (isBlank(req.serial())) {
-                return badRequest("serial is required (it is the device's stable identity)");
-            }
-            String id = fleet.registerDevice(tenant, req.serial().trim(), req.model(), req.label(),
-                    req.mgmtIp(), isBlank(req.siteId()) ? null : req.siteId().trim(),
-                    isBlank(req.agentId()) ? null : req.agentId().trim());
-            return ResponseEntity.ok(new IdResponse(id));
-        });
+    public ResponseEntity<?> registerDevice(@RequestBody RegisterDevice req) {
+        Principal p = guard.authenticate();
+        if (isBlank(req.serial())) {
+            return badRequest("serial is required (it is the device's stable identity)");
+        }
+        String siteId = isBlank(req.siteId()) ? null : req.siteId().trim();
+        guard.require(p, Role.ADMIN, siteId == null ? ResourceScope.org() : ResourceScope.site(siteId));
+        String id = fleet.registerDevice(p.tenantId(), req.serial().trim(), req.model(), req.label(),
+                req.mgmtIp(), siteId, isBlank(req.agentId()) ? null : req.agentId().trim());
+        return ResponseEntity.ok(new IdResponse(id));
     }
 
     @PostMapping("/api/devices/{deviceId}/groups")
-    public ResponseEntity<?> tagDevice(@RequestHeader(value = "X-Tenant-Key", required = false) String apiKey,
-                                       @PathVariable String deviceId, @RequestBody TagRequest req) {
-        return withTenant(apiKey, tenant -> {
-            if (isBlank(req.groupId())) {
-                return badRequest("groupId is required");
-            }
-            fleet.tagDevice(tenant, deviceId, req.groupId().trim());
-            return ResponseEntity.ok().build();
-        });
+    public ResponseEntity<?> tagDevice(@PathVariable String deviceId, @RequestBody TagRequest req) {
+        Principal p = guard.authenticate();
+        if (isBlank(req.groupId())) {
+            return badRequest("groupId is required");
+        }
+        Optional<ResourceScope> deviceScope = fleet.deviceScope(p.tenantId(), deviceId);
+        if (deviceScope.isEmpty()) {
+            return status404("device_not_found", deviceId);
+        }
+        Optional<ResourceScope> groupScope = fleet.groupScope(p.tenantId(), req.groupId().trim());
+        if (groupScope.isEmpty()) {
+            return status404("group_not_found", req.groupId());
+        }
+        // Tagging links a device into a group — it touches BOTH, so require admin on EACH. Authorizing only
+        // the device would let a site-scoped admin pull a device into a group on a site they don't control.
+        guard.require(p, Role.ADMIN, deviceScope.get());
+        guard.require(p, Role.ADMIN, groupScope.get());
+        fleet.tagDevice(p.tenantId(), deviceId, req.groupId().trim());
+        return ResponseEntity.ok().build();
     }
 
     /**
-     * Resolves a user's effective role on a resource, demonstrating the scoped-role engine over real data.
-     * Provide exactly one of deviceId / groupId / siteId, or none for the organization scope.
+     * Resolves a user's effective role on a resource (admin-only — inspecting access). Provide exactly one
+     * of deviceId / groupId / siteId, or none for the organization scope.
      */
     @GetMapping("/api/access/effective")
-    public ResponseEntity<?> effective(@RequestHeader(value = "X-Tenant-Key", required = false) String apiKey,
-                                       @RequestParam String userId,
+    public ResponseEntity<?> effective(@RequestParam String userId,
                                        @RequestParam(required = false) String siteId,
                                        @RequestParam(required = false) String groupId,
                                        @RequestParam(required = false) String deviceId) {
-        return withTenant(apiKey, tenant -> {
-            ResourceScope scope;
-            String kind;
-            String id;
-            if (!isBlank(deviceId)) {
-                Optional<ResourceScope> deviceScope = fleet.deviceScope(tenant, deviceId.trim());
-                if (deviceScope.isEmpty()) {
-                    return status404("device_not_found", deviceId);
-                }
-                scope = deviceScope.get();
-                kind = "device";
-                id = deviceId.trim();
-            } else if (!isBlank(groupId)) {
-                // Derive the group's site from the DB (not the caller) so a SITE grant covers a site-pinned
-                // group correctly.
-                Optional<ResourceScope> groupScope = fleet.groupScope(tenant, groupId.trim());
-                if (groupScope.isEmpty()) {
-                    return status404("group_not_found", groupId);
-                }
-                scope = groupScope.get();
-                kind = "group";
-                id = groupId.trim();
-            } else if (!isBlank(siteId)) {
-                scope = ResourceScope.site(siteId.trim());
-                kind = "site";
-                id = siteId.trim();
-            } else {
-                scope = ResourceScope.org();
-                kind = "org";
-                id = tenant;
+        Principal p = guard.authenticate();
+        guard.require(p, Role.ADMIN, ResourceScope.org());
+        String tenant = p.tenantId();
+        ResourceScope scope;
+        String kind;
+        String id;
+        if (!isBlank(deviceId)) {
+            Optional<ResourceScope> deviceScope = fleet.deviceScope(tenant, deviceId.trim());
+            if (deviceScope.isEmpty()) {
+                return status404("device_not_found", deviceId);
             }
-            String role = access.effectiveRole(tenant, userId, scope).map(Role::name).orElse(null);
-            return ResponseEntity.ok(new EffectiveResponse(userId, kind, id, role));
-        });
-    }
-
-    // -- helpers ----------------------------------------------------------------
-
-    private interface TenantAction {
-        ResponseEntity<?> run(String tenantId);
-    }
-
-    private ResponseEntity<?> withTenant(String apiKey, TenantAction action) {
-        Optional<Tenant> tenant = tenants.tenantByApiKey(apiKey);
-        if (tenant.isEmpty()) {
-            return ResponseEntity.status(401).body(new ApiError("unauthorized", "missing or invalid X-Tenant-Key"));
+            scope = deviceScope.get();
+            kind = "device";
+            id = deviceId.trim();
+        } else if (!isBlank(groupId)) {
+            Optional<ResourceScope> groupScope = fleet.groupScope(tenant, groupId.trim());
+            if (groupScope.isEmpty()) {
+                return status404("group_not_found", groupId);
+            }
+            scope = groupScope.get();
+            kind = "group";
+            id = groupId.trim();
+        } else if (!isBlank(siteId)) {
+            scope = ResourceScope.site(siteId.trim());
+            kind = "site";
+            id = siteId.trim();
+        } else {
+            scope = ResourceScope.org();
+            kind = "org";
+            id = tenant;
         }
-        return action.run(tenant.get().tenantId());
+        String role = access.effectiveRole(tenant, userId, scope).map(Role::name).orElse(null);
+        return ResponseEntity.ok(new EffectiveResponse(userId, kind, id, role));
     }
 
     private static ResponseEntity<?> badRequest(String detail) {

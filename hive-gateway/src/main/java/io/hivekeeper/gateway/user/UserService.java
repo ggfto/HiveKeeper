@@ -2,6 +2,7 @@ package io.hivekeeper.gateway.user;
 
 import org.springframework.context.annotation.Profile;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import java.util.List;
@@ -49,5 +50,34 @@ public class UserService {
                 (rs, n) -> new Membership(rs.getString("tenant_id"), rs.getString("tenant_name"),
                         rs.getString("status")),
                 userId);
+    }
+
+    /** Returns the user id for a validated token, provisioning the user on first use. Read-mostly: a SELECT
+     *  on the common (already-provisioned) path, an insert only on the very first request. */
+    @Transactional
+    public String resolveOrProvision(Jwt jwt) {
+        String issuer = String.valueOf(jwt.getIssuer());
+        String subject = jwt.getSubject();
+        List<String> existing = jdbc.queryForList(
+                "select user_id from app_user where oidc_issuer = ? and oidc_subject = ?",
+                String.class, issuer, subject);
+        if (!existing.isEmpty()) {
+            return existing.get(0);
+        }
+        String name = jwt.getClaimAsString("name");
+        if (name == null || name.isBlank()) {
+            name = jwt.getClaimAsString("preferred_username");
+        }
+        return provision(issuer, subject, jwt.getClaimAsString("email"), name).userId();
+    }
+
+    /** Whether the user is an ACTIVE member of the organization. Uses the SECURITY DEFINER lookup so no
+     *  per-tenant context juggling is needed. */
+    @Transactional(readOnly = true)
+    public boolean isMember(String tenantId, String userId) {
+        Integer n = jdbc.queryForObject(
+                "select count(*) from user_memberships(?) where tenant_id = ? and status = 'active'",
+                Integer.class, userId, tenantId);
+        return n != null && n > 0;
     }
 }

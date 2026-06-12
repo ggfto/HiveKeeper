@@ -12,7 +12,10 @@ import com.sun.net.httpserver.HttpServer;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
+import org.springframework.security.oauth2.core.DelegatingOAuth2TokenValidator;
 import org.springframework.security.oauth2.jwt.Jwt;
+import org.springframework.security.oauth2.jwt.JwtClaimNames;
+import org.springframework.security.oauth2.jwt.JwtClaimValidator;
 import org.springframework.security.oauth2.jwt.JwtException;
 import org.springframework.security.oauth2.jwt.JwtValidators;
 import org.springframework.security.oauth2.jwt.NimbusJwtDecoder;
@@ -57,7 +60,10 @@ class JwtDecoderTest {
 
         String jwkSetUri = "http://127.0.0.1:" + jwks.getAddress().getPort() + "/certs";
         decoder = NimbusJwtDecoder.withJwkSetUri(jwkSetUri).build();
-        decoder.setJwtValidator(JwtValidators.createDefaultWithIssuer(ISSUER));
+        // Mirror OidcSecurityConfig.jwtDecoder exactly: default validators + a required non-blank subject.
+        decoder.setJwtValidator(new DelegatingOAuth2TokenValidator<>(
+                JwtValidators.createDefaultWithIssuer(ISSUER),
+                new JwtClaimValidator<String>(JwtClaimNames.SUB, sub -> sub != null && !sub.isBlank())));
     }
 
     @AfterAll
@@ -100,6 +106,18 @@ class JwtDecoderTest {
     void rejectsATokenSignedByAnUnknownKey() throws Exception {
         String t = token(otherKey, ISSUER, Instant.now().plusSeconds(300));
         assertThrows(JwtException.class, () -> decoder.decode(t));
+    }
+
+    @Test
+    void rejectsATokenWithNoSubject() throws Exception {
+        // Identity keys on the subject, so a subjectless (but validly-signed) token must be rejected here,
+        // not surface as a 500 during provisioning.
+        JWTClaimsSet claims = new JWTClaimsSet.Builder()
+                .issuer(ISSUER).expirationTime(Date.from(Instant.now().plusSeconds(300))).build();
+        SignedJWT jwt = new SignedJWT(
+                new JWSHeader.Builder(JWSAlgorithm.RS256).keyID(signingKey.getKeyID()).build(), claims);
+        jwt.sign(new RSASSASigner(signingKey));
+        assertThrows(JwtException.class, () -> decoder.decode(jwt.serialize()));
     }
 
     @Test
