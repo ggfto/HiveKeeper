@@ -29,3 +29,8 @@ GRANT USAGE ON SCHEMA public TO hivekeeper_app;
 
 Write-Host 'Ready: localhost:5433  db=hivekeeper  app=hivekeeper_app/app  admin=postgres/postgres' -ForegroundColor Green
 Write-Host 'Start the gateway with:  $env:SPRING_PROFILES_ACTIVE = "postgres"' -ForegroundColor Green
+Write-Host 'Job secrets are encrypted at rest, and the gateway refuses to start without a key.' -ForegroundColor Yellow
+Write-Host 'For local use, EITHER set a real key (recommended):' -ForegroundColor Yellow
+Write-Host '  $env:HIVEKEEPER_CRYPTO_KEY = [Convert]::ToBase64String((1..32 | % {Get-Random -Max 256}))' -ForegroundColor Yellow
+Write-Host 'OR opt into the built-in INSECURE dev key (never in prod):' -ForegroundColor Yellow
+Write-Host '  $env:HIVEKEEPER_CRYPTO_ALLOW_INSECURE_DEV_KEY = "true"' -ForegroundColor Yellow

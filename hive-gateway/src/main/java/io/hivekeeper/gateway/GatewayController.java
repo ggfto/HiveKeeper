@@ -6,6 +6,7 @@ import io.hivekeeper.core.api.Result;
 import io.hivekeeper.core.model.DeviceRef;
 import io.hivekeeper.core.model.HiveSpec;
 import io.hivekeeper.core.model.SsidSpec;
+import io.hivekeeper.gateway.crypto.Secrets;
 import io.hivekeeper.gateway.tenant.Tenant;
 import io.hivekeeper.gateway.tenant.TenantStore;
 import io.hivekeeper.protocol.RemoteEngine;
@@ -54,8 +55,10 @@ public class GatewayController {
     public record HiveRequest(String host, Integer port, String name, String password, String boundInterface) {
     }
 
-    /** Submit a durable job: {@code type} is inventory|backup|discover, with host (or cidr). */
-    public record JobRequest(String type, String host, String cidr, Integer port) {
+    /** Submit a durable job. {@code type} is inventory|backup|discover|configure-ssid|configure-hive;
+     *  the write types carry the secret fields, which are encrypted at rest by the {@link JobGateway}. */
+    public record JobRequest(String type, String host, String cidr, Integer port,
+                             String name, String psk, Integer vlan, boolean remove, String password) {
     }
 
     public record JobSubmitted(String jobId, String status) {
@@ -115,7 +118,7 @@ public class GatewayController {
         if (jobGateway.isEmpty()) {
             return status(501, new ApiError("not_supported", "durable jobs require the 'postgres' profile"));
         }
-        return jobGateway.get().get(tenant.get().tenantId(), jobId)
+        return jobGateway.get().view(tenant.get().tenantId(), jobId)
                 .map(this::json)
                 .orElseGet(() -> status(404, new ApiError("job_not_found", jobId)));
     }
@@ -126,6 +129,10 @@ public class GatewayController {
             case "inventory" -> Command.Inventory.of(DeviceRef.ssh(requireHost(req), port));
             case "backup" -> Command.BackupConfig.of(DeviceRef.ssh(requireHost(req), port));
             case "discover" -> Command.Discover.of(requireCidr(req), port, 800);
+            case "configure-ssid" -> Command.ConfigureSsid.of(DeviceRef.ssh(requireHost(req), port),
+                    req.remove() ? SsidSpec.removal(req.name()) : SsidSpec.create(req.name(), req.psk(), req.vlan()));
+            case "configure-hive" -> Command.ConfigureHive.of(DeviceRef.ssh(requireHost(req), port),
+                    new HiveSpec(req.name(), req.password(), null));
             default -> throw new IllegalArgumentException("unknown job type: " + req.type());
         };
     }
@@ -335,7 +342,8 @@ public class GatewayController {
             DeviceRef ref = DeviceRef.ssh(req.host().trim(), req.port() == null ? 22 : req.port());
             Result result = engine.get().execute(commandFactory.apply(ref), EventSink.NOOP);
             record(tenant.get().tenantId(), agentId, opType, req.host().trim(), result.getClass().getSimpleName());
-            return json(result);
+            // A config-write result echoes the applied CLI lines; mask secrets before they reach the browser.
+            return json(Secrets.redactResult(result));
         } catch (Exception e) {
             log.warn("dispatch to agent '{}' failed: {}", agentId, e.getMessage());
             return status(502, new ApiError(e.getClass().getSimpleName(),
