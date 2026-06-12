@@ -240,10 +240,17 @@ export default function App() {
         <section className="panel">
           <div className="row">
             <Field label="Tenant key" value={tenantKey} onChange={(e) => setTenantKey(e.target.value)} placeholder="acme-key" />
-            <Field label="Scan CIDR" value={cidr} onChange={(e) => setCidr(e.target.value)} placeholder="192.168.1.0/24" />
             <button onClick={refreshAgents} disabled={busy}>Refresh agents</button>
           </div>
+          <div className="grid">
+            <Field label="Target AP host / IP" value={conn.host} onChange={update('host')} placeholder="192.168.1.101" />
+            <Field label="Port" type="number" value={conn.port} onChange={update('port')} />
+            <Field label="Scan CIDR" value={cidr} onChange={(e) => setCidr(e.target.value)} placeholder="192.168.1.0/24" />
+          </div>
           <h3>Agents {agents == null ? '(gateway offline?)' : `(${agents.length})`}</h3>
+          {!conn.host && agents?.length > 0 && (
+            <p className="muted">Enter the target AP host above to enable inventory/backup (discover scans the agent's own LAN and needs no host).</p>
+          )}
           <ul className="events">
             {agents?.map((a) => (
               <li key={a}>
@@ -258,29 +265,26 @@ export default function App() {
             ))}
             {agents != null && agents.length === 0 && <li className="muted">no agents for this tenant (try acme-key, and start the agent)</li>}
           </ul>
+          {status && <p className="status">{status}</p>}
         </section>
       )}
 
-      <section className="panel">
-        <div className="grid">
-          <Field label="Host / IP" value={conn.host} onChange={update('host')} placeholder="192.168.1.101" />
-          <Field label="Port" type="number" value={conn.port} onChange={update('port')} />
-          {mode === 'direct' && <Field label="User" value={conn.user} onChange={update('user')} />}
-          {mode === 'direct' && <Field label="Password" type="password" value={conn.password} onChange={update('password')} />}
-        </div>
-        <div className="actions">
-          {mode === 'direct' ? (
-            <>
-              <button onClick={runInventoryDirect} disabled={busy || !conn.host}>Inventory</button>
-              <button onClick={runBackupDirect} disabled={busy || !conn.host}>Backup</button>
-              <button onClick={runDiscover} disabled={busy}>Discover LAN</button>
-            </>
-          ) : (
-            <span className="muted">Pick an agent above to inventory/backup this host through it.</span>
-          )}
-        </div>
-        {status && <p className="status">{status}</p>}
-      </section>
+      {mode === 'direct' && (
+        <section className="panel">
+          <div className="grid">
+            <Field label="Host / IP" value={conn.host} onChange={update('host')} placeholder="192.168.1.101" />
+            <Field label="Port" type="number" value={conn.port} onChange={update('port')} />
+            <Field label="User" value={conn.user} onChange={update('user')} />
+            <Field label="Password" type="password" value={conn.password} onChange={update('password')} />
+          </div>
+          <div className="actions">
+            <button onClick={runInventoryDirect} disabled={busy || !conn.host}>Inventory</button>
+            <button onClick={runBackupDirect} disabled={busy || !conn.host}>Backup</button>
+            <button onClick={runDiscover} disabled={busy}>Discover LAN</button>
+          </div>
+          {status && <p className="status">{status}</p>}
+        </section>
+      )}
 
       {mode === 'gateway' && (
         <section className="panel">
@@ -333,6 +337,7 @@ export default function App() {
               </ul>
             </>
           )}
+          {status && <p className="status">{status}</p>}
         </section>
       )}
 
