@@ -164,6 +164,21 @@ export default function App() {
     } catch (e) { setStatus(`Request failed: ${e.message}`) } finally { setBusy(false) }
   }
 
+  async function dispatchInventoryStream(agentId) {
+    setBusy(true); setEvents([]); setDevice(null); setStatus(`inventory via ${agentId}…`)
+    try {
+      const res = await gw(`/api/agents/${agentId}/inventory/stream`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ host: conn.host, port: Number(conn.port) })
+      })
+      await consumeSse(res, {
+        onEvent: (ev) => setEvents((p) => [...p, ev]),
+        onResult: (r) => { setDevice(r.device); setStatus('Done (via agent, live).') },
+        onError: (err) => setStatus(`Error: ${err.error} — ${err.detail || ''}`)
+      })
+    } catch (e) { setStatus(`Request failed: ${e.message}`) } finally { setBusy(false) }
+  }
+
   // populate on load so the dashboard isn't empty
   useEffect(() => { refreshAgents() }, []) // eslint-disable-line
 
@@ -195,7 +210,7 @@ export default function App() {
               <li key={a}>
                 <strong>{a}</strong>
                 {' '}
-                <button className="link" onClick={() => dispatch(a, 'inventory')} disabled={busy || !conn.host}>inventory</button>
+                <button className="link" onClick={() => dispatchInventoryStream(a)} disabled={busy || !conn.host}>inventory</button>
                 {' · '}
                 <button className="link" onClick={() => dispatch(a, 'backup')} disabled={busy || !conn.host}>backup</button>
                 {' · '}

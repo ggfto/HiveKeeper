@@ -8,6 +8,7 @@ import io.hivekeeper.gateway.tenant.Tenant;
 import io.hivekeeper.gateway.tenant.TenantStore;
 import io.hivekeeper.protocol.RemoteEngine;
 import io.hivekeeper.wire.JsonCodec;
+import jakarta.annotation.PreDestroy;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
@@ -17,8 +18,12 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
+import java.io.IOException;
 import java.util.Optional;
 import java.util.concurrent.Callable;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 import java.util.function.Function;
 
 /**
@@ -46,11 +51,76 @@ public class GatewayController {
     private final AgentRegistry registry;
     private final TenantStore tenants;
     private final Optional<OperationLog> operationLog;
+    private final ExecutorService sseExecutor = Executors.newFixedThreadPool(8, runnable -> {
+        Thread thread = new Thread(runnable, "gw-sse");
+        thread.setDaemon(true);
+        return thread;
+    });
 
     public GatewayController(AgentRegistry registry, TenantStore tenants, Optional<OperationLog> operationLog) {
         this.registry = registry;
         this.tenants = tenants;
         this.operationLog = operationLog;
+    }
+
+    @PreDestroy
+    void shutdown() {
+        sseExecutor.shutdownNow();
+    }
+
+    /** Live inventory: streams the agent's progress events as SSE, then the final result. The agent's
+     *  events reach the RemoteEngine's EventSink as they arrive, so the browser sees real progress. */
+    @PostMapping("/api/agents/{agentId}/inventory/stream")
+    public SseEmitter inventoryStream(@RequestHeader(value = "X-Tenant-Key", required = false) String apiKey,
+                                      @PathVariable String agentId, @RequestBody DeviceRequest req) {
+        SseEmitter emitter = new SseEmitter(120_000L);
+
+        Optional<Tenant> tenant = tenants.tenantByApiKey(apiKey);
+        if (tenant.isEmpty()) {
+            return completeWithError(emitter, new ApiError("unauthorized", "missing or invalid X-Tenant-Key"));
+        }
+        Optional<RemoteEngine> engine = registry.engine(tenant.get().tenantId(), agentId);
+        if (engine.isEmpty()) {
+            return completeWithError(emitter, new ApiError("agent_not_connected", agentId));
+        }
+        if (req == null || req.host() == null || req.host().isBlank()) {
+            return completeWithError(emitter, new ApiError("bad_request", "host is required"));
+        }
+
+        String tenantId = tenant.get().tenantId();
+        String host = req.host().trim();
+        int port = req.port() == null ? 22 : req.port();
+        sseExecutor.submit(() -> {
+            try {
+                EventSink sink = event -> sendSse(emitter, "event", codec.toJson(event));
+                Result result = engine.get().execute(Command.Inventory.of(DeviceRef.ssh(host, port)), sink);
+                record(tenantId, agentId, "inventory", host, result.getClass().getSimpleName());
+                sendSse(emitter, "result", codec.toJson(result));
+                emitter.complete();
+            } catch (Exception e) {
+                log.warn("inventory stream via '{}' failed: {}", agentId, e.getMessage());
+                sendSse(emitter, "error", codec.toJson(
+                        new ApiError(e.getClass().getSimpleName(), e.getMessage() == null ? "" : e.getMessage())));
+                emitter.completeWithError(e);
+            }
+        });
+        return emitter;
+    }
+
+    private SseEmitter completeWithError(SseEmitter emitter, ApiError error) {
+        sendSse(emitter, "error", codec.toJson(error));
+        emitter.complete();
+        return emitter;
+    }
+
+    private void sendSse(SseEmitter emitter, String name, String json) {
+        try {
+            synchronized (emitter) {
+                emitter.send(SseEmitter.event().name(name).data(json, MediaType.APPLICATION_JSON));
+            }
+        } catch (IOException e) {
+            log.debug("sse send failed: {}", e.getMessage());
+        }
     }
 
     @GetMapping("/api/operations")
