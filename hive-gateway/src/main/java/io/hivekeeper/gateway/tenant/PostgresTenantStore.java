@@ -63,6 +63,15 @@ public class PostgresTenantStore implements TenantStore {
                 "select tenant_id, name, operator_api_key from tenant where tenant_id = ?", TENANT, tenantId));
     }
 
+    @Override
+    public Optional<String> agentSiteId(String agentId) {
+        if (agentId == null) {
+            return Optional.empty();
+        }
+        return jdbc.queryForList("select site_id from agent_enrollment where agent_id = ?", String.class, agentId)
+                .stream().filter(java.util.Objects::nonNull).findFirst();
+    }
+
     private static <T> Optional<T> first(List<T> rows) {
         return rows.isEmpty() ? Optional.empty() : Optional.of(rows.get(0));
     }

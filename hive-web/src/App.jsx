@@ -136,17 +136,18 @@ export default function App() {
   }
 
   // -- gateway (hive-gateway -> agent) ----------------------------------------
-  // Carries the tenant key (service-principal ops) AND, when signed in, the user's bearer token (used by
-  // /api/me today; per-user enforcement on the rest is the next phase).
-  const gw = (path, opts = {}) =>
-    fetch('/gw' + path, {
-      ...opts,
-      headers: {
-        ...(opts.headers || {}),
-        'X-Tenant-Key': tenantKey,
-        ...(account?.access_token ? { Authorization: `Bearer ${account.access_token}` } : {}),
-      },
-    })
+  // Signed in -> act as the user (bearer JWT + the active org), so the gateway enforces your scoped role.
+  // Signed out -> the X-Tenant-Key service principal (owner), the pre-login behavior.
+  const gw = (path, opts = {}) => {
+    const headers = { ...(opts.headers || {}) }
+    if (account?.access_token) {
+      headers['Authorization'] = `Bearer ${account.access_token}`
+      if (activeOrg) headers['X-Org'] = activeOrg
+    } else {
+      headers['X-Tenant-Key'] = tenantKey
+    }
+    return fetch('/gw' + path, { ...opts, headers })
+  }
 
   // -- OIDC identity ----------------------------------------------------------
   async function loadMe(user) {
@@ -208,6 +209,12 @@ export default function App() {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ host: conn.host, port: Number(conn.port) })
       })
+      if (!res.ok) {
+        let err = {}
+        try { err = await res.json() } catch { /* non-JSON */ }
+        setStatus(`Error ${res.status}: ${err.error || ''} ${err.detail || ''}`)
+        return
+      }
       await consumeSse(res, {
         onEvent: (ev) => setEvents((p) => [...p, ev]),
         onResult: (r) => { setDevice(r.device); setStatus('Done (via agent, live).') },
@@ -249,6 +256,9 @@ export default function App() {
   useEffect(() => {
     resolveUser().then((user) => { if (user) { setAccount(user); loadMe(user) } })
   }, []) // eslint-disable-line
+
+  // re-list agents when you switch the active organization while signed in
+  useEffect(() => { if (account && activeOrg) refreshAgents() }, [activeOrg]) // eslint-disable-line
 
   // populate on load so the dashboard isn't empty
   useEffect(() => { refreshAgents() }, []) // eslint-disable-line
@@ -295,7 +305,13 @@ export default function App() {
       {mode === 'gateway' && (
         <section className="panel">
           <div className="row">
-            <Field label="Tenant key" value={tenantKey} onChange={(e) => setTenantKey(e.target.value)} placeholder="acme-key" />
+            {account ? (
+              <span className="muted">Acting as <strong>{me?.name || account.profile?.name || account.profile?.preferred_username}</strong>
+                {activeOrg ? <> in <strong>{me?.organizations?.find((o) => o.tenantId === activeOrg)?.tenantName || activeOrg}</strong></> : null}
+                {' '}— the gateway enforces your role. Switch org in the top bar.</span>
+            ) : (
+              <Field label="Tenant key" value={tenantKey} onChange={(e) => setTenantKey(e.target.value)} placeholder="acme-key" />
+            )}
             <button onClick={refreshAgents} disabled={busy}>Refresh agents</button>
           </div>
           <div className="grid">

@@ -5,14 +5,12 @@ import io.hivekeeper.gateway.tenant.TenantStore;
 import io.hivekeeper.gateway.user.UserService;
 import jakarta.servlet.http.HttpServletRequest;
 import org.springframework.beans.factory.ObjectProvider;
-import org.springframework.context.annotation.Profile;
 import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.security.oauth2.jwt.JwtDecoder;
 import org.springframework.security.oauth2.jwt.JwtException;
 import org.springframework.stereotype.Component;
 import org.springframework.web.context.request.RequestContextHolder;
 import org.springframework.web.context.request.ServletRequestAttributes;
-import java.util.Optional;
 
 /**
  * Resolves the calling principal for a request and authorizes actions against it — the single enforcement
@@ -26,19 +24,19 @@ import java.util.Optional;
  *       decoded here (the bearer filter only guards {@code /api/me}); the user is provisioned just-in-time,
  *       their membership in {@code X-Org} is verified, and {@link #require} then checks their scoped role.</li>
  * </ol>
- * Only present under the {@code postgres} profile; the JWT path additionally needs the {@code oidc} profile
- * (its decoder + user service), which is why those are optional.
+ * Always present, so it works in every profile; the JWT/role machinery (decoder, user service, resolver) is
+ * optional and only wired under {@code oidc}+{@code postgres}. Without it, only the {@code X-Tenant-Key} owner
+ * path is available — which is exactly the pre-enforcement behavior.
  */
 @Component
-@Profile("postgres")
 public class AccessGuard {
 
     private final TenantStore tenants;
-    private final AccessService access;
+    private final ObjectProvider<AccessService> access;
     private final ObjectProvider<JwtDecoder> jwtDecoder;
     private final ObjectProvider<UserService> users;
 
-    public AccessGuard(TenantStore tenants, AccessService access,
+    public AccessGuard(TenantStore tenants, ObjectProvider<AccessService> access,
                        ObjectProvider<JwtDecoder> jwtDecoder, ObjectProvider<UserService> users) {
         this.tenants = tenants;
         this.access = access;
@@ -80,13 +78,19 @@ public class AccessGuard {
         throw new AccessException(401, "unauthorized", "provide an X-Tenant-Key or a bearer token + X-Org");
     }
 
-    /** Authorizes the principal for {@code required} on {@code scope}, or throws 403. A service owner passes
-     *  unconditionally within its tenant; a user is checked against their scoped grants. */
-    public void require(Principal principal, Role required, ResourceScope scope) {
+    /** Whether the principal has at least {@code required} on {@code scope} (a service owner always does
+     *  within its tenant). Non-throwing — used to filter lists. */
+    public boolean allows(Principal principal, Role required, ResourceScope scope) {
         if (principal.owner()) {
-            return;
+            return true;
         }
-        if (!access.allows(principal.tenantId(), principal.userId(), required, scope)) {
+        AccessService resolver = access.getIfAvailable();
+        return resolver != null && resolver.allows(principal.tenantId(), principal.userId(), required, scope);
+    }
+
+    /** Authorizes the principal for {@code required} on {@code scope}, or throws 403. */
+    public void require(Principal principal, Role required, ResourceScope scope) {
+        if (!allows(principal, required, scope)) {
             throw new AccessException(403, "forbidden", "requires " + required + " on this resource");
         }
     }

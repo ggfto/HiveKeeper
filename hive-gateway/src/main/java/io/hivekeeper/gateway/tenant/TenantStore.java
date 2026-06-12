@@ -16,4 +16,10 @@ public interface TenantStore {
     Optional<Tenant> tenantByApiKey(String apiKey);
 
     Optional<Tenant> tenant(String tenantId);
+
+    /** The site an agent is bound to (its physical LAN), used to scope authorization of operations through
+     *  it. Empty if the agent has no site or the store does not track sites (the in-memory default). */
+    default Optional<String> agentSiteId(String agentId) {
+        return Optional.empty();
+    }
 }

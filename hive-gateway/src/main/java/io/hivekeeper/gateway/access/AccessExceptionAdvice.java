@@ -1,13 +1,12 @@
 package io.hivekeeper.gateway.access;
 
-import org.springframework.context.annotation.Profile;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 
-/** Renders {@link AccessException}s (401/403/400 from {@link AccessGuard}) as a JSON error body. */
+/** Renders {@link AccessException}s (401/403/400 from {@link AccessGuard}) as a JSON error body. Active in
+ *  every profile, since {@link AccessGuard} is. */
 @RestControllerAdvice
-@Profile("postgres")
 public class AccessExceptionAdvice {
 
     public record ApiError(String error, String detail) {

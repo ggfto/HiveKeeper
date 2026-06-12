@@ -36,6 +36,8 @@ class AccessGuardTest {
     private final UserService users = mock(UserService.class);
 
     @SuppressWarnings("unchecked")
+    private final ObjectProvider<AccessService> accessProvider = mock(ObjectProvider.class);
+    @SuppressWarnings("unchecked")
     private final ObjectProvider<JwtDecoder> decoderProvider = mock(ObjectProvider.class);
     @SuppressWarnings("unchecked")
     private final ObjectProvider<UserService> userProvider = mock(ObjectProvider.class);
@@ -45,9 +47,10 @@ class AccessGuardTest {
 
     @BeforeEach
     void setUp() {
+        when(accessProvider.getIfAvailable()).thenReturn(access);
         when(decoderProvider.getIfAvailable()).thenReturn(decoder);
         when(userProvider.getIfAvailable()).thenReturn(users);
-        guard = new AccessGuard(tenants, access, decoderProvider, userProvider);
+        guard = new AccessGuard(tenants, accessProvider, decoderProvider, userProvider);
 
         request = new MockHttpServletRequest();
         RequestContextHolder.setRequestAttributes(new ServletRequestAttributes(request));

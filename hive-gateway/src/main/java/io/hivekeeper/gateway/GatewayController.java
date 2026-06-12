@@ -6,8 +6,12 @@ import io.hivekeeper.core.api.Result;
 import io.hivekeeper.core.model.DeviceRef;
 import io.hivekeeper.core.model.HiveSpec;
 import io.hivekeeper.core.model.SsidSpec;
+import io.hivekeeper.gateway.access.AccessException;
+import io.hivekeeper.gateway.access.AccessGuard;
+import io.hivekeeper.gateway.access.Principal;
+import io.hivekeeper.gateway.access.ResourceScope;
+import io.hivekeeper.gateway.access.Role;
 import io.hivekeeper.gateway.crypto.Secrets;
-import io.hivekeeper.gateway.tenant.Tenant;
 import io.hivekeeper.gateway.tenant.TenantStore;
 import io.hivekeeper.protocol.RemoteEngine;
 import io.hivekeeper.wire.JsonCodec;
@@ -19,10 +23,10 @@ import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
-import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 import java.io.IOException;
+import java.util.List;
 import java.util.Optional;
 import java.util.concurrent.Callable;
 import java.util.concurrent.ExecutorService;
@@ -30,10 +34,11 @@ import java.util.concurrent.Executors;
 import java.util.function.Function;
 
 /**
- * The control-plane REST API, scoped by tenant via the {@code X-Tenant-Key} header (v1 operator auth;
- * production = OIDC). It dispatches work to a connected agent through that agent's {@link RemoteEngine},
- * sending ONLY intent (host) — credentials live on the agent. All registry lookups are tenant-scoped,
- * so one tenant can never reach another's agents.
+ * The control-plane REST API. Every endpoint resolves the caller via {@link AccessGuard} (a user's bearer
+ * JWT + active org, or the {@code X-Tenant-Key} service principal) and authorizes the action: operations on
+ * an agent are scoped to that agent's SITE — reads (inventory/backup/discover) need {@code viewer}, writes
+ * (config/reboot) need {@code operator}; org-wide reads (agent list, operations, job status) need
+ * {@code viewer} on the org. Credentials never leave the agent; the cloud sends only intent.
  */
 @RestController
 @Slf4j
@@ -69,6 +74,7 @@ public class GatewayController {
 
     private final JsonCodec codec = new JsonCodec();
     private final AgentRegistry registry;
+    private final AccessGuard guard;
     private final TenantStore tenants;
     private final Optional<OperationLog> operationLog;
     private final Optional<JobGateway> jobGateway;
@@ -78,23 +84,21 @@ public class GatewayController {
         return thread;
     });
 
-    public GatewayController(AgentRegistry registry, TenantStore tenants,
+    public GatewayController(AgentRegistry registry, AccessGuard guard, TenantStore tenants,
                              Optional<OperationLog> operationLog, Optional<JobGateway> jobGateway) {
         this.registry = registry;
+        this.guard = guard;
         this.tenants = tenants;
         this.operationLog = operationLog;
         this.jobGateway = jobGateway;
     }
 
-    /** Submit a DURABLE job: it is persisted, dispatched if the agent is connected, and redelivered when
-     *  the agent reconnects — so it survives a transient disconnect. Requires the postgres profile. */
+    /** Submit a DURABLE job: persisted, dispatched if the agent is connected, and redelivered on reconnect.
+     *  Requires the postgres profile. The required role follows the job type (writes need operator). */
     @PostMapping("/api/agents/{agentId}/jobs")
-    public ResponseEntity<String> submitJob(@RequestHeader(value = "X-Tenant-Key", required = false) String apiKey,
-                                            @PathVariable String agentId, @RequestBody JobRequest req) {
-        Optional<Tenant> tenant = tenants.tenantByApiKey(apiKey);
-        if (tenant.isEmpty()) {
-            return unauthorized();
-        }
+    public ResponseEntity<String> submitJob(@PathVariable String agentId, @RequestBody JobRequest req) {
+        Principal p = guard.authenticate();
+        guard.require(p, roleForJobType(req.type()), agentScope(p, agentId));
         if (jobGateway.isEmpty()) {
             return status(501, new ApiError("not_supported", "durable jobs require the 'postgres' profile"));
         }
@@ -104,23 +108,24 @@ public class GatewayController {
         } catch (IllegalArgumentException e) {
             return status(400, new ApiError("bad_request", e.getMessage()));
         }
-        String jobId = jobGateway.get().submit(tenant.get().tenantId(), agentId, req.type(), command);
+        String jobId = jobGateway.get().submit(p.tenantId(), agentId, req.type(), command);
         return json(new JobSubmitted(jobId, "submitted"));
     }
 
     @GetMapping("/api/jobs/{jobId}")
-    public ResponseEntity<String> jobStatus(@RequestHeader(value = "X-Tenant-Key", required = false) String apiKey,
-                                            @PathVariable String jobId) {
-        Optional<Tenant> tenant = tenants.tenantByApiKey(apiKey);
-        if (tenant.isEmpty()) {
-            return unauthorized();
-        }
+    public ResponseEntity<String> jobStatus(@PathVariable String jobId) {
+        Principal p = guard.authenticate();
+        guard.require(p, Role.VIEWER, ResourceScope.org());
         if (jobGateway.isEmpty()) {
             return status(501, new ApiError("not_supported", "durable jobs require the 'postgres' profile"));
         }
-        return jobGateway.get().view(tenant.get().tenantId(), jobId)
+        return jobGateway.get().view(p.tenantId(), jobId)
                 .map(this::json)
                 .orElseGet(() -> status(404, new ApiError("job_not_found", jobId)));
+    }
+
+    private static Role roleForJobType(String type) {
+        return "configure-ssid".equals(type) || "configure-hive".equals(type) ? Role.OPERATOR : Role.VIEWER;
     }
 
     private static Command toCommand(JobRequest req) {
@@ -156,18 +161,14 @@ public class GatewayController {
         sseExecutor.shutdownNow();
     }
 
-    /** Live inventory: streams the agent's progress events as SSE, then the final result. The agent's
-     *  events reach the RemoteEngine's EventSink as they arrive, so the browser sees real progress. */
+    /** Live inventory: streams the agent's progress events as SSE, then the final result. */
     @PostMapping("/api/agents/{agentId}/inventory/stream")
-    public SseEmitter inventoryStream(@RequestHeader(value = "X-Tenant-Key", required = false) String apiKey,
-                                      @PathVariable String agentId, @RequestBody DeviceRequest req) {
-        SseEmitter emitter = new SseEmitter(120_000L);
+    public SseEmitter inventoryStream(@PathVariable String agentId, @RequestBody DeviceRequest req) {
+        Principal p = guard.authenticate();
+        guard.require(p, Role.VIEWER, agentScope(p, agentId));   // throws -> rendered as 401/403, not a stream
 
-        Optional<Tenant> tenant = tenants.tenantByApiKey(apiKey);
-        if (tenant.isEmpty()) {
-            return completeWithError(emitter, new ApiError("unauthorized", "missing or invalid X-Tenant-Key"));
-        }
-        Optional<RemoteEngine> engine = registry.engine(tenant.get().tenantId(), agentId);
+        SseEmitter emitter = new SseEmitter(120_000L);
+        Optional<RemoteEngine> engine = registry.engine(p.tenantId(), agentId);
         if (engine.isEmpty()) {
             return completeWithError(emitter, new ApiError("agent_not_connected", agentId));
         }
@@ -175,7 +176,7 @@ public class GatewayController {
             return completeWithError(emitter, new ApiError("bad_request", "host is required"));
         }
 
-        String tenantId = tenant.get().tenantId();
+        String tenantId = p.tenantId();
         String host = req.host().trim();
         int port = req.port() == null ? 22 : req.port();
         sseExecutor.submit(() -> {
@@ -212,57 +213,56 @@ public class GatewayController {
     }
 
     @GetMapping("/api/operations")
-    public ResponseEntity<String> operations(@RequestHeader(value = "X-Tenant-Key", required = false) String apiKey) {
-        Optional<Tenant> tenant = tenants.tenantByApiKey(apiKey);
-        if (tenant.isEmpty()) {
-            return unauthorized();
-        }
+    public ResponseEntity<String> operations() {
+        Principal p = guard.authenticate();
+        guard.require(p, Role.VIEWER, ResourceScope.org());
         if (operationLog.isEmpty()) {
-            return json(java.util.List.of());  // no DB profile -> no audit log
+            return json(List.of());  // no DB profile -> no audit log
         }
-        return json(operationLog.get().list(tenant.get().tenantId()));
+        return json(operationLog.get().list(p.tenantId()));
     }
 
+    /** Lists the connected agents the caller can actually see — filtered to those whose site they may view. */
     @GetMapping("/api/agents")
-    public ResponseEntity<String> agents(@RequestHeader(value = "X-Tenant-Key", required = false) String apiKey) {
-        Optional<Tenant> tenant = tenants.tenantByApiKey(apiKey);
-        if (tenant.isEmpty()) {
-            return unauthorized();
-        }
-        return json(registry.agentIds(tenant.get().tenantId()));
+    public ResponseEntity<String> agents() {
+        Principal p = guard.authenticate();
+        List<String> visible = registry.agentIds(p.tenantId()).stream()
+                .filter(agentId -> guard.allows(p, Role.VIEWER, siteScope(agentId)))
+                .toList();
+        return json(visible);
     }
 
-    // These do an agent round-trip (seconds); returning a Callable lets Spring run them on a bounded
-    // async executor (see AsyncConfig) so the servlet container threads are not held while waiting.
+    // These do an agent round-trip (seconds); returning a Callable runs them on a bounded async executor
+    // (see AsyncConfig). Auth happens HERE on the request thread (headers/JWT available) — the Callable then
+    // runs with the resolved principal.
 
     @PostMapping("/api/agents/{agentId}/inventory")
-    public Callable<ResponseEntity<String>> inventory(
-            @RequestHeader(value = "X-Tenant-Key", required = false) String apiKey,
-            @PathVariable String agentId, @RequestBody DeviceRequest req) {
-        return () -> dispatch(apiKey, agentId, "inventory", req, Command.Inventory::of);
+    public Callable<ResponseEntity<String>> inventory(@PathVariable String agentId, @RequestBody DeviceRequest req) {
+        Principal p = guard.authenticate();
+        guard.require(p, Role.VIEWER, agentScope(p, agentId));
+        return () -> dispatch(p, agentId, "inventory", req, Command.Inventory::of);
     }
 
     @PostMapping("/api/agents/{agentId}/backup")
-    public Callable<ResponseEntity<String>> backup(
-            @RequestHeader(value = "X-Tenant-Key", required = false) String apiKey,
-            @PathVariable String agentId, @RequestBody DeviceRequest req) {
-        return () -> dispatch(apiKey, agentId, "backup", req, Command.BackupConfig::of);
+    public Callable<ResponseEntity<String>> backup(@PathVariable String agentId, @RequestBody DeviceRequest req) {
+        Principal p = guard.authenticate();
+        guard.require(p, Role.VIEWER, agentScope(p, agentId));
+        return () -> dispatch(p, agentId, "backup", req, Command.BackupConfig::of);
     }
 
     @PostMapping("/api/agents/{agentId}/discover")
-    public Callable<ResponseEntity<String>> discover(
-            @RequestHeader(value = "X-Tenant-Key", required = false) String apiKey,
-            @PathVariable String agentId, @RequestBody DiscoverRequest req) {
-        return () -> doDiscover(apiKey, agentId, req);
+    public Callable<ResponseEntity<String>> discover(@PathVariable String agentId, @RequestBody DiscoverRequest req) {
+        Principal p = guard.authenticate();
+        guard.require(p, Role.VIEWER, agentScope(p, agentId));
+        return () -> doDiscover(p, agentId, req);
     }
 
-    // Config WRITES. The cloud sends intent (host + the change); the agent holds credentials and the
-    // generated CLI is produced on the agent's in-process driver — same Command the CLI builds from argv.
+    // Config WRITES need operator. The cloud sends intent (host + the change); the agent holds credentials.
 
     @PostMapping("/api/agents/{agentId}/configure-ssid")
-    public Callable<ResponseEntity<String>> configureSsid(
-            @RequestHeader(value = "X-Tenant-Key", required = false) String apiKey,
-            @PathVariable String agentId, @RequestBody SsidRequest req) {
+    public Callable<ResponseEntity<String>> configureSsid(@PathVariable String agentId, @RequestBody SsidRequest req) {
+        Principal p = guard.authenticate();
+        guard.require(p, Role.OPERATOR, agentScope(p, agentId));
         return () -> {
             SsidSpec spec;
             try {
@@ -270,15 +270,15 @@ public class GatewayController {
             } catch (IllegalArgumentException e) {
                 return status(400, new ApiError("bad_request", e.getMessage()));
             }
-            return dispatch(apiKey, agentId, "configure-ssid", new DeviceRequest(req.host(), req.port()),
+            return dispatch(p, agentId, "configure-ssid", new DeviceRequest(req.host(), req.port()),
                     ref -> Command.ConfigureSsid.of(ref, spec));
         };
     }
 
     @PostMapping("/api/agents/{agentId}/configure-hive")
-    public Callable<ResponseEntity<String>> configureHive(
-            @RequestHeader(value = "X-Tenant-Key", required = false) String apiKey,
-            @PathVariable String agentId, @RequestBody HiveRequest req) {
+    public Callable<ResponseEntity<String>> configureHive(@PathVariable String agentId, @RequestBody HiveRequest req) {
+        Principal p = guard.authenticate();
+        guard.require(p, Role.OPERATOR, agentScope(p, agentId));
         return () -> {
             HiveSpec spec;
             try {
@@ -286,24 +286,20 @@ public class GatewayController {
             } catch (IllegalArgumentException e) {
                 return status(400, new ApiError("bad_request", e.getMessage()));
             }
-            return dispatch(apiKey, agentId, "configure-hive", new DeviceRequest(req.host(), req.port()),
+            return dispatch(p, agentId, "configure-hive", new DeviceRequest(req.host(), req.port()),
                     ref -> Command.ConfigureHive.of(ref, spec));
         };
     }
 
     @PostMapping("/api/agents/{agentId}/reboot")
-    public Callable<ResponseEntity<String>> reboot(
-            @RequestHeader(value = "X-Tenant-Key", required = false) String apiKey,
-            @PathVariable String agentId, @RequestBody DeviceRequest req) {
-        return () -> dispatch(apiKey, agentId, "reboot", req, Command.Reboot::of);
+    public Callable<ResponseEntity<String>> reboot(@PathVariable String agentId, @RequestBody DeviceRequest req) {
+        Principal p = guard.authenticate();
+        guard.require(p, Role.OPERATOR, agentScope(p, agentId));
+        return () -> dispatch(p, agentId, "reboot", req, Command.Reboot::of);
     }
 
-    private ResponseEntity<String> doDiscover(String apiKey, String agentId, DiscoverRequest req) {
-        Optional<Tenant> tenant = tenants.tenantByApiKey(apiKey);
-        if (tenant.isEmpty()) {
-            return unauthorized();
-        }
-        Optional<RemoteEngine> engine = registry.engine(tenant.get().tenantId(), agentId);
+    private ResponseEntity<String> doDiscover(Principal p, String agentId, DiscoverRequest req) {
+        Optional<RemoteEngine> engine = registry.engine(p.tenantId(), agentId);
         if (engine.isEmpty()) {
             return status(404, new ApiError("agent_not_connected", agentId));
         }
@@ -315,8 +311,7 @@ public class GatewayController {
                     req.port() == null ? 22 : req.port(),
                     req.timeoutMillis() == null ? 800 : req.timeoutMillis());
             Result result = engine.get().execute(cmd, EventSink.NOOP);
-            record(tenant.get().tenantId(), agentId, "discover", req.cidr().trim(),
-                    result.getClass().getSimpleName());
+            record(p.tenantId(), agentId, "discover", req.cidr().trim(), result.getClass().getSimpleName());
             return json(result);
         } catch (Exception e) {
             log.warn("discover via agent '{}' failed: {}", agentId, e.getMessage());
@@ -324,13 +319,9 @@ public class GatewayController {
         }
     }
 
-    private ResponseEntity<String> dispatch(String apiKey, String agentId, String opType, DeviceRequest req,
+    private ResponseEntity<String> dispatch(Principal p, String agentId, String opType, DeviceRequest req,
                                             Function<DeviceRef, Command> commandFactory) {
-        Optional<Tenant> tenant = tenants.tenantByApiKey(apiKey);
-        if (tenant.isEmpty()) {
-            return unauthorized();
-        }
-        Optional<RemoteEngine> engine = registry.engine(tenant.get().tenantId(), agentId);
+        Optional<RemoteEngine> engine = registry.engine(p.tenantId(), agentId);
         if (engine.isEmpty()) {
             // 404 whether the agent is offline OR belongs to another tenant — no cross-tenant leakage.
             return status(404, new ApiError("agent_not_connected", agentId));
@@ -341,7 +332,7 @@ public class GatewayController {
         try {
             DeviceRef ref = DeviceRef.ssh(req.host().trim(), req.port() == null ? 22 : req.port());
             Result result = engine.get().execute(commandFactory.apply(ref), EventSink.NOOP);
-            record(tenant.get().tenantId(), agentId, opType, req.host().trim(), result.getClass().getSimpleName());
+            record(p.tenantId(), agentId, opType, req.host().trim(), result.getClass().getSimpleName());
             // A config-write result echoes the applied CLI lines; mask secrets before they reach the browser.
             return json(Secrets.redactResult(result));
         } catch (Exception e) {
@@ -351,16 +342,32 @@ public class GatewayController {
         }
     }
 
+    /** The scope an agent operation is authorized against: the agent's site (its physical LAN), or the org
+     *  if the agent is not bound to a site. Verifies the agent belongs to the CALLER's tenant first — agent
+     *  ids are globally unique and the enrollment table has no RLS, so without this check a request could be
+     *  authorized against another tenant's site (and submitJob would persist a job row aimed at it). */
+    private ResourceScope agentScope(Principal p, String agentId) {
+        boolean ownsAgent = tenants.enrollmentByAgentId(agentId)
+                .map(enrollment -> enrollment.tenantId().equals(p.tenantId()))
+                .orElse(false);
+        if (!ownsAgent) {
+            throw new AccessException(404, "agent_not_found", agentId);
+        }
+        return siteScope(agentId);
+    }
+
+    /** The agent's site scope (no tenant check) — used to filter the agent list, which is already scoped to
+     *  the caller's tenant by {@code registry.agentIds}. */
+    private ResourceScope siteScope(String agentId) {
+        return tenants.agentSiteId(agentId).map(ResourceScope::site).orElseGet(ResourceScope::org);
+    }
+
     private void record(String tenantId, String agentId, String opType, String host, String summary) {
         operationLog.ifPresent(log -> log.record(tenantId, agentId, opType, host, summary));
     }
 
     private ResponseEntity<String> json(Object value) {
         return ResponseEntity.ok().contentType(MediaType.APPLICATION_JSON).body(codec.toJson(value));
-    }
-
-    private ResponseEntity<String> unauthorized() {
-        return status(401, new ApiError("unauthorized", "missing or invalid X-Tenant-Key"));
     }
 
     private ResponseEntity<String> status(int code, ApiError error) {
