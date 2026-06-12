@@ -12,7 +12,7 @@ import picocli.CommandLine;
         version = "HiveKeeper 0.1.0-SNAPSHOT",
         description = "Manage standalone Aerohive / Extreme HiveOS access points over SSH.",
         subcommands = {InventoryCmd.class, BackupCmd.class, CaptureCmd.class, DiscoverCmd.class,
-                ConfigureSsidCmd.class, RestoreCmd.class})
+                ConfigureSsidCmd.class, ConfigureHiveCmd.class, RebootCmd.class, RestoreCmd.class})
 public final class Main {
 
     public static void main(String[] args) {

@@ -1,6 +1,7 @@
 package io.hivekeeper.core.api;
 
 import io.hivekeeper.core.model.DeviceRef;
+import io.hivekeeper.core.model.HiveSpec;
 import io.hivekeeper.core.model.SsidSpec;
 import java.util.List;
 import java.util.UUID;
@@ -13,7 +14,8 @@ import java.util.UUID;
  */
 public sealed interface Command
         permits Command.Inventory, Command.BackupConfig, Command.RunRaw, Command.Discover,
-                Command.ApplyConfig, Command.ConfigureSsid, Command.RestoreConfig {
+                Command.ApplyConfig, Command.ConfigureSsid, Command.ConfigureHive, Command.Reboot,
+                Command.RestoreConfig {
 
     UUID commandId();
 
@@ -68,6 +70,20 @@ public sealed interface Command
     record ConfigureSsid(UUID commandId, DeviceRef device, SsidSpec spec) implements Command {
         public static ConfigureSsid of(DeviceRef device, SsidSpec spec) {
             return new ConfigureSsid(UUID.randomUUID(), device, spec);
+        }
+    }
+
+    /** Configure (join) this device's hive/mesh membership. The driver generates the CLI. */
+    record ConfigureHive(UUID commandId, DeviceRef device, HiveSpec spec) implements Command {
+        public static ConfigureHive of(DeviceRef device, HiveSpec spec) {
+            return new ConfigureHive(UUID.randomUUID(), device, spec);
+        }
+    }
+
+    /** Reboot the device. The session drops as the AP restarts; that disconnect is the success signal. */
+    record Reboot(UUID commandId, DeviceRef device) implements Command {
+        public static Reboot of(DeviceRef device) {
+            return new Reboot(UUID.randomUUID(), device);
         }
     }
 

@@ -83,6 +83,12 @@ export default function App() {
   const [agents, setAgents] = useState(null)
   const [cidr, setCidr] = useState('192.168.1.0/24')
 
+  // config writes (gateway mode)
+  const [selectedAgent, setSelectedAgent] = useState('')
+  const [ssid, setSsid] = useState({ name: '', psk: '', vlan: '' })
+  const [hive, setHive] = useState({ name: '', password: '' })
+  const [configOut, setConfigOut] = useState(null)
+
   const update = (k) => (e) => setConn({ ...conn, [k]: e.target.value })
 
   // -- direct (hive-server) ----------------------------------------------------
@@ -179,8 +185,41 @@ export default function App() {
     } catch (e) { setStatus(`Request failed: ${e.message}`) } finally { setBusy(false) }
   }
 
+  // -- config writes (gateway -> agent) ---------------------------------------
+  async function writeConfig(op, body, label) {
+    if (!selectedAgent) { setStatus('Pick an agent first.'); return }
+    if (!conn.host) { setStatus('Set the target host/IP first.'); return }
+    setBusy(true); setConfigOut(null); setStatus(`${label} via ${selectedAgent}…`)
+    try {
+      const res = await gw(`/api/agents/${selectedAgent}/${op}`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ host: conn.host, port: Number(conn.port), ...body })
+      })
+      const r = await res.json()
+      if (!res.ok) { setStatus(`Error ${res.status}: ${r.error} ${r.detail || ''}`); return }
+      setConfigOut(r)
+      setStatus(`${label}: ${r.commands?.length || 0} command(s), saved=${r.saved}.`)
+    } catch (e) { setStatus(`Request failed: ${e.message}`) } finally { setBusy(false) }
+  }
+
+  const configureSsid = (remove) => writeConfig('configure-ssid',
+    { name: ssid.name, psk: ssid.psk, vlan: ssid.vlan ? Number(ssid.vlan) : null, remove },
+    remove ? `Remove SSID '${ssid.name}'` : `Configure SSID '${ssid.name}'`)
+
+  const configureHive = () => writeConfig('configure-hive',
+    { name: hive.name, password: hive.password }, `Join hive '${hive.name}'`)
+
+  const reboot = () => {
+    if (!window.confirm(`Reboot ${conn.host}? It will be offline for ~1-2 minutes.`)) return
+    writeConfig('reboot', {}, `Reboot ${conn.host}`)
+  }
+
   // populate on load so the dashboard isn't empty
   useEffect(() => { refreshAgents() }, []) // eslint-disable-line
+  // default the config target to the first agent once they load
+  useEffect(() => {
+    if (agents?.length && !selectedAgent) setSelectedAgent(agents[0])
+  }, [agents]) // eslint-disable-line
 
   return (
     <main className="app">
@@ -242,6 +281,60 @@ export default function App() {
         </div>
         {status && <p className="status">{status}</p>}
       </section>
+
+      {mode === 'gateway' && (
+        <section className="panel">
+          <h2>Config (writes)</h2>
+          <div className="row">
+            <label className="field">
+              <span>Target agent</span>
+              <select value={selectedAgent} onChange={(e) => setSelectedAgent(e.target.value)}>
+                <option value="">— pick an agent —</option>
+                {agents?.map((a) => <option key={a} value={a}>{a}</option>)}
+              </select>
+            </label>
+            <span className="muted">writes go to <strong>{conn.host || '(set host above)'}</strong> through the agent</span>
+          </div>
+
+          <h3>SSID (WPA2-PSK)</h3>
+          <div className="grid">
+            <Field label="SSID name" value={ssid.name} onChange={(e) => setSsid({ ...ssid, name: e.target.value })} placeholder="HK-DEMO" />
+            <Field label="Passphrase" value={ssid.psk} onChange={(e) => setSsid({ ...ssid, psk: e.target.value })} placeholder="min 8 chars" />
+            <Field label="VLAN (optional)" type="number" value={ssid.vlan} onChange={(e) => setSsid({ ...ssid, vlan: e.target.value })} placeholder="5" />
+          </div>
+          <div className="actions">
+            <button onClick={() => configureSsid(false)} disabled={busy || !ssid.name || !ssid.psk}>Configure SSID</button>
+            <button onClick={() => configureSsid(true)} disabled={busy || !ssid.name}>Remove SSID</button>
+          </div>
+
+          <h3>Hive (mesh)</h3>
+          <div className="grid">
+            <Field label="Hive name" value={hive.name} onChange={(e) => setHive({ ...hive, name: e.target.value })} placeholder="hk-hive" />
+            <Field label="Hive password" value={hive.password} onChange={(e) => setHive({ ...hive, password: e.target.value })} placeholder="shared key" />
+          </div>
+          <div className="actions">
+            <button onClick={configureHive} disabled={busy || !hive.name || !hive.password}>Join hive</button>
+            <button onClick={reboot} disabled={busy || !conn.host}>Reboot device</button>
+          </div>
+
+          {configOut?.commands && (
+            <>
+              <h3>Applied {configOut.saved ? '(saved)' : ''}</h3>
+              <ul className="events">
+                {configOut.commands.map((c, i) => {
+                  const out = (configOut.outputs?.[i] || '').trim()
+                  const bad = /invalid input|unknown keyword|error|incomplete/i.test(out)
+                  return (
+                    <li key={i} className={bad ? 'err' : ''}>
+                      <code>{c}</code>{out ? ` → ${out.replace(/\s+/g, ' ').slice(0, 120)}` : ''}
+                    </li>
+                  )
+                })}
+              </ul>
+            </>
+          )}
+        </section>
+      )}
 
       {events.length > 0 && (
         <section className="panel">

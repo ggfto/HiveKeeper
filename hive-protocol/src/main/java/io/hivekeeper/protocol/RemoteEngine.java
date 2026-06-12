@@ -60,6 +60,8 @@ public final class RemoteEngine implements Engine {
             case Command.RunRaw c -> c.device().id();
             case Command.ApplyConfig c -> c.device().id();
             case Command.ConfigureSsid c -> c.device().id();
+            case Command.ConfigureHive c -> c.device().id();
+            case Command.Reboot c -> c.device().id();
             case Command.RestoreConfig c -> c.device().id();
             case Command.Discover c -> DeviceId.of(c.cidr());
         };

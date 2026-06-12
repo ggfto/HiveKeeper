@@ -11,6 +11,7 @@ import io.hivekeeper.core.model.BackupRef;
 import io.hivekeeper.core.model.ConfigSnapshot;
 import io.hivekeeper.core.model.DeviceRef;
 import io.hivekeeper.core.model.DiscoveryResult;
+import io.hivekeeper.core.model.HiveSpec;
 import io.hivekeeper.core.model.SsidSpec;
 import io.hivekeeper.core.spi.BackupStore;
 import io.hivekeeper.core.spi.CredentialProvider;
@@ -23,6 +24,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -130,6 +132,30 @@ class LocalEngineTest {
         Result.ConfigApplied applied = assertInstanceOf(Result.ConfigApplied.class, result);
         assertTrue(applied.saved());
         assertTrue(applied.commands().contains("ssid HK security-object HK"));
+    }
+
+    @Test
+    void configureHiveAppliesGeneratedCommandsAndSaves() {
+        Engine engine = new LocalEngine(transport, creds, drivers, new CapturingStore(), scanner);
+
+        Result result = engine.execute(
+                Command.ConfigureHive.of(DeviceRef.ssh("192.168.1.10"), HiveSpec.of("hk-hive", "meshsecret123")),
+                ev -> { });
+
+        Result.ConfigApplied applied = assertInstanceOf(Result.ConfigApplied.class, result);
+        assertTrue(applied.saved());
+        assertTrue(applied.commands().contains("interface mgt0 hive hk-hive"));
+    }
+
+    @Test
+    void rebootReturnsConfigAppliedWithoutSaving() {
+        Engine engine = new LocalEngine(transport, creds, drivers, new CapturingStore(), scanner);
+
+        Result result = engine.execute(Command.Reboot.of(DeviceRef.ssh("192.168.1.10")), ev -> { });
+
+        Result.ConfigApplied applied = assertInstanceOf(Result.ConfigApplied.class, result);
+        assertFalse(applied.saved());
+        assertEquals(List.of("reboot"), applied.commands());
     }
 
     @Test

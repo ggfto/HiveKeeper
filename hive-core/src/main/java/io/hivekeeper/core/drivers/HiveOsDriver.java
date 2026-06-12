@@ -3,6 +3,7 @@ package io.hivekeeper.core.drivers;
 import io.hivekeeper.core.model.ConfigSnapshot;
 import io.hivekeeper.core.model.Device;
 import io.hivekeeper.core.model.DeviceId;
+import io.hivekeeper.core.model.HiveSpec;
 import io.hivekeeper.core.model.SsidSpec;
 import lombok.extern.slf4j.Slf4j;
 import java.io.IOException;
@@ -133,6 +134,16 @@ public final class HiveOsDriver implements Driver {
         commands.add("ssid " + name + " security-object " + name);
         commands.add("interface wifi0 ssid " + name);
         commands.add("interface wifi1 ssid " + name);
+        return commands;
+    }
+
+    @Override
+    public List<String> hiveCommands(HiveSpec spec) {
+        // HiveOS: declare the hive, set its shared key, then bind the management interface to it.
+        List<String> commands = new ArrayList<>(3);
+        commands.add("hive " + spec.name());
+        commands.add("hive " + spec.name() + " password " + spec.password());
+        commands.add("interface " + spec.boundInterface() + " hive " + spec.name());
         return commands;
     }
 }

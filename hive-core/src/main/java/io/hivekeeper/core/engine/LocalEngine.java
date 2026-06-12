@@ -150,6 +150,17 @@ public final class LocalEngine implements Engine {
                 List<String> outputs = driver.applyConfig(deviceId, exec, lines, true, progress);
                 yield new Result.ConfigApplied(id, deviceId, lines, outputs, true);
             }
+            case Command.ConfigureHive c -> {
+                List<String> lines = driver.hiveCommands(c.spec());
+                List<String> outputs = driver.applyConfig(deviceId, exec, lines, true, progress);
+                yield new Result.ConfigApplied(id, deviceId, lines, outputs, true);
+            }
+            case Command.Reboot ignored -> {
+                progress.report(50, "Rebooting device");
+                String output = driver.reboot(deviceId, exec);
+                progress.report(100, "Reboot initiated");
+                yield new Result.ConfigApplied(id, deviceId, List.of("reboot"), List.of(output), false);
+            }
             case Command.RestoreConfig c -> {
                 List<String> lines = c.runningConfig().lines().map(String::strip).filter(s -> !s.isEmpty()).toList();
                 List<String> outputs = driver.applyConfig(deviceId, exec, lines, c.save(), progress);
@@ -166,6 +177,8 @@ public final class LocalEngine implements Engine {
             case Command.RunRaw c -> c.device();
             case Command.ApplyConfig c -> c.device();
             case Command.ConfigureSsid c -> c.device();
+            case Command.ConfigureHive c -> c.device();
+            case Command.Reboot c -> c.device();
             case Command.RestoreConfig c -> c.device();
             case Command.Discover ignored -> throw new IllegalStateException("discover is network-scoped");
         };

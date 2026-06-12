@@ -4,6 +4,8 @@ import io.hivekeeper.core.api.Command;
 import io.hivekeeper.core.api.EventSink;
 import io.hivekeeper.core.api.Result;
 import io.hivekeeper.core.model.DeviceRef;
+import io.hivekeeper.core.model.HiveSpec;
+import io.hivekeeper.core.model.SsidSpec;
 import io.hivekeeper.gateway.tenant.Tenant;
 import io.hivekeeper.gateway.tenant.TenantStore;
 import io.hivekeeper.protocol.RemoteEngine;
@@ -42,6 +44,14 @@ public class GatewayController {
 
     /** Ask the agent to sweep a subnet of its own LAN. */
     public record DiscoverRequest(String cidr, Integer port, Integer timeoutMillis) {
+    }
+
+    /** Create or remove a WPA2-PSK SSID on a device behind the agent. */
+    public record SsidRequest(String host, Integer port, String name, String psk, Integer vlan, boolean remove) {
+    }
+
+    /** Join a device behind the agent to a hive/mesh. */
+    public record HiveRequest(String host, Integer port, String name, String password, String boundInterface) {
     }
 
     /** Submit a durable job: {@code type} is inventory|backup|discover, with host (or cidr). */
@@ -237,6 +247,48 @@ public class GatewayController {
             @RequestHeader(value = "X-Tenant-Key", required = false) String apiKey,
             @PathVariable String agentId, @RequestBody DiscoverRequest req) {
         return () -> doDiscover(apiKey, agentId, req);
+    }
+
+    // Config WRITES. The cloud sends intent (host + the change); the agent holds credentials and the
+    // generated CLI is produced on the agent's in-process driver — same Command the CLI builds from argv.
+
+    @PostMapping("/api/agents/{agentId}/configure-ssid")
+    public Callable<ResponseEntity<String>> configureSsid(
+            @RequestHeader(value = "X-Tenant-Key", required = false) String apiKey,
+            @PathVariable String agentId, @RequestBody SsidRequest req) {
+        return () -> {
+            SsidSpec spec;
+            try {
+                spec = req.remove() ? SsidSpec.removal(req.name()) : SsidSpec.create(req.name(), req.psk(), req.vlan());
+            } catch (IllegalArgumentException e) {
+                return status(400, new ApiError("bad_request", e.getMessage()));
+            }
+            return dispatch(apiKey, agentId, "configure-ssid", new DeviceRequest(req.host(), req.port()),
+                    ref -> Command.ConfigureSsid.of(ref, spec));
+        };
+    }
+
+    @PostMapping("/api/agents/{agentId}/configure-hive")
+    public Callable<ResponseEntity<String>> configureHive(
+            @RequestHeader(value = "X-Tenant-Key", required = false) String apiKey,
+            @PathVariable String agentId, @RequestBody HiveRequest req) {
+        return () -> {
+            HiveSpec spec;
+            try {
+                spec = new HiveSpec(req.name(), req.password(), req.boundInterface());
+            } catch (IllegalArgumentException e) {
+                return status(400, new ApiError("bad_request", e.getMessage()));
+            }
+            return dispatch(apiKey, agentId, "configure-hive", new DeviceRequest(req.host(), req.port()),
+                    ref -> Command.ConfigureHive.of(ref, spec));
+        };
+    }
+
+    @PostMapping("/api/agents/{agentId}/reboot")
+    public Callable<ResponseEntity<String>> reboot(
+            @RequestHeader(value = "X-Tenant-Key", required = false) String apiKey,
+            @PathVariable String agentId, @RequestBody DeviceRequest req) {
+        return () -> dispatch(apiKey, agentId, "reboot", req, Command.Reboot::of);
     }
 
     private ResponseEntity<String> doDiscover(String apiKey, String agentId, DiscoverRequest req) {

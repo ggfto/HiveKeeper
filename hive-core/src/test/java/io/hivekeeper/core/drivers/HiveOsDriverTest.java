@@ -3,6 +3,7 @@ package io.hivekeeper.core.drivers;
 import io.hivekeeper.core.model.ConfigSnapshot;
 import io.hivekeeper.core.model.Device;
 import io.hivekeeper.core.model.DeviceId;
+import io.hivekeeper.core.model.HiveSpec;
 import io.hivekeeper.core.model.SsidSpec;
 import io.hivekeeper.core.testsupport.FakeAp230Cli;
 import org.junit.jupiter.api.Test;
@@ -102,6 +103,26 @@ class HiveOsDriverTest {
 
         assertTrue(commands.contains("no ssid HK"));
         assertTrue(commands.contains("no security-object HK"));
+    }
+
+    @Test
+    void buildsHiveCommandsBindingManagementInterface() {
+        List<String> commands = driver.hiveCommands(HiveSpec.of("hk-hive", "meshsecret123"));
+
+        assertTrue(commands.contains("hive hk-hive"));
+        assertTrue(commands.contains("hive hk-hive password meshsecret123"));
+        assertTrue(commands.contains("interface mgt0 hive hk-hive"));
+    }
+
+    @Test
+    void rebootTreatsDroppedSessionAsSuccess() throws Exception {
+        CliExecutor dropping = command -> {
+            throw new java.io.IOException("connection reset");
+        };
+
+        String output = driver.reboot(DeviceId.of("ap"), dropping);
+
+        assertTrue(output.toLowerCase().contains("reboot"));
     }
 
     @Test

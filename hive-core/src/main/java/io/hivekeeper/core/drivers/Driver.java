@@ -3,6 +3,7 @@ package io.hivekeeper.core.drivers;
 import io.hivekeeper.core.model.ConfigSnapshot;
 import io.hivekeeper.core.model.Device;
 import io.hivekeeper.core.model.DeviceId;
+import io.hivekeeper.core.model.HiveSpec;
 import io.hivekeeper.core.model.SsidSpec;
 import java.io.IOException;
 import java.util.List;
@@ -39,4 +40,21 @@ public interface Driver {
 
     /** Translates a vendor-neutral {@link SsidSpec} into this device's CLI lines (create or remove). */
     List<String> ssidCommands(SsidSpec spec);
+
+    /** Translates a vendor-neutral {@link HiveSpec} into this device's hive/mesh CLI lines. */
+    List<String> hiveCommands(HiveSpec spec);
+
+    /**
+     * Reboots the device. Most CLIs use {@code reboot}; the session is expected to drop as the device
+     * restarts, so a dropped connection is treated as success rather than an error. Override if a vendor
+     * needs a confirmation token or a different verb.
+     */
+    default String reboot(DeviceId id, CliExecutor exec) throws IOException {
+        try {
+            return exec.run("reboot");
+        } catch (IOException e) {
+            // The AP tore the SSH channel down as it restarted — that is the reboot succeeding, not a fault.
+            return "reboot initiated (session closed by device)";
+        }
+    }
 }

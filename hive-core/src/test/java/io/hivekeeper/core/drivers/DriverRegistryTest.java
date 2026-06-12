@@ -3,6 +3,7 @@ package io.hivekeeper.core.drivers;
 import io.hivekeeper.core.model.ConfigSnapshot;
 import io.hivekeeper.core.model.Device;
 import io.hivekeeper.core.model.DeviceId;
+import io.hivekeeper.core.model.HiveSpec;
 import io.hivekeeper.core.model.SsidSpec;
 import org.junit.jupiter.api.Test;
 import java.util.List;
@@ -60,6 +61,11 @@ class DriverRegistryTest {
 
             @Override
             public List<String> ssidCommands(SsidSpec spec) {
+                return List.of();
+            }
+
+            @Override
+            public List<String> hiveCommands(HiveSpec spec) {
                 return List.of();
             }
         };
