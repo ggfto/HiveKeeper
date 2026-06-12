@@ -3,6 +3,7 @@ package io.hivekeeper.gateway;
 import io.hivekeeper.core.api.Command;
 import io.hivekeeper.core.api.EventSink;
 import io.hivekeeper.core.api.Result;
+import io.hivekeeper.core.model.Device;
 import io.hivekeeper.core.model.DeviceRef;
 import io.hivekeeper.core.model.HiveSpec;
 import io.hivekeeper.core.model.SsidSpec;
@@ -12,11 +13,13 @@ import io.hivekeeper.gateway.access.Principal;
 import io.hivekeeper.gateway.access.ResourceScope;
 import io.hivekeeper.gateway.access.Role;
 import io.hivekeeper.gateway.crypto.Secrets;
+import io.hivekeeper.gateway.fleet.FleetService;
 import io.hivekeeper.gateway.tenant.TenantStore;
 import io.hivekeeper.protocol.RemoteEngine;
 import io.hivekeeper.wire.JsonCodec;
 import jakarta.annotation.PreDestroy;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -69,6 +72,13 @@ public class GatewayController {
     public record JobSubmitted(String jobId, String status) {
     }
 
+    /** Adopt a discovered host into the fleet: inventory it, then register a device by its real serial. */
+    public record AdoptRequest(String host, Integer port, String label) {
+    }
+
+    public record AdoptResponse(String deviceId, String serial, String model) {
+    }
+
     public record ApiError(String error, String detail) {
     }
 
@@ -78,6 +88,7 @@ public class GatewayController {
     private final TenantStore tenants;
     private final Optional<OperationLog> operationLog;
     private final Optional<JobGateway> jobGateway;
+    private final Optional<FleetService> fleet;
     private final ExecutorService sseExecutor = Executors.newFixedThreadPool(8, runnable -> {
         Thread thread = new Thread(runnable, "gw-sse");
         thread.setDaemon(true);
@@ -85,12 +96,14 @@ public class GatewayController {
     });
 
     public GatewayController(AgentRegistry registry, AccessGuard guard, TenantStore tenants,
-                             Optional<OperationLog> operationLog, Optional<JobGateway> jobGateway) {
+                             Optional<OperationLog> operationLog, Optional<JobGateway> jobGateway,
+                             Optional<FleetService> fleet) {
         this.registry = registry;
         this.guard = guard;
         this.tenants = tenants;
         this.operationLog = operationLog;
         this.jobGateway = jobGateway;
+        this.fleet = fleet;
     }
 
     /** Submit a DURABLE job: persisted, dispatched if the agent is connected, and redelivered on reconnect.
@@ -296,6 +309,50 @@ public class GatewayController {
         Principal p = guard.authenticate();
         guard.require(p, Role.OPERATOR, agentScope(p, agentId));
         return () -> dispatch(p, agentId, "reboot", req, Command.Reboot::of);
+    }
+
+    /** Adopt a discovered host into the managed fleet: inventory it through the agent to learn its real
+     *  serial/model, then register a device keyed by that serial, on the agent's site. Admin-level. */
+    @PostMapping("/api/agents/{agentId}/adopt")
+    public Callable<ResponseEntity<String>> adopt(@PathVariable String agentId, @RequestBody AdoptRequest req) {
+        Principal p = guard.authenticate();
+        guard.require(p, Role.ADMIN, agentScope(p, agentId));
+        return () -> {
+            if (fleet.isEmpty()) {
+                return status(501, new ApiError("not_supported", "the fleet registry requires the 'postgres' profile"));
+            }
+            Optional<RemoteEngine> engine = registry.engine(p.tenantId(), agentId);
+            if (engine.isEmpty()) {
+                return status(404, new ApiError("agent_not_connected", agentId));
+            }
+            if (req == null || req.host() == null || req.host().isBlank()) {
+                return status(400, new ApiError("bad_request", "host is required"));
+            }
+            String host = req.host().trim();
+            int port = req.port() == null ? 22 : req.port();
+            try {
+                Result result = engine.get().execute(Command.Inventory.of(DeviceRef.ssh(host, port)), EventSink.NOOP);
+                if (!(result instanceof Result.Inventory inv)) {
+                    return status(502, new ApiError("unexpected_result", "inventory did not return a device"));
+                }
+                Device device = inv.device();
+                if (device.serial() == null || device.serial().isBlank()) {
+                    return status(422, new ApiError("no_serial", "the device reported no serial; cannot adopt it"));
+                }
+                String label = req.label() == null || req.label().isBlank() ? device.serial() : req.label().trim();
+                String siteId = tenants.agentSiteId(agentId).orElse(null);
+                String deviceId = fleet.get().registerDevice(p.tenantId(), device.serial(), device.model(),
+                        label, host, siteId, agentId);
+                record(p.tenantId(), agentId, "adopt", host, device.serial());
+                return json(new AdoptResponse(deviceId, device.serial(), device.model()));
+            } catch (DataIntegrityViolationException e) {
+                return status(409, new ApiError("conflict", "a device with that serial is already registered"));
+            } catch (Exception e) {
+                log.warn("adopt via agent '{}' failed: {}", agentId, e.getMessage());
+                return status(502, new ApiError(e.getClass().getSimpleName(),
+                        e.getMessage() == null ? "" : e.getMessage()));
+            }
+        };
     }
 
     private ResponseEntity<String> doDiscover(Principal p, String agentId, DiscoverRequest req) {

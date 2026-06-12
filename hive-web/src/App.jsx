@@ -90,6 +90,9 @@ export default function App() {
   const [hive, setHive] = useState({ name: '', password: '' })
   const [configOut, setConfigOut] = useState(null)
 
+  // fleet (registered devices)
+  const [devices, setDevices] = useState(null)   // array | 'forbidden' | null
+
   // OIDC identity (SSO sign-in: who you are + which organizations you belong to)
   const [account, setAccount] = useState(null)   // the oidc User (access_token + profile claims)
   const [me, setMe] = useState(null)             // GET /api/me { userId, email, name, organizations }
@@ -172,6 +175,7 @@ export default function App() {
       const list = await res.json()
       setAgents(Array.isArray(list) ? list : [])
       setStatus(`${Array.isArray(list) ? list.length : 0} agent(s) for this tenant.`)
+      loadDevices()
     } catch (e) { setAgents(null); setStatus(`gateway unreachable: ${e.message}`) }
   }
 
@@ -250,6 +254,31 @@ export default function App() {
   const reboot = () => {
     if (!window.confirm(`Reboot ${conn.host}? It will be offline for ~1-2 minutes.`)) return
     writeConfig('reboot', {}, `Reboot ${conn.host}`)
+  }
+
+  // -- fleet (registered devices) ---------------------------------------------
+  async function loadDevices() {
+    try {
+      const res = await gw('/api/devices')
+      if (res.status === 403) { setDevices('forbidden'); return }
+      if (!res.ok) { setDevices(null); return }
+      setDevices(await res.json())
+    } catch { setDevices(null) }
+  }
+
+  // Adopt a discovered host into the fleet: inventory it through the agent, register it by its real serial.
+  async function adoptHost(host) {
+    if (!selectedAgent) { setStatus('Pick a target agent in the Config panel first.'); return }
+    setBusy(true); setStatus(`Adopting ${host} via ${selectedAgent}…`)
+    try {
+      const res = await gw(`/api/agents/${selectedAgent}/adopt`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ host })
+      })
+      const r = await res.json()
+      if (!res.ok) { setStatus(`Error ${res.status}: ${r.error} ${r.detail || ''}`); return }
+      setStatus(`Adopted ${host} as ${r.serial}${r.model ? ` (${r.model})` : ''}.`)
+      loadDevices()
+    } catch (e) { setStatus(`Request failed: ${e.message}`) } finally { setBusy(false) }
   }
 
   // resolve the OIDC session on load: complete an auth-code callback, or restore a stored session
@@ -434,9 +463,35 @@ export default function App() {
               <li key={i}>
                 <button className="link" onClick={() => setConn({ ...conn, host: d.host })}>{d.host}</button>
                 {' — '}{d.sshBanner || '(open)'}{d.looksLikeSsh ? '  [ssh]' : ''}
+                {mode === 'gateway' && (
+                  <>{' · '}<button className="link" onClick={() => adoptHost(d.host)} disabled={busy || !selectedAgent}>adopt</button></>
+                )}
               </li>
             ))}
           </ul>
+        </section>
+      )}
+
+      {mode === 'gateway' && devices != null && (
+        <section className="panel">
+          <h2>Fleet — devices {Array.isArray(devices) ? `(${devices.length})` : ''}</h2>
+          {devices === 'forbidden' ? (
+            <p className="muted">The fleet list needs an organization-level viewer/admin role.</p>
+          ) : devices.length === 0 ? (
+            <p className="muted">No devices yet. Discover the LAN, then <strong>adopt</strong> a host (needs admin on the agent's site).</p>
+          ) : (
+            <table className="kv">
+              <tbody>
+                <tr><td><strong>Label</strong></td><td><strong>Serial</strong></td><td><strong>Model</strong></td><td><strong>Mgmt IP</strong></td><td><strong>Groups</strong></td></tr>
+                {devices.map((d) => (
+                  <tr key={d.deviceId}>
+                    <td>{d.label || '—'}</td><td>{d.serial}</td><td>{d.model || '—'}</td>
+                    <td>{d.mgmtIp || '—'}</td><td>{(d.groups || []).length}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
         </section>
       )}
     </main>
