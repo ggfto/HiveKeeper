@@ -33,3 +33,5 @@ secrets.properties
 hivekeeper-backups/
 captures/local/
 dev-pki/
+test-restore/
+test-backups/

@@ -11,6 +11,7 @@ import io.hivekeeper.core.model.BackupRef;
 import io.hivekeeper.core.model.ConfigSnapshot;
 import io.hivekeeper.core.model.DeviceRef;
 import io.hivekeeper.core.model.DiscoveryResult;
+import io.hivekeeper.core.model.SsidSpec;
 import io.hivekeeper.core.spi.BackupStore;
 import io.hivekeeper.core.spi.CredentialProvider;
 import io.hivekeeper.core.spi.Credentials;
@@ -116,6 +117,19 @@ class LocalEngineTest {
         assertTrue(store.captured.runningConfig().contains("LabWifi"));
         assertEquals("10.6r1a", store.captured.firmwareVersion());
         assertNotNull(store.captured.usersConfig());
+    }
+
+    @Test
+    void configureSsidAppliesGeneratedCommandsAndSaves() {
+        Engine engine = new LocalEngine(transport, creds, drivers, new CapturingStore(), scanner);
+
+        Result result = engine.execute(
+                Command.ConfigureSsid.of(DeviceRef.ssh("192.168.1.10"), SsidSpec.create("HK", "pass1234", null)),
+                ev -> { });
+
+        Result.ConfigApplied applied = assertInstanceOf(Result.ConfigApplied.class, result);
+        assertTrue(applied.saved());
+        assertTrue(applied.commands().contains("ssid HK security-object HK"));
     }
 
     @Test

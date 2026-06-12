@@ -10,7 +10,8 @@ import java.util.UUID;
 
 /** The terminal outcome of a {@link Command}. Echoes commandId + deviceId for correlation (for a
  *  network-scoped result the deviceId is the scan scope, e.g. the CIDR). */
-public sealed interface Result permits Result.Inventory, Result.Backup, Result.RawCapture, Result.Discovered {
+public sealed interface Result
+        permits Result.Inventory, Result.Backup, Result.RawCapture, Result.Discovered, Result.ConfigApplied {
 
     UUID commandId();
 
@@ -31,6 +32,16 @@ public sealed interface Result permits Result.Inventory, Result.Backup, Result.R
     record Discovered(UUID commandId, DeviceId deviceId, List<DiscoveryResult> hosts) implements Result {
         public Discovered {
             hosts = List.copyOf(hosts);
+        }
+    }
+
+    /** Outcome of a configuration write: the lines applied, their verbatim CLI output, and whether the
+     *  change was persisted with {@code save config}. */
+    record ConfigApplied(UUID commandId, DeviceId deviceId, List<String> commands, List<String> outputs,
+                         boolean saved) implements Result {
+        public ConfigApplied {
+            commands = List.copyOf(commands);
+            outputs = List.copyOf(outputs);
         }
     }
 }

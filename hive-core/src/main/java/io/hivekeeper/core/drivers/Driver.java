@@ -3,7 +3,9 @@ package io.hivekeeper.core.drivers;
 import io.hivekeeper.core.model.ConfigSnapshot;
 import io.hivekeeper.core.model.Device;
 import io.hivekeeper.core.model.DeviceId;
+import io.hivekeeper.core.model.SsidSpec;
 import java.io.IOException;
+import java.util.List;
 
 /**
  * Vendor/OS driver SPI — the project's key extensibility seam. Supporting a new device family (another
@@ -30,4 +32,11 @@ public interface Driver {
     /** Captures the device configuration (and, per {@code scope}, the separate user/PPSK channel). */
     ConfigSnapshot captureConfig(DeviceId id, CliExecutor exec, ConfigScope scope, ProgressReporter progress)
             throws IOException;
+
+    /** Applies configuration CLI lines, optionally persisting them, returning each line's output. */
+    List<String> applyConfig(DeviceId id, CliExecutor exec, List<String> commands, boolean save,
+                             ProgressReporter progress) throws IOException;
+
+    /** Translates a vendor-neutral {@link SsidSpec} into this device's CLI lines (create or remove). */
+    List<String> ssidCommands(SsidSpec spec);
 }

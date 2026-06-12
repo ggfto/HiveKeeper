@@ -1,5 +1,6 @@
 package io.hivekeeper.cli;
 
+import io.hivekeeper.core.api.Result;
 import io.hivekeeper.core.spi.BackupStore;
 import io.hivekeeper.core.spi.CredentialProvider;
 import io.hivekeeper.core.spi.Credentials;
@@ -24,5 +25,20 @@ final class CliSupport {
 
     static String orDash(String value) {
         return value == null || value.isBlank() ? "-" : value;
+    }
+
+    /** Prints any CLI lines whose device output looks like an error, so failed writes are visible. */
+    static void printConfigErrors(Result.ConfigApplied applied) {
+        for (int i = 0; i < applied.commands().size() && i < applied.outputs().size(); i++) {
+            String out = applied.outputs().get(i);
+            if (out == null) {
+                continue;
+            }
+            String lower = out.toLowerCase();
+            if (lower.contains("invalid input") || lower.contains("unknown keyword")
+                    || lower.contains("error") || lower.contains("incomplete")) {
+                System.err.println("  ! " + applied.commands().get(i) + " -> " + out.strip().replaceAll("\\s+", " "));
+            }
+        }
     }
 }

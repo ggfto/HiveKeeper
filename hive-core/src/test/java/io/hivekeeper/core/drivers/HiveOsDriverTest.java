@@ -3,8 +3,11 @@ package io.hivekeeper.core.drivers;
 import io.hivekeeper.core.model.ConfigSnapshot;
 import io.hivekeeper.core.model.Device;
 import io.hivekeeper.core.model.DeviceId;
+import io.hivekeeper.core.model.SsidSpec;
 import io.hivekeeper.core.testsupport.FakeAp230Cli;
 import org.junit.jupiter.api.Test;
+import java.util.ArrayList;
+import java.util.List;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
@@ -79,5 +82,40 @@ class HiveOsDriverTest {
                 DeviceId.of("x"), ap230, new ConfigScope(false, false), ProgressReporter.NOOP);
 
         assertNull(snap.usersConfig());
+    }
+
+    @Test
+    void buildsSsidCreateCommandsWithVlan() {
+        List<String> commands = driver.ssidCommands(SsidSpec.create("HK", "secretpass", 30));
+
+        assertTrue(commands.contains("security-object HK"));
+        assertTrue(commands.stream().anyMatch(c -> c.contains("ascii-key secretpass")));
+        assertTrue(commands.contains("ssid HK security-object HK"));
+        assertTrue(commands.contains("interface wifi0 ssid HK"));
+        assertTrue(commands.stream().anyMatch(c -> c.contains("vlan-id 30")));
+        assertTrue(commands.contains("security-object HK default-user-profile-attr 30"));
+    }
+
+    @Test
+    void buildsSsidRemoveCommands() {
+        List<String> commands = driver.ssidCommands(SsidSpec.removal("HK"));
+
+        assertTrue(commands.contains("no ssid HK"));
+        assertTrue(commands.contains("no security-object HK"));
+    }
+
+    @Test
+    void applyConfigSendsEachLineThenSaves() throws Exception {
+        List<String> sent = new ArrayList<>();
+        CliExecutor recorder = command -> {
+            sent.add(command);
+            return "";
+        };
+
+        List<String> outputs = driver.applyConfig(DeviceId.of("ap"), recorder,
+                List.of("ssid X", "ssid X security-object X"), true, ProgressReporter.NOOP);
+
+        assertEquals(3, outputs.size());                 // 2 lines + save config
+        assertTrue(sent.contains("save config"));
     }
 }

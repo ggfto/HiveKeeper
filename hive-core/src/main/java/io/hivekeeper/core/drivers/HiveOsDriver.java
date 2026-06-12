@@ -3,9 +3,12 @@ package io.hivekeeper.core.drivers;
 import io.hivekeeper.core.model.ConfigSnapshot;
 import io.hivekeeper.core.model.Device;
 import io.hivekeeper.core.model.DeviceId;
+import io.hivekeeper.core.model.SsidSpec;
 import lombok.extern.slf4j.Slf4j;
 import java.io.IOException;
 import java.time.Instant;
+import java.util.ArrayList;
+import java.util.List;
 
 /**
  * Driver for Aerohive / Extreme HiveOS (IQ Engine) access points. AP230 / AP250 / AP630 share this CLI
@@ -86,5 +89,50 @@ public final class HiveOsDriver implements Driver {
         // Timestamp is stamped here for simplicity; if deterministic time is ever needed in tests,
         // inject a Clock via a driver context.
         return new ConfigSnapshot(id, running, users, firmware, Instant.now());
+    }
+
+    @Override
+    public List<String> applyConfig(DeviceId id, CliExecutor exec, List<String> commands, boolean save,
+                                    ProgressReporter progress) throws IOException {
+        List<String> outputs = new ArrayList<>(commands.size() + 1);
+        int total = Math.max(1, commands.size() + (save ? 1 : 0));
+        int done = 0;
+        for (String command : commands) {
+            progress.report((int) Math.round(++done * 100.0 / total), "Applying: " + command);
+            outputs.add(exec.run(command));
+        }
+        if (save) {
+            progress.report(100, "Saving config");
+            outputs.add(exec.run("save config"));
+        }
+        return outputs;
+    }
+
+    @Override
+    public List<String> ssidCommands(SsidSpec spec) {
+        String name = spec.name();
+        List<String> commands = new ArrayList<>();
+        if (spec.remove()) {
+            // HiveOS negates a config line by prefixing the WHOLE line with "no". Unbind from the radios
+            // first, then drop the ssid, then its security-object and user-profile.
+            commands.add("no interface wifi0 ssid " + name);
+            commands.add("no interface wifi1 ssid " + name);
+            commands.add("no ssid " + name);
+            commands.add("no security-object " + name);
+            commands.add("no user-profile " + name);
+            return commands;
+        }
+        commands.add("security-object " + name);
+        commands.add("security-object " + name + " security protocol-suite wpa2-aes-psk ascii-key " + spec.passphrase());
+        if (spec.vlan() != null) {
+            commands.add("user-profile " + name + " qos-policy def-user-qos vlan-id " + spec.vlan()
+                    + " attribute " + spec.vlan());
+            commands.add("security-object " + name + " default-user-profile-attr " + spec.vlan());
+        }
+        commands.add("ssid " + name);
+        commands.add("ssid " + name + " security-object " + name);
+        commands.add("interface wifi0 ssid " + name);
+        commands.add("interface wifi1 ssid " + name);
+        return commands;
     }
 }

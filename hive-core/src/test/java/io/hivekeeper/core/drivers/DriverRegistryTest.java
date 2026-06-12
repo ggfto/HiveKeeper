@@ -3,6 +3,7 @@ package io.hivekeeper.core.drivers;
 import io.hivekeeper.core.model.ConfigSnapshot;
 import io.hivekeeper.core.model.Device;
 import io.hivekeeper.core.model.DeviceId;
+import io.hivekeeper.core.model.SsidSpec;
 import org.junit.jupiter.api.Test;
 import java.util.List;
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -49,6 +50,17 @@ class DriverRegistryTest {
             public ConfigSnapshot captureConfig(DeviceId deviceId, CliExecutor exec, ConfigScope scope,
                                                 ProgressReporter progress) {
                 return null;
+            }
+
+            @Override
+            public List<String> applyConfig(DeviceId deviceId, CliExecutor exec, List<String> commands,
+                                            boolean save, ProgressReporter progress) {
+                return List.of();
+            }
+
+            @Override
+            public List<String> ssidCommands(SsidSpec spec) {
+                return List.of();
             }
         };
     }

@@ -141,6 +141,20 @@ public final class LocalEngine implements Engine {
                 }
                 yield new Result.RawCapture(id, deviceId, outputs);
             }
+            case Command.ApplyConfig c -> {
+                List<String> outputs = driver.applyConfig(deviceId, exec, c.commands(), c.save(), progress);
+                yield new Result.ConfigApplied(id, deviceId, c.commands(), outputs, c.save());
+            }
+            case Command.ConfigureSsid c -> {
+                List<String> lines = driver.ssidCommands(c.spec());
+                List<String> outputs = driver.applyConfig(deviceId, exec, lines, true, progress);
+                yield new Result.ConfigApplied(id, deviceId, lines, outputs, true);
+            }
+            case Command.RestoreConfig c -> {
+                List<String> lines = c.runningConfig().lines().map(String::strip).filter(s -> !s.isEmpty()).toList();
+                List<String> outputs = driver.applyConfig(deviceId, exec, lines, c.save(), progress);
+                yield new Result.ConfigApplied(id, deviceId, lines, outputs, c.save());
+            }
             case Command.Discover ignored -> throw new IllegalStateException("discover is handled without a session");
         };
     }
@@ -150,6 +164,9 @@ public final class LocalEngine implements Engine {
             case Command.Inventory c -> c.device();
             case Command.BackupConfig c -> c.device();
             case Command.RunRaw c -> c.device();
+            case Command.ApplyConfig c -> c.device();
+            case Command.ConfigureSsid c -> c.device();
+            case Command.RestoreConfig c -> c.device();
             case Command.Discover ignored -> throw new IllegalStateException("discover is network-scoped");
         };
     }
