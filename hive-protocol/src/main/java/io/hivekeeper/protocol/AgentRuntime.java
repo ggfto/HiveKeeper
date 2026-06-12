@@ -4,6 +4,9 @@ import io.hivekeeper.core.api.Engine;
 import io.hivekeeper.core.api.EventSink;
 import io.hivekeeper.core.api.Result;
 import lombok.extern.slf4j.Slf4j;
+import java.util.Collections;
+import java.util.LinkedHashMap;
+import java.util.Map;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.atomic.AtomicLong;
@@ -22,6 +25,16 @@ public final class AgentRuntime implements AutoCloseable {
     private final FrameChannel channel;
     private final String agentId;
     private final ExecutorService jobs;
+
+    /** Recent terminal results by idempotency key, so a REDELIVERED job (after a reconnect) returns the
+     *  cached outcome instead of re-running — at-least-once delivery, idempotent execution. Bounded. */
+    private final Map<String, Frame> resultCache = Collections.synchronizedMap(
+            new LinkedHashMap<>(16, 0.75f, false) {
+                @Override
+                protected boolean removeEldestEntry(Map.Entry<String, Frame> eldest) {
+                    return size() > 256;
+                }
+            });
 
     public AgentRuntime(Engine engine, FrameChannel channel, String agentId) {
         this.engine = engine;
@@ -53,16 +66,26 @@ public final class AgentRuntime implements AutoCloseable {
     }
 
     private void runJob(Frame.Job job) {
+        Frame cached = resultCache.get(job.idempotencyKey());
+        if (cached != null) {
+            log.info("job {} idempotent replay (key {})", job.jobId(), job.idempotencyKey());
+            channel.send(cached);
+            return;
+        }
+
         AtomicLong seq = new AtomicLong();
         EventSink sink = event -> channel.send(new Frame.JobEvent(job.jobId(), seq.incrementAndGet(), event));
+        Frame terminal;
         try {
             Result result = engine.execute(job.command(), sink);
-            channel.send(new Frame.JobResult(job.jobId(), result));
+            terminal = new Frame.JobResult(job.jobId(), result);
         } catch (Exception e) {
             log.warn("job {} failed: {}", job.jobId(), e.getMessage());
-            channel.send(new Frame.JobFailed(job.jobId(), e.getClass().getSimpleName(),
-                    e.getMessage() == null ? "" : e.getMessage()));
+            terminal = new Frame.JobFailed(job.jobId(), e.getClass().getSimpleName(),
+                    e.getMessage() == null ? "" : e.getMessage());
         }
+        resultCache.put(job.idempotencyKey(), terminal);
+        channel.send(terminal);
     }
 
     @Override

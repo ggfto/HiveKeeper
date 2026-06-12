@@ -11,13 +11,14 @@ import org.springframework.web.socket.WebSocketSession;
 import org.springframework.web.socket.handler.TextWebSocketHandler;
 import java.time.Duration;
 import java.util.Map;
+import java.util.Optional;
 import java.util.concurrent.ConcurrentHashMap;
 
 /**
  * Accepts agent WebSocket connections that already passed {@link AgentAuthInterceptor} (so the session
- * carries a server-verified agentId + tenantId). Each connection gets its own
- * {@link SpringWsFrameChannel} + {@link RemoteEngine}, registered under its tenant. The agent's
- * {@code Hello} is informational only — authorization uses the verified identity, never the claim.
+ * carries a server-verified agentId + tenantId). Each connection gets a {@link SpringWsFrameChannel} +
+ * {@link RemoteEngine} (synchronous request/response), and — when persistence is enabled — drives the
+ * durable {@link JobGateway} (redeliver on connect, complete on terminal frames).
  */
 @Component
 @Slf4j
@@ -25,22 +26,25 @@ class AgentWebSocketHandler extends TextWebSocketHandler {
 
     private final JsonCodec codec = new JsonCodec();
     private final AgentRegistry registry;
+    private final Optional<JobGateway> jobGateway;
     private final Map<String, SpringWsFrameChannel> channels = new ConcurrentHashMap<>();
 
-    AgentWebSocketHandler(AgentRegistry registry) {
+    AgentWebSocketHandler(AgentRegistry registry, Optional<JobGateway> jobGateway) {
         this.registry = registry;
+        this.jobGateway = jobGateway;
     }
 
     @Override
     public void afterConnectionEstablished(WebSocketSession session) {
-        String tenantId = (String) session.getAttributes().get(AgentAuthInterceptor.ATTR_TENANT_ID);
-        String agentId = (String) session.getAttributes().get(AgentAuthInterceptor.ATTR_AGENT_ID);
+        String tenantId = tenantId(session);
+        String agentId = agentId(session);
 
         SpringWsFrameChannel channel = new SpringWsFrameChannel(session, codec);
         RemoteEngine engine = new RemoteEngine(channel, Duration.ofSeconds(60));
         channel.attachEngine(engine);
         channels.put(session.getId(), channel);
         registry.register(tenantId, agentId, session.getId(), engine);
+        jobGateway.ifPresent(jg -> jg.onAgentConnected(tenantId, agentId, channel));
         log.info("agent '{}' connected for tenant '{}'", agentId, tenantId);
     }
 
@@ -51,20 +55,27 @@ class AgentWebSocketHandler extends TextWebSocketHandler {
             return;
         }
         Frame frame = codec.fromJson(message.getPayload(), Frame.class);
-        if (frame instanceof Frame.Hello hello) {
-            String verified = (String) session.getAttributes().get(AgentAuthInterceptor.ATTR_AGENT_ID);
-            if (!hello.agentId().equals(verified)) {
-                log.warn("agent claims id '{}' but verified id is '{}' — ignoring the claim",
-                        hello.agentId(), verified);
-            }
+        if (frame instanceof Frame.Hello hello && !hello.agentId().equals(agentId(session))) {
+            log.warn("agent claims id '{}' but verified id is '{}' — ignoring the claim",
+                    hello.agentId(), agentId(session));
         }
-        channel.deliver(frame);
+        channel.deliver(frame);                                       // synchronous (RemoteEngine)
+        jobGateway.ifPresent(jg -> jg.onFrame(tenantId(session), frame));  // durable jobs
     }
 
     @Override
     public void afterConnectionClosed(WebSocketSession session, CloseStatus status) {
         channels.remove(session.getId());
         registry.unregisterBySession(session.getId());
+        jobGateway.ifPresent(jg -> jg.onAgentDisconnected(tenantId(session), agentId(session)));
         log.info("agent socket closed: {} ({})", session.getId(), status);
+    }
+
+    private static String tenantId(WebSocketSession session) {
+        return (String) session.getAttributes().get(AgentAuthInterceptor.ATTR_TENANT_ID);
+    }
+
+    private static String agentId(WebSocketSession session) {
+        return (String) session.getAttributes().get(AgentAuthInterceptor.ATTR_AGENT_ID);
     }
 }

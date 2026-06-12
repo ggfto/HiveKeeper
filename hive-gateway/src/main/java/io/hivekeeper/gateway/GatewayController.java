@@ -44,6 +44,13 @@ public class GatewayController {
     public record DiscoverRequest(String cidr, Integer port, Integer timeoutMillis) {
     }
 
+    /** Submit a durable job: {@code type} is inventory|backup|discover, with host (or cidr). */
+    public record JobRequest(String type, String host, String cidr, Integer port) {
+    }
+
+    public record JobSubmitted(String jobId, String status) {
+    }
+
     public record ApiError(String error, String detail) {
     }
 
@@ -51,16 +58,80 @@ public class GatewayController {
     private final AgentRegistry registry;
     private final TenantStore tenants;
     private final Optional<OperationLog> operationLog;
+    private final Optional<JobGateway> jobGateway;
     private final ExecutorService sseExecutor = Executors.newFixedThreadPool(8, runnable -> {
         Thread thread = new Thread(runnable, "gw-sse");
         thread.setDaemon(true);
         return thread;
     });
 
-    public GatewayController(AgentRegistry registry, TenantStore tenants, Optional<OperationLog> operationLog) {
+    public GatewayController(AgentRegistry registry, TenantStore tenants,
+                             Optional<OperationLog> operationLog, Optional<JobGateway> jobGateway) {
         this.registry = registry;
         this.tenants = tenants;
         this.operationLog = operationLog;
+        this.jobGateway = jobGateway;
+    }
+
+    /** Submit a DURABLE job: it is persisted, dispatched if the agent is connected, and redelivered when
+     *  the agent reconnects — so it survives a transient disconnect. Requires the postgres profile. */
+    @PostMapping("/api/agents/{agentId}/jobs")
+    public ResponseEntity<String> submitJob(@RequestHeader(value = "X-Tenant-Key", required = false) String apiKey,
+                                            @PathVariable String agentId, @RequestBody JobRequest req) {
+        Optional<Tenant> tenant = tenants.tenantByApiKey(apiKey);
+        if (tenant.isEmpty()) {
+            return unauthorized();
+        }
+        if (jobGateway.isEmpty()) {
+            return status(501, new ApiError("not_supported", "durable jobs require the 'postgres' profile"));
+        }
+        Command command;
+        try {
+            command = toCommand(req);
+        } catch (IllegalArgumentException e) {
+            return status(400, new ApiError("bad_request", e.getMessage()));
+        }
+        String jobId = jobGateway.get().submit(tenant.get().tenantId(), agentId, req.type(), command);
+        return json(new JobSubmitted(jobId, "submitted"));
+    }
+
+    @GetMapping("/api/jobs/{jobId}")
+    public ResponseEntity<String> jobStatus(@RequestHeader(value = "X-Tenant-Key", required = false) String apiKey,
+                                            @PathVariable String jobId) {
+        Optional<Tenant> tenant = tenants.tenantByApiKey(apiKey);
+        if (tenant.isEmpty()) {
+            return unauthorized();
+        }
+        if (jobGateway.isEmpty()) {
+            return status(501, new ApiError("not_supported", "durable jobs require the 'postgres' profile"));
+        }
+        return jobGateway.get().get(tenant.get().tenantId(), jobId)
+                .map(this::json)
+                .orElseGet(() -> status(404, new ApiError("job_not_found", jobId)));
+    }
+
+    private static Command toCommand(JobRequest req) {
+        int port = req.port() == null ? 22 : req.port();
+        return switch (req.type() == null ? "" : req.type()) {
+            case "inventory" -> Command.Inventory.of(DeviceRef.ssh(requireHost(req), port));
+            case "backup" -> Command.BackupConfig.of(DeviceRef.ssh(requireHost(req), port));
+            case "discover" -> Command.Discover.of(requireCidr(req), port, 800);
+            default -> throw new IllegalArgumentException("unknown job type: " + req.type());
+        };
+    }
+
+    private static String requireHost(JobRequest req) {
+        if (req.host() == null || req.host().isBlank()) {
+            throw new IllegalArgumentException("host is required");
+        }
+        return req.host().trim();
+    }
+
+    private static String requireCidr(JobRequest req) {
+        if (req.cidr() == null || req.cidr().isBlank()) {
+            throw new IllegalArgumentException("cidr is required");
+        }
+        return req.cidr().trim();
     }
 
     @PreDestroy
