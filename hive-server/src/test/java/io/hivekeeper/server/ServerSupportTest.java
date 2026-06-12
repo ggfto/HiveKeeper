@@ -1,6 +1,5 @@
 package io.hivekeeper.server;
 
-import io.hivekeeper.core.model.DeviceId;
 import io.hivekeeper.core.model.DeviceRef;
 import io.hivekeeper.core.spi.Credentials;
 import org.junit.jupiter.api.Test;
@@ -31,7 +30,7 @@ class ServerSupportTest {
     @Test
     void credentialsDefaultUserToAdmin() {
         Credentials creds = ServerSupport.credentials(new ConnectionRequest("ap", null, null, "pw", null))
-                .resolve(DeviceId.of("ap")).orElseThrow();
+                .resolve(DeviceRef.ssh("ap")).orElseThrow();
         assertEquals("admin", creds.username());
         assertEquals("pw", creds.password());
     }

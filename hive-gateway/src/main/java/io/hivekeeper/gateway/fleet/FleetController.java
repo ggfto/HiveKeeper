@@ -32,7 +32,7 @@ public class FleetController {
     }
 
     public record RegisterDevice(String serial, String model, String label, String mgmtIp,
-                                 String siteId, String agentId) {
+                                 String siteId, String agentId, String credRef) {
     }
 
     public record TagRequest(String groupId) {
@@ -109,7 +109,8 @@ public class FleetController {
         String siteId = isBlank(req.siteId()) ? null : req.siteId().trim();
         guard.require(p, Role.ADMIN, siteId == null ? ResourceScope.org() : ResourceScope.site(siteId));
         String id = fleet.registerDevice(p.tenantId(), req.serial().trim(), req.model(), req.label(),
-                req.mgmtIp(), siteId, isBlank(req.agentId()) ? null : req.agentId().trim());
+                req.mgmtIp(), siteId, isBlank(req.agentId()) ? null : req.agentId().trim(),
+                isBlank(req.credRef()) ? null : req.credRef().trim());
         return ResponseEntity.ok(new IdResponse(id));
     }
 

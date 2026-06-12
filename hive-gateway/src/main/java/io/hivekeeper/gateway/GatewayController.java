@@ -72,8 +72,9 @@ public class GatewayController {
     public record JobSubmitted(String jobId, String status) {
     }
 
-    /** Adopt a discovered host into the fleet: inventory it, then register a device by its real serial. */
-    public record AdoptRequest(String host, Integer port, String label) {
+    /** Adopt a discovered host into the fleet: inventory it, then register a device by its real serial.
+     *  {@code credRef} is the on-prem credential pointer for future ops (the agent resolves it locally). */
+    public record AdoptRequest(String host, Integer port, String label, String credRef) {
     }
 
     public record AdoptResponse(String deviceId, String serial, String model) {
@@ -191,11 +192,11 @@ public class GatewayController {
 
         String tenantId = p.tenantId();
         String host = req.host().trim();
-        int port = req.port() == null ? 22 : req.port();
+        DeviceRef ref = deviceRefFor(tenantId, host, req.port());
         sseExecutor.submit(() -> {
             try {
                 EventSink sink = event -> sendSse(emitter, "event", codec.toJson(event));
-                Result result = engine.get().execute(Command.Inventory.of(DeviceRef.ssh(host, port)), sink);
+                Result result = engine.get().execute(Command.Inventory.of(ref), sink);
                 record(tenantId, agentId, "inventory", host, result.getClass().getSimpleName());
                 sendSse(emitter, "result", codec.toJson(result));
                 emitter.complete();
@@ -340,9 +341,10 @@ public class GatewayController {
                     return status(422, new ApiError("no_serial", "the device reported no serial; cannot adopt it"));
                 }
                 String label = req.label() == null || req.label().isBlank() ? device.serial() : req.label().trim();
+                String credRef = req.credRef() == null || req.credRef().isBlank() ? null : req.credRef().trim();
                 String siteId = tenants.agentSiteId(agentId).orElse(null);
                 String deviceId = fleet.get().registerDevice(p.tenantId(), device.serial(), device.model(),
-                        label, host, siteId, agentId);
+                        label, host, siteId, agentId, credRef);
                 record(p.tenantId(), agentId, "adopt", host, device.serial());
                 return json(new AdoptResponse(deviceId, device.serial(), device.model()));
             } catch (DataIntegrityViolationException e) {
@@ -387,7 +389,7 @@ public class GatewayController {
             return status(400, new ApiError("bad_request", "host is required"));
         }
         try {
-            DeviceRef ref = DeviceRef.ssh(req.host().trim(), req.port() == null ? 22 : req.port());
+            DeviceRef ref = deviceRefFor(p.tenantId(), req.host().trim(), req.port());
             Result result = engine.get().execute(commandFactory.apply(ref), EventSink.NOOP);
             record(p.tenantId(), agentId, opType, req.host().trim(), result.getClass().getSimpleName());
             // A config-write result echoes the applied CLI lines; mask secrets before they reach the browser.
@@ -417,6 +419,15 @@ public class GatewayController {
      *  the caller's tenant by {@code registry.agentIds}. */
     private ResourceScope siteScope(String agentId) {
         return tenants.agentSiteId(agentId).map(ResourceScope::site).orElseGet(ResourceScope::org);
+    }
+
+    /** Builds the {@link DeviceRef} for an op, attaching the registered device's credential REFERENCE (which
+     *  the agent resolves locally to the secret) when the host is a registered device — otherwise a null
+     *  credRef, and the agent falls back to its default. The cloud only ever sends the reference. */
+    private DeviceRef deviceRefFor(String tenantId, String host, Integer portObj) {
+        int port = portObj == null ? 22 : portObj;
+        String credRef = fleet.flatMap(f -> f.credRefForHost(tenantId, host)).orElse(null);
+        return DeviceRef.ssh(host, port, credRef);
     }
 
     private void record(String tenantId, String agentId, String opType, String host, String summary) {

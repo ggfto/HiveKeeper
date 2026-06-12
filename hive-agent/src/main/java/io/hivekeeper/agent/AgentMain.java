@@ -4,6 +4,7 @@ import io.hivekeeper.core.api.Engine;
 import io.hivekeeper.core.engine.HiveCore;
 import io.hivekeeper.core.spi.BackupStore;
 import io.hivekeeper.core.spi.CredentialProvider;
+import io.hivekeeper.core.spi.Credentials;
 import io.hivekeeper.core.tasks.storage.GitBackupStore;
 import io.hivekeeper.protocol.AgentRuntime;
 import lombok.extern.slf4j.Slf4j;
@@ -28,8 +29,14 @@ public final class AgentMain {
         log.info("starting HiveKeeper agent '{}' -> {} (mTLS={})",
                 config.agentId(), config.gatewayUri(), config.mtlsEnabled());
 
-        CredentialProvider credentials =
-                new DefaultCredentialProvider(config.defaultUser(), config.defaultPassword());
+        // Credentials are resolved HERE, on the agent. With a vault configured, each device's credRef maps
+        // to its own secret locally; otherwise one default credential covers the fleet. Either way the cloud
+        // only ever sent a reference.
+        Credentials fallback = new Credentials(config.defaultUser(), config.defaultPassword());
+        CredentialProvider credentials = config.credentialVault() == null
+                ? new DefaultCredentialProvider(config.defaultUser(), config.defaultPassword())
+                : VaultCredentialProvider.fromFile(Path.of(config.credentialVault()), fallback);
+        log.info("credentials: {}", config.credentialVault() == null ? "single default" : "per-device vault");
         BackupStore backupStore = new GitBackupStore(Path.of(config.backupDir()));
         Engine engine = HiveCore.localEngine(credentials, backupStore);
 

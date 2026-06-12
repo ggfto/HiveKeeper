@@ -69,7 +69,7 @@ public final class LocalEngine implements Engine {
         DeviceId deviceId = ref.id();
         sink.emit(new Event.Started(id, deviceId, command.getClass().getSimpleName()));
         try {
-            Credentials creds = credentials.resolve(deviceId)
+            Credentials creds = credentials.resolve(ref)
                     .orElseThrow(() -> new IllegalStateException("No credentials configured for " + deviceId));
 
             try (SshSession session = transport.open(ref, creds)) {

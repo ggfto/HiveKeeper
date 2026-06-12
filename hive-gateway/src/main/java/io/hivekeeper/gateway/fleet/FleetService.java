@@ -93,13 +93,22 @@ public class FleetService {
 
     @Transactional
     public String registerDevice(String tenantId, String serial, String model, String label, String mgmtIp,
-                                 String siteId, String agentId) {
+                                 String siteId, String agentId, String credRef) {
         setTenant(tenantId);
         String id = "dev-" + UUID.randomUUID();
-        jdbc.update("insert into device (device_id, tenant_id, site_id, agent_id, serial, model, label, mgmt_ip) "
-                        + "values (?, ?, ?, ?, ?, ?, ?, ?)",
-                id, tenantId, siteId, agentId, serial, model, label, mgmtIp);
+        jdbc.update("insert into device (device_id, tenant_id, site_id, agent_id, serial, model, label, "
+                        + "mgmt_ip, cred_ref) values (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                id, tenantId, siteId, agentId, serial, model, label, mgmtIp, credRef);
         return id;
+    }
+
+    /** The credential reference for a registered device by its management IP — the opaque pointer the agent
+     *  resolves locally to the actual secret. Empty if the host is not a registered device (or has none). */
+    @Transactional(readOnly = true)
+    public Optional<String> credRefForHost(String tenantId, String host) {
+        setTenant(tenantId);
+        return jdbc.queryForList("select cred_ref from device where mgmt_ip = ?", String.class, host)
+                .stream().filter(java.util.Objects::nonNull).findFirst();
     }
 
     /** Tag a device into a group (idempotent — re-tagging is a no-op). */

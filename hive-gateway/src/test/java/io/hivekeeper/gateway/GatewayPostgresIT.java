@@ -126,10 +126,10 @@ class GatewayPostgresIT {
 
         // acme registering a device pinned to a GLOBEX site must fail the composite (site_id, tenant_id) FK
         assertThrows(DataIntegrityViolationException.class,
-                () -> fleet.registerDevice("acme", "SER-CROSS", "AP230", "x", "10.0.0.9", globexSite, null));
+                () -> fleet.registerDevice("acme", "SER-CROSS", "AP230", "x", "10.0.0.9", globexSite, null, null));
 
         // a same-tenant registration succeeds and is listed
-        fleet.registerDevice("acme", "SER-OK", "AP230", "lab", "10.0.0.10", "site-acme-default", "lab-agent");
+        fleet.registerDevice("acme", "SER-OK", "AP230", "lab", "10.0.0.10", "site-acme-default", "lab-agent", "lab-cred");
         assertTrue(fleet.listDevices("acme").stream().anyMatch(d -> "SER-OK".equals(d.serial())));
     }
 
