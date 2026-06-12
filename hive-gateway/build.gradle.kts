@@ -21,6 +21,10 @@ dependencies {
 
     testImplementation("org.springframework.boot:spring-boot-starter-test")
     testImplementation("org.springframework.security:spring-security-test")
+    // Real-Postgres integration tests (RLS, the SECURITY DEFINER fn, JIT, cross-tenant FKs). Versions come
+    // from the Spring Boot BOM above. The tests self-skip when no container engine is available.
+    testImplementation("org.testcontainers:junit-jupiter")
+    testImplementation("org.testcontainers:postgresql")
     testRuntimeOnly("org.junit.platform:junit-platform-launcher")
 }
 
