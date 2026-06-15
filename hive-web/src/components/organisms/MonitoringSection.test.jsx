@@ -19,21 +19,24 @@ function renderSection(props) {
 }
 
 describe('MonitoringSection', () => {
-  it('auto-loads the live snapshot and lists connected clients + radios when online', async () => {
+  it('auto-loads the live snapshot and lists clients, radios, cloud state when online', async () => {
     const loadStatus = vi.fn().mockResolvedValue({
-      firmwareVersion: '10.6r7',
+      firmwareVersion: '10.6r1a',
       uptime: '5d 2h',
-      hiveName: 'hive0',
+      hiveName: 'hk-mesh',
       hostname: 'AH-827200',
+      cloud: { known: true, managed: false },
       stations: [{ mac: 'aa:bb:cc', ipAddress: '10.0.0.9', hostname: 'phone', ssid: 'HK', osType: 'iOS', rssi: -55 }],
-      radios: [{ name: 'wifi0', mode: 'access', channel: 36, power: '12' }],
+      radios: [{ name: 'Wifi0', mode: 'access', channel: 11, power: null, width: 20, txPower: 18, auto: 'Enable' }],
     })
     renderSection({ online: true, loadStatus })
     expect(await screen.findByText('phone')).toBeInTheDocument() // a connected client
     expect(screen.getByText('10.0.0.9')).toBeInTheDocument()
-    expect(screen.getByText('wifi0')).toBeInTheDocument() // a radio
-    expect(screen.getByText('36')).toBeInTheDocument() // its channel
-    expect(screen.getByText('10.6r7')).toBeInTheDocument() // system health
+    expect(screen.getByText('Wifi0')).toBeInTheDocument() // a radio
+    expect(screen.getByText('11')).toBeInTheDocument() // its channel (from show acsp)
+    expect(screen.getByText('18')).toBeInTheDocument() // its Tx power, which inventory leaves null
+    expect(screen.getByText('10.6r1a')).toBeInTheDocument() // system health
+    expect(screen.getByText(/standalone/i)).toBeInTheDocument() // cloud state: not phoning home
     // the merged telemetry config (SNMP + Syslog) is on the same tab
     expect(screen.getByRole('button', { name: /apply snmp/i })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: /apply syslog/i })).toBeInTheDocument()

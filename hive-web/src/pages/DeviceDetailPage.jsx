@@ -14,7 +14,7 @@ import { PowerForm } from '../components/organisms/PowerForm'
 import { DeviceOverviewForm } from '../components/organisms/DeviceOverviewForm'
 import { MonitoringSection } from '../components/organisms/MonitoringSection'
 import { MONITORING_SECTIONS } from '../lib/configSchema'
-import { parseSsids, parseHives } from '../lib/hiveosParse'
+import { parseSsids, parseHives, parseCapwap, parseAcsp } from '../lib/hiveosParse'
 import { meshCommands } from '../lib/hiveosCli'
 import { groupNamesFor, siteName } from '../lib/fleet'
 
@@ -127,9 +127,33 @@ export function DeviceDetailPage() {
         .then((r) => parseHives((r.outputs || []).join('\n'))),
     [gateway],
   )
-  // The live monitoring snapshot is the already-parsed inventory result (clients/radios/system facts), pulled
-  // through the agent. Memoized so MonitoringSection's auto-load fires once, not on every parent render.
-  const loadStatus = useCallback((d) => gateway.inventory(d.agentId, d.mgmtIp).then((r) => r.device), [gateway])
+  // The live monitoring snapshot: the already-parsed inventory (clients/radios/system facts) enriched with two
+  // cheap reads — `show capwap client` (is the AP standalone or still phoning home) and `show acsp` (per-radio
+  // channel/width/Tx power, which inventory leaves null). All through the agent. Memoized so the auto-load fires
+  // once, not on every parent render.
+  const loadStatus = useCallback(
+    async (d) => {
+      const [inv, outputs] = await Promise.all([
+        gateway.inventory(d.agentId, d.mgmtIp).then((r) => r.device),
+        gateway
+          .agentOp(d.agentId, 'apply-config', {
+            host: d.mgmtIp,
+            port: 22,
+            commands: ['show capwap client', 'show acsp'],
+            save: false,
+          })
+          .then((r) => r.outputs || [])
+          .catch(() => []),
+      ])
+      const rf = new Map(parseAcsp(outputs[1]).map((r) => [r.name.toLowerCase(), r]))
+      const radios = (inv.radios || []).map((r) => {
+        const a = rf.get((r.name || '').toLowerCase())
+        return a ? { ...r, channel: a.channel ?? r.channel, width: a.width, txPower: a.txPower, auto: a.channelSelect } : r
+      })
+      return { ...inv, radios, cloud: parseCapwap(outputs[0]) }
+    },
+    [gateway],
+  )
   const applyMesh = (d, spec) => onApplyConfig(d, { commands: meshCommands(spec), save: true })
   const onReboot = (d) => {
     if (!window.confirm(`Reboot ${d.mgmtIp}? It will be offline for ~1-2 minutes.`)) return

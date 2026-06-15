@@ -53,3 +53,39 @@ export function parseHives(output) {
     .filter(Boolean)
     .map((m) => ({ name: m[1], nativeVlan: Number(m[2]) }))
 }
+
+const num = (x) => (x !== undefined && x !== '' && !Number.isNaN(Number(x)) ? Number(x) : null)
+
+/**
+ * Parse `show capwap client`. The first line reads "CAPWAP client:   Enabled|Disabled" — disabled means the AP
+ * is standalone (not phoning home to a cloud controller), which is the whole point of HiveKeeper. -> { known,
+ * managed } where `managed` = the AP is still talking to a cloud control plane.
+ */
+export function parseCapwap(output) {
+  const line = (output || '').split('\n').find((l) => /CAPWAP client:/i.test(l))
+  return { known: !!line, managed: !!line && /enabled/i.test(line) }
+}
+
+/**
+ * Parse `show acsp` (the per-radio channel-selection / auto-power table). Each data row starts with the radio
+ * name (Wifi0/Wifi1) and carries: channel-select state, primary channel, channel width, power-control state,
+ * Tx power (dBm). This is richer than the inventory radio parse (which leaves Tx power null).
+ * -> [{ name, channelSelect, channel, width, powerCtrl, txPower }].
+ */
+export function parseAcsp(output) {
+  return (output || '')
+    .split('\n')
+    .map((l) => l.trim())
+    .filter((l) => /^wifi\d+\s/i.test(l))
+    .map((l) => {
+      const t = l.split(/\s+/)
+      return {
+        name: t[0],
+        channelSelect: t[1] || null,
+        channel: num(t[2]),
+        width: num(t[3]),
+        powerCtrl: t[4] || null,
+        txPower: num(t[5]),
+      }
+    })
+}

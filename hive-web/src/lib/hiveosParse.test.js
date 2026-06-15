@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { parseSsids, parseHives } from './hiveosParse'
+import { parseSsids, parseHives, parseCapwap, parseAcsp } from './hiveosParse'
 
 // A real running-config excerpt captured from the AP230 (secrets already masked by the gateway).
 const CONFIG = `
@@ -54,5 +54,45 @@ describe('parseHives', () => {
   it('is empty for no hives', () => {
     expect(parseHives('')).toEqual([])
     expect(parseHives(null)).toEqual([])
+  })
+})
+
+// `show capwap client` from the AP230 (standalone -> CAPWAP client Disabled).
+const CAPWAP_OFF = `
+CAPWAP client:   Disabled
+Discovery interval:      5 seconds
+Primary server tries:    0`
+
+describe('parseCapwap', () => {
+  it('reads a standalone AP (CAPWAP client disabled = not calling home)', () => {
+    expect(parseCapwap(CAPWAP_OFF)).toEqual({ known: true, managed: false })
+  })
+  it('reads a cloud-managed AP (CAPWAP client enabled)', () => {
+    expect(parseCapwap('CAPWAP client:   Enabled')).toEqual({ known: true, managed: true })
+  })
+  it('is unknown when the line is absent', () => {
+    expect(parseCapwap('')).toEqual({ known: false, managed: false })
+    expect(parseCapwap(null)).toEqual({ known: false, managed: false })
+  })
+})
+
+// `show acsp` from the AP230 (per-radio channel-selection state).
+const SHOW_ACSP = `
+
+Interface Channel select state  Primary channel  Channel width Power ctrl state      Tx power(dbm) Use Last Selection
+--------- --------------------- ---------------- ------------- --------------------- ------------- ---------------------
+Wifi0     Enable                11               20            Enable                18            Channel:No  Power:No
+Wifi1     Enable                165              20            Enable                20            Channel:No  Power:No`
+
+describe('parseAcsp', () => {
+  it('lists each radio with channel, width, Tx power and auto-select state', () => {
+    expect(parseAcsp(SHOW_ACSP)).toEqual([
+      { name: 'Wifi0', channelSelect: 'Enable', channel: 11, width: 20, powerCtrl: 'Enable', txPower: 18 },
+      { name: 'Wifi1', channelSelect: 'Enable', channel: 165, width: 20, powerCtrl: 'Enable', txPower: 20 },
+    ])
+  })
+  it('is empty for no radio rows', () => {
+    expect(parseAcsp('')).toEqual([])
+    expect(parseAcsp(null)).toEqual([])
   })
 })

@@ -59,7 +59,15 @@ export function MonitoringSection({ device, online, loadStatus, snmpSection, sys
     <div className="space-y-6">
       <div className="space-y-3">
         <div className="flex items-center justify-between">
-          <MriSectionHeader icon={Activity} title="Live status" />
+          <div className="flex items-center gap-3">
+            <MriSectionHeader icon={Activity} title="Live status" />
+            {live?.cloud?.known &&
+              (live.cloud.managed ? (
+                <MriStatusBadge label="Managed (cloud)" variant="warning" size="xs" />
+              ) : (
+                <MriStatusBadge label="Standalone" variant="success" size="xs" />
+              ))}
+          </div>
           <MriButton size="sm" variant="ghost" disabled={!online || loading} onClick={refresh}>
             Refresh
           </MriButton>
@@ -130,7 +138,9 @@ export function MonitoringSection({ device, online, loadStatus, snmpSection, sys
                       <MriTableHead>Radio</MriTableHead>
                       <MriTableHead>Mode</MriTableHead>
                       <MriTableHead>Channel</MriTableHead>
-                      <MriTableHead>Power</MriTableHead>
+                      <MriTableHead>Width</MriTableHead>
+                      <MriTableHead>Tx power (dBm)</MriTableHead>
+                      <MriTableHead>Auto-select</MriTableHead>
                     </MriTableRow>
                   </MriTableHeader>
                   <MriTableBody>
@@ -139,7 +149,9 @@ export function MonitoringSection({ device, online, loadStatus, snmpSection, sys
                         <MriTableCell className="font-mono text-xs">{r.name || '—'}</MriTableCell>
                         <MriTableCell>{r.mode || '—'}</MriTableCell>
                         <MriTableCell>{r.channel ?? '—'}</MriTableCell>
-                        <MriTableCell>{r.power ?? '—'}</MriTableCell>
+                        <MriTableCell>{r.width != null ? `${r.width} MHz` : '—'}</MriTableCell>
+                        <MriTableCell>{r.txPower ?? r.power ?? '—'}</MriTableCell>
+                        <MriTableCell>{r.auto || '—'}</MriTableCell>
                       </MriTableRow>
                     ))}
                   </MriTableBody>
