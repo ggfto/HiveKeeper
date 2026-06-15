@@ -3,6 +3,7 @@ import {
   radioCommands,
   hostnameCommands,
   meshCommands,
+  hiveTuningCommands,
   capwapCommands,
   managementCommands,
   clientModeConnectCommands,
@@ -46,6 +47,29 @@ describe('meshCommands', () => {
   })
   it('works with no password and no interfaces', () => {
     expect(meshCommands({ name: 'hk-mesh' })).toEqual(['hive hk-mesh'])
+  })
+})
+
+// Confirmed via `?`: hive <name> frag-threshold <256-2346> ; rts-threshold <1-2346> ;
+//   neighbor connecting-threshold <-90..-55 | high|medium|low>
+describe('hiveTuningCommands', () => {
+  it('tunes frag/rts thresholds and the mesh connecting threshold for a hive', () => {
+    expect(
+      hiveTuningCommands('hk-mesh', { fragThreshold: '2000', rtsThreshold: '1500', connectingThreshold: 'medium' }),
+    ).toEqual([
+      'hive hk-mesh frag-threshold 2000',
+      'hive hk-mesh rts-threshold 1500',
+      'hive hk-mesh neighbor connecting-threshold medium',
+    ])
+  })
+  it('accepts a raw dBm connecting threshold and skips blank fields', () => {
+    expect(hiveTuningCommands('hk-mesh', { connectingThreshold: '-75' })).toEqual([
+      'hive hk-mesh neighbor connecting-threshold -75',
+    ])
+  })
+  it('emits nothing without a hive name or any field', () => {
+    expect(hiveTuningCommands('hk-mesh', {})).toEqual([])
+    expect(hiveTuningCommands('', { fragThreshold: '2000' })).toEqual([])
   })
 })
 

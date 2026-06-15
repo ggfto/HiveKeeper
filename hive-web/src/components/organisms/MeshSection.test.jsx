@@ -39,4 +39,18 @@ describe('MeshSection', () => {
     expect(spec.name).toBe('mesh1')
     expect([...spec.interfaces].sort()).toEqual(['mgt0', 'wifi1'])
   })
+
+  it('tunes an existing hive (frag/RTS thresholds) via apply-config', async () => {
+    const loadHives = vi.fn().mockResolvedValue([{ name: 'hk-mesh', nativeVlan: 1 }])
+    const onApply = vi.fn()
+    render(<MeshSection device={device} loadHives={loadHives} applyMesh={vi.fn()} onApply={onApply} />)
+    // the tuning block only appears once a hive is loaded; the single hive is preselected
+    await screen.findByText(/advanced tuning/i)
+    fireEvent.change(screen.getByPlaceholderText(/high/), { target: { value: 'medium' } })
+    fireEvent.click(screen.getByRole('button', { name: /apply tuning/i }))
+    expect(onApply).toHaveBeenCalledWith(device, {
+      commands: ['hive hk-mesh neighbor connecting-threshold medium'],
+      save: true,
+    })
+  })
 })

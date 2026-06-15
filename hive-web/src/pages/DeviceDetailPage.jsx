@@ -256,7 +256,13 @@ export function DeviceDetailPage() {
             <WifiSection device={device} loadSsids={loadSsids} configureSsid={onConfigureSsid} busy={busy} />
           )}
           {section === 'mesh' && (
-            <MeshSection device={device} loadHives={loadHives} applyMesh={applyMesh} busy={busy} />
+            <MeshSection
+              device={device}
+              loadHives={loadHives}
+              applyMesh={applyMesh}
+              onApply={onApplyConfig}
+              busy={busy}
+            />
           )}
           {section === 'radio' && <RadioForm device={device} onApply={onApplyConfig} busy={busy} />}
           {section === 'clientmode' && <ClientModeForm device={device} onApply={onApplyConfig} busy={busy} />}

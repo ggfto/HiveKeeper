@@ -28,6 +28,22 @@ export function meshCommands({ name, password, interfaces = [] } = {}) {
   return cmds
 }
 
+/**
+ * Advanced per-hive tuning. Confirmed grammar: `hive <name> frag-threshold <256-2346>`,
+ * `hive <name> rts-threshold <1-2346>`, `hive <name> neighbor connecting-threshold <-90..-55 | high|medium|low>`
+ * (the minimum signal strength to link a neighboring mesh member). Blank fields are left unchanged; no hive
+ * name means nothing to tune.
+ */
+export function hiveTuningCommands(name, { fragThreshold, rtsThreshold, connectingThreshold } = {}) {
+  const trimmed = (name || '').trim()
+  if (!trimmed) return []
+  const cmds = []
+  if (fragThreshold) cmds.push(`hive ${trimmed} frag-threshold ${fragThreshold}`)
+  if (rtsThreshold) cmds.push(`hive ${trimmed} rts-threshold ${rtsThreshold}`)
+  if (connectingThreshold) cmds.push(`hive ${trimmed} neighbor connecting-threshold ${connectingThreshold}`)
+  return cmds
+}
+
 /** Cloud (CAPWAP) connection: standalone cuts the link to HiveManager / ExtremeCloud IQ. */
 export function capwapCommands(connected) {
   return [connected ? 'capwap client enable' : 'no capwap client enable']

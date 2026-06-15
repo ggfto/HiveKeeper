@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react'
-import { MriInput, MriButton, MriSectionHeader, MriSegmentedTabs } from '@mriqbox/ui-kit'
+import { MriInput, MriButton, MriSectionHeader, MriSegmentedTabs, MriSelect } from '@mriqbox/ui-kit'
 import { Network } from 'lucide-react'
+import { hiveTuningCommands } from '../../lib/hiveosCli'
 
 const INTERFACES = [
   { id: 'mgt0', label: 'mgt0' },
@@ -17,12 +18,59 @@ function Field({ label, value, onChange, placeholder }) {
   )
 }
 
+/** Advanced per-hive RF/mesh tuning: pick a hive, set fragmentation / RTS thresholds and the minimum signal a
+ *  neighboring mesh member needs to link. Builds confirmed HiveOS CLI and dispatches via apply-config. */
+function HiveTuning({ device, hives, onApply, busy }) {
+  const [hive, setHive] = useState(() => hives[0]?.name || '')
+  const [frag, setFrag] = useState('')
+  const [rts, setRts] = useState('')
+  const [conn, setConn] = useState('')
+
+  const apply = () => {
+    const commands = hiveTuningCommands(hive, {
+      fragThreshold: frag.trim(),
+      rtsThreshold: rts.trim(),
+      connectingThreshold: conn.trim(),
+    })
+    if (commands.length === 0) return
+    onApply(device, { commands, save: true })
+  }
+
+  return (
+    <div className="space-y-3 rounded-md border border-border p-3">
+      <span className="text-xs font-medium text-muted-foreground">Advanced tuning</span>
+      <div className="grid gap-2 sm:grid-cols-2">
+        <label className="flex flex-col gap-1">
+          <span className="text-xs text-muted-foreground">Hive</span>
+          <MriSelect
+            options={hives.map((h) => ({ label: h.name, value: h.name }))}
+            value={hive}
+            onChange={setHive}
+            placeholder="Select a hive…"
+          />
+        </label>
+        <Field label="Frag threshold (256-2346)" value={frag} onChange={setFrag} placeholder="2346" />
+        <Field label="RTS threshold (1-2346)" value={rts} onChange={setRts} placeholder="2346" />
+        <Field label="Mesh connecting threshold" value={conn} onChange={setConn} placeholder="high | medium | low or -80" />
+      </div>
+      <MriButton size="sm" disabled={busy || !hive} onClick={apply}>
+        Apply tuning
+      </MriButton>
+      <p className="text-xs text-muted-foreground">
+        Lower frag/RTS thresholds can steady a noisy backhaul; the connecting threshold is the minimum signal
+        (dBm, -90 to -55) a neighbor needs before it joins the mesh.
+      </p>
+    </div>
+  )
+}
+
 /**
  * Mesh (hive) management: list the hives read from the AP (`show hive`) and create/join one, choosing which
  * interfaces carry it — mgt0 for the control plane, wifi0/wifi1 for the wireless backhaul (the piece the old
  * form hid by always binding mgt0). Applies confirmed HiveOS CLI through apply-config; the list re-reads after.
+ * An existing hive can also be tuned (frag/RTS/connecting thresholds).
  */
-export function MeshSection({ device, loadHives, applyMesh, busy }) {
+export function MeshSection({ device, loadHives, applyMesh, onApply, busy }) {
   const [hives, setHives] = useState(null)
   const [name, setName] = useState('')
   const [password, setPassword] = useState('')
@@ -93,6 +141,8 @@ export function MeshSection({ device, loadHives, applyMesh, busy }) {
           For a wireless backhaul, also set the chosen radio&apos;s mode to backhaul or dual in the Radio tab.
         </p>
       </div>
+
+      {onApply && hives?.length > 0 && <HiveTuning device={device} hives={hives} onApply={onApply} busy={busy} />}
     </div>
   )
 }
