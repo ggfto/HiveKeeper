@@ -78,6 +78,7 @@ final class SshjShellSession implements SshSession {
         ByteArrayOutputStream buf = new ByteArrayOutputStream();
         byte[] chunk = new byte[8192];
         long deadline = System.currentTimeMillis() + quietMillis;
+        int pagerAnsweredAt = -1;   // buf size at which we last answered a "--More--" prompt
 
         while (System.currentTimeMillis() < deadline) {
             int available = in.available();
@@ -86,11 +87,17 @@ final class SshjShellSession implements SshSession {
                 if (n > 0) {
                     buf.write(chunk, 0, n);
                     String text = stripAnsi(buf.toString(StandardCharsets.UTF_8));
-                    if (text.contains("--More--")) {
-                        out.write(' ');
-                        out.flush();
-                    }
-                    if (looksLikePrompt(text)) {
+                    // Answer the pager ONLY when "--More--" is at the tail (the AP is waiting), and only once
+                    // per occurrence. The old whole-buffer check re-sent a space on every chunk once a single
+                    // "--More--" had scrolled by, spamming the pager so a large paged read (e.g. `show log
+                    // buffered`) never settled and timed out empty.
+                    if (endsWithMore(text)) {
+                        if (buf.size() != pagerAnsweredAt) {
+                            out.write(' ');
+                            out.flush();
+                            pagerAnsweredAt = buf.size();
+                        }
+                    } else if (looksLikePrompt(text)) {
                         break;
                     }
                     deadline = System.currentTimeMillis() + quietMillis;  // got data, keep going
@@ -107,7 +114,17 @@ final class SshjShellSession implements SshSession {
         return stripAnsi(buf.toString(StandardCharsets.UTF_8));
     }
 
-    private static boolean looksLikePrompt(String text) {
+    /** True when the output is sitting at a pager prompt (HiveOS prints "--More--" with no trailing newline
+     *  and waits for a key). Only the tail matters — a "--More--" already scrolled into the backlog is done. */
+    static boolean endsWithMore(String text) {
+        if (text == null) {
+            return false;
+        }
+        String tail = text.substring(Math.max(0, text.length() - 24)).strip();
+        return tail.endsWith("--More--") || tail.endsWith("--More--)");
+    }
+
+    static boolean looksLikePrompt(String text) {
         int nl = Math.max(text.lastIndexOf('\n'), text.lastIndexOf('\r'));
         String lastLine = (nl >= 0 ? text.substring(nl + 1) : text).strip();
         return !lastLine.isEmpty() && (lastLine.endsWith("#") || lastLine.endsWith(">"))
