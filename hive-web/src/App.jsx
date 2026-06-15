@@ -1,7 +1,9 @@
+import { useEffect, useState } from 'react'
 import { HashRouter, Routes, Route, Navigate, useLocation, useNavigate } from 'react-router-dom'
 import { AuthProvider, useAuth } from './context/AuthProvider'
 import { ConsoleLayout } from './components/templates/ConsoleLayout'
 import { SignInGate } from './components/organisms/SignInGate'
+import { SetupWizard } from './components/organisms/SetupWizard'
 import { OverviewPage } from './pages/OverviewPage'
 import { AgentsPage } from './pages/AgentsPage'
 import { DevicesPage } from './pages/DevicesPage'
@@ -30,10 +32,31 @@ function Console() {
   )
 }
 
-/** Gate: the console only mounts (and only makes authorized requests) once there is a real identity or the
- *  dev owner key was explicitly chosen. */
+/** Gate: a fresh gateway (no organizations) shows the first-run wizard; otherwise the console only mounts (and
+ *  only makes authorized requests) once there is a real identity or the dev owner key was explicitly chosen.
+ *  The setup check shows the wizard ONLY on an explicit { initialized: false } — any error or older gateway
+ *  falls through to the normal sign-in. */
 function Root() {
   const auth = useAuth()
+  const [setup, setSetup] = useState({ loading: true, initialized: true })
+
+  useEffect(() => {
+    let active = true
+    auth.gateway
+      .setupStatus()
+      .then((s) => active && setSetup({ loading: false, initialized: s?.initialized !== false }))
+      .catch(() => active && setSetup({ loading: false, initialized: true }))
+    return () => {
+      active = false
+    }
+  }, [auth.gateway])
+
+  if (setup.loading) {
+    return <div className="flex min-h-screen items-center justify-center text-sm text-muted-foreground">Loading…</div>
+  }
+  if (!setup.initialized) {
+    return <SetupWizard gateway={auth.gateway} onSignIn={auth.signIn} />
+  }
   if (!auth.authenticated) {
     return <SignInGate onSignIn={auth.signIn} onDevMode={auth.enableDevMode} />
   }

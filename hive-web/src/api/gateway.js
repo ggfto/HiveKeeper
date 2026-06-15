@@ -51,6 +51,9 @@ export function createGateway({ getAuth = () => ({}), fetchImpl = fetch, baseUrl
 
   return {
     req,
+    // first-run setup (unauthenticated; gated server-side by a setup token + the uninitialized state)
+    setupStatus: () => req('/api/setup/status'),
+    setup: (body) => req('/api/setup', { method: 'POST', body }),
     // identity
     me: () => req('/api/me'),
     // fleet structure
