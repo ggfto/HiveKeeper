@@ -41,8 +41,22 @@ describe('MONITORING_SECTIONS (telemetry config)', () => {
       'snmp contact noc',
     ])
   })
+  it('SNMP builds a v2c read community + trap host (with optional trap community)', () => {
+    expect(byId('snmp').toCli({ community: 'public', trapHost: '192.168.1.50', trapCommunity: 'secret' })).toEqual([
+      'snmp reader version v2c community public',
+      'snmp trap-host v2c 192.168.1.50 community secret',
+    ])
+    expect(byId('snmp').toCli({ trapHost: '192.168.1.50' })).toEqual(['snmp trap-host v2c 192.168.1.50'])
+  })
   it('Syslog builds the logging server line', () => {
     expect(byId('syslog').toCli({ server: '192.168.1.250' })).toEqual(['logging server 192.168.1.250'])
+  })
+  it('Syslog composes server + port + severity on one line, facility separately', () => {
+    expect(byId('syslog').toCli({ server: '10.0.0.9', port: '514', severity: 'warning', facility: 'local0' })).toEqual([
+      'logging server 10.0.0.9 port 514 level warning',
+      'logging facility local0',
+    ])
+    expect(byId('syslog').toCli({ facility: 'local6' })).toEqual(['logging facility local6'])
   })
   it('every section declares id/label/icon/fields/toCli', () => {
     for (const s of MONITORING_SECTIONS) {

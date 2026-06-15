@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { MriInput, MriButton, MriSectionHeader } from '@mriqbox/ui-kit'
+import { MriInput, MriButton, MriSectionHeader, MriSelect } from '@mriqbox/ui-kit'
 
 /**
  * Renders a declarative config section (see lib/configSchema.js): its fields as inputs + an Apply button that
@@ -23,11 +23,20 @@ export function SchemaConfigForm({ section, device, onApply, busy }) {
         {section.fields.map((f) => (
           <label key={f.key} className="flex flex-col gap-1">
             <span className="text-xs text-muted-foreground">{f.label}</span>
-            <MriInput
-              value={values[f.key] || ''}
-              onChange={(e) => setValues({ ...values, [f.key]: e.target.value })}
-              placeholder={f.placeholder}
-            />
+            {f.options ? (
+              <MriSelect
+                options={f.options}
+                value={values[f.key] || ''}
+                onChange={(val) => setValues({ ...values, [f.key]: val })}
+                placeholder={f.placeholder}
+              />
+            ) : (
+              <MriInput
+                value={values[f.key] || ''}
+                onChange={(e) => setValues({ ...values, [f.key]: e.target.value })}
+                placeholder={f.placeholder}
+              />
+            )}
           </label>
         ))}
       </div>
