@@ -29,6 +29,7 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 import java.io.IOException;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
 import java.util.concurrent.Callable;
@@ -78,6 +79,16 @@ public class GatewayController {
     }
 
     public record AdoptResponse(String deviceId, String serial, String model) {
+    }
+
+    /** Run a read op across every registered device in a group, a site, or (both null) the whole org. */
+    public record BulkRequest(String siteId, String groupId) {
+    }
+
+    public record BulkOutcome(String deviceId, String serial, String host, String status, String detail) {
+    }
+
+    public record BulkResponse(String op, int total, int ok, int failed, List<BulkOutcome> results) {
     }
 
     public record ApiError(String error, String detail) {
@@ -355,6 +366,64 @@ public class GatewayController {
                         e.getMessage() == null ? "" : e.getMessage()));
             }
         };
+    }
+
+    /** Bulk read op (backup|inventory) over every registered device in a group/site/org. Each device is
+     *  reached through ITS agent with ITS credential reference; results are reported per device. Viewer-level
+     *  on the target scope (reads only). */
+    @PostMapping("/api/fleet/bulk/{op}")
+    public Callable<ResponseEntity<String>> bulk(@PathVariable String op, @RequestBody BulkRequest req) {
+        Principal p = guard.authenticate();
+        guard.require(p, Role.VIEWER, bulkScope(p.tenantId(), req));
+        return () -> doBulk(p, op, req);
+    }
+
+    private ResourceScope bulkScope(String tenantId, BulkRequest req) {
+        if (req != null && req.groupId() != null && !req.groupId().isBlank()) {
+            return fleet.flatMap(f -> f.groupScope(tenantId, req.groupId().trim())).orElseGet(ResourceScope::org);
+        }
+        if (req != null && req.siteId() != null && !req.siteId().isBlank()) {
+            return ResourceScope.site(req.siteId().trim());
+        }
+        return ResourceScope.org();
+    }
+
+    private ResponseEntity<String> doBulk(Principal p, String op, BulkRequest req) {
+        if (fleet.isEmpty()) {
+            return status(501, new ApiError("not_supported", "the fleet registry requires the 'postgres' profile"));
+        }
+        if (!"backup".equals(op) && !"inventory".equals(op)) {
+            return status(400, new ApiError("bad_request", "op must be backup or inventory"));
+        }
+        String siteId = req == null ? null : req.siteId();
+        String groupId = req == null ? null : req.groupId();
+        List<FleetService.Device> devices = fleet.get().devicesFor(p.tenantId(), siteId, groupId);
+        List<BulkOutcome> results = new ArrayList<>(devices.size());
+        int ok = 0;
+        for (FleetService.Device d : devices) {
+            if (d.agentId() == null || d.mgmtIp() == null) {
+                results.add(new BulkOutcome(d.deviceId(), d.serial(), d.mgmtIp(), "skipped", "no agent or host"));
+                continue;
+            }
+            Optional<RemoteEngine> engine = registry.engine(p.tenantId(), d.agentId());
+            if (engine.isEmpty()) {
+                results.add(new BulkOutcome(d.deviceId(), d.serial(), d.mgmtIp(), "agent_offline", d.agentId()));
+                continue;
+            }
+            try {
+                DeviceRef ref = deviceRefFor(p.tenantId(), d.mgmtIp(), null);
+                Command cmd = "inventory".equals(op)
+                        ? Command.Inventory.of(ref) : Command.BackupConfig.of(ref);
+                Result result = engine.get().execute(cmd, EventSink.NOOP);
+                record(p.tenantId(), d.agentId(), "bulk-" + op, d.mgmtIp(), result.getClass().getSimpleName());
+                results.add(new BulkOutcome(d.deviceId(), d.serial(), d.mgmtIp(), "ok", null));
+                ok++;
+            } catch (Exception e) {
+                results.add(new BulkOutcome(d.deviceId(), d.serial(), d.mgmtIp(), "failed",
+                        e.getMessage() == null ? "" : e.getMessage()));
+            }
+        }
+        return json(new BulkResponse(op, devices.size(), ok, devices.size() - ok, results));
     }
 
     private ResponseEntity<String> doDiscover(Principal p, String agentId, DiscoverRequest req) {

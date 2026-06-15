@@ -102,6 +102,29 @@ public class FleetService {
         return id;
     }
 
+    /** The registered devices targeted by a bulk op: those in a group, or in a site, or (both null) the whole
+     *  org. RLS scopes every query to the tenant. Groups are not populated (not needed for dispatch). */
+    @Transactional(readOnly = true)
+    public List<Device> devicesFor(String tenantId, String siteId, String groupId) {
+        setTenant(tenantId);
+        if (groupId != null && !groupId.isBlank()) {
+            return jdbc.query("select d.device_id, d.site_id, d.agent_id, d.serial, d.model, d.label, d.mgmt_ip "
+                            + "from device d join device_group dg on d.device_id = dg.device_id where dg.group_id = ?",
+                    FleetService::deviceRow, groupId);
+        }
+        if (siteId != null && !siteId.isBlank()) {
+            return jdbc.query("select device_id, site_id, agent_id, serial, model, label, mgmt_ip "
+                    + "from device where site_id = ?", FleetService::deviceRow, siteId);
+        }
+        return jdbc.query("select device_id, site_id, agent_id, serial, model, label, mgmt_ip from device",
+                FleetService::deviceRow);
+    }
+
+    private static Device deviceRow(java.sql.ResultSet rs, int n) throws java.sql.SQLException {
+        return new Device(rs.getString("device_id"), rs.getString("site_id"), rs.getString("agent_id"),
+                rs.getString("serial"), rs.getString("model"), rs.getString("label"), rs.getString("mgmt_ip"), List.of());
+    }
+
     /** The credential reference for a registered device by its management IP — the opaque pointer the agent
      *  resolves locally to the actual secret. Empty if the host is not a registered device (or has none). */
     @Transactional(readOnly = true)

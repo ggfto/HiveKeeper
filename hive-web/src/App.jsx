@@ -96,6 +96,8 @@ export default function App() {
   const [sites, setSites] = useState([])
   const [newGroup, setNewGroup] = useState({ name: '', siteId: '' })
   const [tagInto, setTagInto] = useState({})     // deviceId -> groupId chosen in its dropdown
+  const [bulkTarget, setBulkTarget] = useState('org')   // 'org' | 'site:<id>' | 'group:<id>'
+  const [bulkOut, setBulkOut] = useState(null)
 
   // OIDC identity (SSO sign-in: who you are + which organizations you belong to)
   const [account, setAccount] = useState(null)   // the oidc User (access_token + profile claims)
@@ -333,6 +335,23 @@ export default function App() {
   }
 
   const groupName = (id) => (Array.isArray(groups) ? groups.find((g) => g.groupId === id)?.name : null) || id
+
+  // Run a read op (backup/inventory) across every device in the chosen scope; each via its agent + credRef.
+  async function runBulk(op) {
+    setBusy(true); setBulkOut(null); setStatus(`Bulk ${op}…`)
+    try {
+      const body = {}
+      if (bulkTarget.startsWith('site:')) body.siteId = bulkTarget.slice(5)
+      else if (bulkTarget.startsWith('group:')) body.groupId = bulkTarget.slice(6)
+      const res = await gw(`/api/fleet/bulk/${op}`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body)
+      })
+      const r = await res.json()
+      if (!res.ok) { setStatus(`Error ${res.status}: ${r.error} ${r.detail || ''}`); return }
+      setBulkOut(r)
+      setStatus(`Bulk ${op}: ${r.ok}/${r.total} ok, ${r.failed} failed.`)
+    } catch (e) { setStatus(`Request failed: ${e.message}`) } finally { setBusy(false) }
+  }
 
   // resolve the OIDC session on load: complete an auth-code callback, or restore a stored session
   useEffect(() => {
@@ -592,6 +611,36 @@ export default function App() {
                 ))}
               </tbody>
             </table>
+          )}
+        </section>
+      )}
+
+      {mode === 'gateway' && Array.isArray(devices) && (
+        <section className="panel">
+          <h2>Fleet — bulk ops</h2>
+          <div className="row">
+            <label className="field">
+              <span>Target</span>
+              <select value={bulkTarget} onChange={(e) => setBulkTarget(e.target.value)}>
+                <option value="org">Whole organization</option>
+                {sites.map((s) => <option key={s.siteId} value={`site:${s.siteId}`}>Site: {s.name}</option>)}
+                {(Array.isArray(groups) ? groups : []).map((g) => <option key={g.groupId} value={`group:${g.groupId}`}>Group: {g.name}</option>)}
+              </select>
+            </label>
+            <button onClick={() => runBulk('backup')} disabled={busy}>Backup all</button>
+            <button onClick={() => runBulk('inventory')} disabled={busy}>Inventory all</button>
+          </div>
+          {bulkOut && (
+            <>
+              <p className="status">{bulkOut.op}: {bulkOut.ok}/{bulkOut.total} ok, {bulkOut.failed} failed.</p>
+              <ul className="events">
+                {bulkOut.results.map((r, i) => (
+                  <li key={i} className={r.status === 'ok' ? '' : 'err'}>
+                    {r.host} {r.serial ? `(${r.serial})` : ''} — {r.status}{r.detail ? `: ${r.detail}` : ''}
+                  </li>
+                ))}
+              </ul>
+            </>
           )}
         </section>
       )}
