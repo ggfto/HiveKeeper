@@ -12,17 +12,14 @@ import com.sun.net.httpserver.HttpServer;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
-import org.springframework.security.oauth2.core.DelegatingOAuth2TokenValidator;
 import org.springframework.security.oauth2.jwt.Jwt;
-import org.springframework.security.oauth2.jwt.JwtClaimNames;
-import org.springframework.security.oauth2.jwt.JwtClaimValidator;
 import org.springframework.security.oauth2.jwt.JwtException;
-import org.springframework.security.oauth2.jwt.JwtValidators;
 import org.springframework.security.oauth2.jwt.NimbusJwtDecoder;
 import java.net.InetSocketAddress;
 import java.nio.charset.StandardCharsets;
 import java.time.Instant;
 import java.util.Date;
+import java.util.List;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertThrows;
@@ -36,6 +33,7 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 class JwtDecoderTest {
 
     private static final String ISSUER = "http://localhost/realms/hivekeeper";
+    private static final String AUDIENCE = "hive-gateway";
 
     private static RSAKey signingKey;
     private static RSAKey otherKey;
@@ -60,10 +58,8 @@ class JwtDecoderTest {
 
         String jwkSetUri = "http://127.0.0.1:" + jwks.getAddress().getPort() + "/certs";
         decoder = NimbusJwtDecoder.withJwkSetUri(jwkSetUri).build();
-        // Mirror OidcSecurityConfig.jwtDecoder exactly: default validators + a required non-blank subject.
-        decoder.setJwtValidator(new DelegatingOAuth2TokenValidator<>(
-                JwtValidators.createDefaultWithIssuer(ISSUER),
-                new JwtClaimValidator<String>(JwtClaimNames.SUB, sub -> sub != null && !sub.isBlank())));
+        // Pin the exact production wiring (signature + issuer + timestamp + subject + audience).
+        decoder.setJwtValidator(OidcSecurityConfig.tokenValidator(ISSUER, AUDIENCE));
     }
 
     @AfterAll
@@ -72,13 +68,22 @@ class JwtDecoderTest {
     }
 
     private String token(RSAKey key, String issuer, Instant expiry) throws Exception {
-        JWTClaimsSet claims = new JWTClaimsSet.Builder()
+        return token(key, issuer, expiry, AUDIENCE, null);  // azp = this client by default -> passes audience
+    }
+
+    private String token(RSAKey key, String issuer, Instant expiry, String azp, List<String> aud) throws Exception {
+        JWTClaimsSet.Builder claims = new JWTClaimsSet.Builder()
                 .subject("11111111-1111-1111-1111-111111111111")
                 .issuer(issuer)
-                .expirationTime(Date.from(expiry))
-                .build();
+                .expirationTime(Date.from(expiry));
+        if (azp != null) {
+            claims.claim("azp", azp);
+        }
+        if (aud != null) {
+            claims.audience(aud);
+        }
         SignedJWT jwt = new SignedJWT(
-                new JWSHeader.Builder(JWSAlgorithm.RS256).keyID(key.getKeyID()).build(), claims);
+                new JWSHeader.Builder(JWSAlgorithm.RS256).keyID(key.getKeyID()).build(), claims.build());
         jwt.sign(new RSASSASigner(key));
         return jwt.serialize();
     }
@@ -121,10 +126,25 @@ class JwtDecoderTest {
     }
 
     @Test
-    void acceptsATokenWithNoAudience() throws Exception {
-        // Pins intentional behavior: createDefaultWithIssuer does NOT check audience, so a token with no
-        // aud is accepted. Adding an audience requirement later (needs a Keycloak aud mapper) is a conscious
-        // change that should flip this test.
-        assertDoesNotThrow(() -> decoder.decode(token(signingKey, ISSUER, Instant.now().plusSeconds(300))));
+    void acceptsATokenWhoseAzpIsThisClient() throws Exception {
+        // azp (authorized party) is always the client that obtained the token; a stock Keycloak client sets it,
+        // so the audience check passes without needing an aud mapper.
+        String t = token(signingKey, ISSUER, Instant.now().plusSeconds(300), AUDIENCE, null);
+        assertDoesNotThrow(() -> decoder.decode(t));
+    }
+
+    @Test
+    void acceptsATokenWhoseAudienceIncludesThisClient() throws Exception {
+        // With a Keycloak audience mapper, our client appears in aud even when azp is some broker/other party.
+        String t = token(signingKey, ISSUER, Instant.now().plusSeconds(300), "broker", List.of("account", AUDIENCE));
+        assertDoesNotThrow(() -> decoder.decode(t));
+    }
+
+    @Test
+    void rejectsATokenMintedForAnotherClient() throws Exception {
+        // The audience-confusion fix: same realm, valid signature + issuer + subject, but the token was issued
+        // to a different client (azp != us, aud does not include us) — it must not be accepted here.
+        String t = token(signingKey, ISSUER, Instant.now().plusSeconds(300), "some-other-app", List.of("account"));
+        assertThrows(JwtException.class, () -> decoder.decode(t));
     }
 }

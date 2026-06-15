@@ -8,7 +8,9 @@ import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.annotation.web.configuration.EnableWebSecurity;
 import org.springframework.security.config.http.SessionCreationPolicy;
 import org.springframework.security.oauth2.core.DelegatingOAuth2TokenValidator;
+import org.springframework.security.oauth2.core.OAuth2Error;
 import org.springframework.security.oauth2.core.OAuth2TokenValidator;
+import org.springframework.security.oauth2.core.OAuth2TokenValidatorResult;
 import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.security.oauth2.jwt.JwtClaimValidator;
 import org.springframework.security.oauth2.jwt.JwtDecoder;
@@ -18,6 +20,8 @@ import org.springframework.security.oauth2.jwt.JwtClaimNames;
 import org.springframework.security.config.Customizer;
 import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.core.annotation.Order;
+import java.util.ArrayList;
+import java.util.List;
 
 /**
  * Under the {@code oidc} profile the gateway is an OAuth2 Resource Server: it validates bearer JWTs minted
@@ -67,14 +71,43 @@ public class OidcSecurityConfig {
 
     @Bean
     public JwtDecoder jwtDecoder(@Value("${hivekeeper.oidc.jwk-set-uri}") String jwkSetUri,
-                                 @Value("${hivekeeper.oidc.issuer}") String issuer) {
+                                 @Value("${hivekeeper.oidc.issuer}") String issuer,
+                                 @Value("${hivekeeper.oidc.audience:}") String audience) {
         NimbusJwtDecoder decoder = NimbusJwtDecoder.withJwkSetUri(jwkSetUri).build();
-        // Default (signature + issuer + timestamp) plus a required, non-blank subject — identity keys on it,
-        // so a subjectless token must be rejected as invalid rather than reaching provisioning and 500-ing.
-        OAuth2TokenValidator<Jwt> validator = new DelegatingOAuth2TokenValidator<>(
-                JwtValidators.createDefaultWithIssuer(issuer),
-                new JwtClaimValidator<String>(JwtClaimNames.SUB, sub -> sub != null && !sub.isBlank()));
-        decoder.setJwtValidator(validator);
+        decoder.setJwtValidator(tokenValidator(issuer, audience));
         return decoder;
+    }
+
+    /**
+     * The full token validator: signature + issuer + timestamp (default), a required non-blank subject
+     * (identity keys on it, so a subjectless token must be rejected here, not 500 in provisioning), and — when
+     * an {@code audience} is configured — an audience check. Package-visible + static so the unit test pins the
+     * exact production wiring rather than re-deriving it.
+     */
+    static OAuth2TokenValidator<Jwt> tokenValidator(String issuer, String audience) {
+        List<OAuth2TokenValidator<Jwt>> validators = new ArrayList<>();
+        validators.add(JwtValidators.createDefaultWithIssuer(issuer));
+        validators.add(new JwtClaimValidator<String>(JwtClaimNames.SUB, sub -> sub != null && !sub.isBlank()));
+        if (audience != null && !audience.isBlank()) {
+            validators.add(audienceValidator(audience.trim()));
+        }
+        return new DelegatingOAuth2TokenValidator<>(validators);
+    }
+
+    /**
+     * Reject a token that was not minted for this resource. The same Keycloak realm issues tokens for every
+     * client (account console, other apps, ...) — all with our issuer + a valid signature — so without this any
+     * of them would be accepted (audience confusion). A token is accepted when its {@code aud} contains our
+     * audience (needs a Keycloak audience mapper) OR its {@code azp} (authorized party — always the requesting
+     * client) equals it, so it works with a stock Keycloak client and is stricter with the mapper added.
+     */
+    static OAuth2TokenValidator<Jwt> audienceValidator(String audience) {
+        OAuth2Error error = new OAuth2Error("invalid_token",
+                "the token was not issued for this resource (aud/azp)", null);
+        return jwt -> {
+            List<String> aud = jwt.getAudience();
+            boolean ok = (aud != null && aud.contains(audience)) || audience.equals(jwt.getClaimAsString("azp"));
+            return ok ? OAuth2TokenValidatorResult.success() : OAuth2TokenValidatorResult.failure(error);
+        };
     }
 }
