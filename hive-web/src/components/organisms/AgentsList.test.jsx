@@ -13,11 +13,17 @@ describe('AgentsList', () => {
     expect(screen.getByText(/no agents connected/i)).toBeInTheDocument()
   })
 
-  it('renders a card per agent with an online badge and a discover action', () => {
+  it('shows each agent with its device count + site, and links to its devices', () => {
+    const onView = vi.fn()
     const onDiscover = vi.fn()
-    render(<AgentsList agents={['lab-agent']} onDiscover={onDiscover} />)
+    render(
+      <AgentsList agents={[{ id: 'lab-agent', deviceCount: 2, site: 'HQ' }]} onView={onView} onDiscover={onDiscover} />,
+    )
     expect(screen.getByText('lab-agent')).toBeInTheDocument()
-    expect(screen.getByText('online')).toBeInTheDocument()
+    expect(screen.getByText(/2 devices/)).toBeInTheDocument()
+    expect(screen.getByText(/HQ/)).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: /view devices/i }))
+    expect(onView).toHaveBeenCalledWith('lab-agent')
     fireEvent.click(screen.getByRole('button', { name: /discover/i }))
     expect(onDiscover).toHaveBeenCalledWith('lab-agent')
   })

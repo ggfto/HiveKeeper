@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
-import { MriPageHeader, MriButton } from '@mriqbox/ui-kit'
+import { MriPageHeader, MriButton, MriStatusBadge } from '@mriqbox/ui-kit'
 import { Boxes, Wifi, Network, Radio, Globe, Terminal, Power, ArrowLeft, Router } from 'lucide-react'
 import { useAuth } from '../context/AuthProvider'
 import { ConfigNav } from '../components/molecules/ConfigNav'
@@ -50,34 +50,39 @@ export function DeviceDetailPage() {
   const [notFound, setNotFound] = useState(false)
   const [groups, setGroups] = useState([])
   const [sites, setSites] = useState([])
+  const [agents, setAgents] = useState([])
   const [section, setSection] = useState('overview')
   const [status, setStatus] = useState('')
   const [busy, setBusy] = useState(false)
   const [configResult, setConfigResult] = useState(null)
 
   const load = useCallback(async () => {
-    const [list, g, s] = await Promise.all([
+    const [list, g, s, a] = await Promise.all([
       gateway.devices().catch(() => null),
       gateway.groups().catch(() => []),
       gateway.sites().catch(() => []),
+      gateway.agents().catch(() => []),
     ])
     const d = Array.isArray(list) ? list.find((x) => x.deviceId === deviceId) : null
     setDevice(d || null)
     setNotFound(!d)
     setGroups(Array.isArray(g) ? g : [])
     setSites(Array.isArray(s) ? s : [])
+    setAgents(Array.isArray(a) ? a : [])
   }, [gateway, deviceId])
 
   useEffect(() => {
     load()
   }, [load, activeOrg])
 
+  // Run an op with a busy/status lifecycle. If fn returns a string, it becomes the success message (so reads
+  // like inventory/backup can report what they found); otherwise we show a generic "done".
   const run = async (label, fn) => {
     setBusy(true)
     setStatus(`${label}…`)
     try {
-      await fn()
-      setStatus(`${label}: done.`)
+      const msg = await fn()
+      setStatus(typeof msg === 'string' ? msg : `${label}: done.`)
     } catch (e) {
       setStatus(`${label}: ${e.message}`)
     } finally {
@@ -85,6 +90,22 @@ export function DeviceDetailPage() {
     }
   }
   const apply = (d, op, body) => gateway.agentOp(d.agentId, op, { host: d.mgmtIp, port: 22, ...body })
+
+  // Read-only fleet ops, reachable from the header. Both go through the device's agent (which holds the
+  // credential); inventory returns live facts, backup commits the running-config to the tenant's git store.
+  const onInventory = (d) =>
+    run('Inventory', async () => {
+      const r = await gateway.inventory(d.agentId, d.mgmtIp)
+      const dev = r?.device || {}
+      const parts = [dev.model, dev.firmwareVersion, `${(dev.stations || []).length} station(s)`].filter(Boolean)
+      return `Inventory: ${parts.join(' · ')}`
+    })
+  const onBackup = (d) =>
+    run('Backup', async () => {
+      const r = await gateway.backup(d.agentId, d.mgmtIp)
+      const sha = r?.ref?.commitId ? r.ref.commitId.slice(0, 8) : ''
+      return `Backup: ${r?.configBytes ?? '?'} bytes${sha ? ` · ${sha}` : ''}${r?.usersIncluded ? ' · users' : ''}`
+    })
   const onConfigureSsid = (d, body) => run('SSID', () => apply(d, 'configure-ssid', body))
   // Read the SSIDs straight from the AP's running-config (parsed UI-side) so the Wi-Fi list reflects reality.
   const loadSsids = useCallback(
@@ -148,13 +169,39 @@ export function DeviceDetailPage() {
   if (!device) return <p className="text-sm text-muted-foreground">Loading…</p>
 
   const schema = SCHEMA_SECTIONS.find((s) => s.id === section)
+  // Live status = the device's agent is currently connected to the gateway (so we can actually reach it).
+  const online = agents.includes(device.agentId)
 
   return (
     <div className="space-y-5">
       <MriButton size="sm" variant="ghost" onClick={() => navigate('/devices')}>
         <ArrowLeft className="h-4 w-4" /> Devices
       </MriButton>
-      <MriPageHeader title={device.label || device.serial} icon={Boxes} countLabel={device.model} />
+      <MriPageHeader title={device.label || device.serial} icon={Boxes} countLabel={device.model}>
+        <MriStatusBadge
+          label={online ? 'online' : 'offline'}
+          variant={online ? 'success' : 'outline'}
+          size="sm"
+        />
+        <MriButton
+          size="sm"
+          variant="outline"
+          disabled={busy || !online}
+          title={online ? undefined : 'The device agent is offline'}
+          onClick={() => onInventory(device)}
+        >
+          Inventory
+        </MriButton>
+        <MriButton
+          size="sm"
+          variant="outline"
+          disabled={busy || !online}
+          title={online ? undefined : 'The device agent is offline'}
+          onClick={() => onBackup(device)}
+        >
+          Backup
+        </MriButton>
+      </MriPageHeader>
 
       <div className="grid gap-3 rounded-lg border border-border bg-card p-4 sm:grid-cols-2 lg:grid-cols-4">
         <Info label="Serial" value={device.serial} mono />

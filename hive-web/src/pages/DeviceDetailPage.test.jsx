@@ -44,6 +44,31 @@ describe('DeviceDetailPage', () => {
     expect(screen.getByRole('button', { name: /apply radio/i })).toBeInTheDocument()
   })
 
+  it('shows live status (agent connected) and runs an inventory from the header', async () => {
+    const gateway = fakeGateway({
+      devices: () => Promise.resolve([device]),
+      agents: () => Promise.resolve(['lab-agent']), // the device's agent is connected -> online
+      inventory: () => Promise.resolve({ device: { model: 'AP230', firmwareVersion: '10.6r7', stations: [{}, {}] } }),
+    })
+    renderDevice(gateway)
+    await screen.findByText('SER123')
+    expect(screen.getByText('online')).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: /inventory/i }))
+    expect(await screen.findByText(/2 station/)).toBeInTheDocument()
+  })
+
+  it('shows offline and disables the header reads when the agent is not connected', async () => {
+    const gateway = fakeGateway({
+      devices: () => Promise.resolve([device]),
+      agents: () => Promise.resolve([]), // no agent connected -> offline
+    })
+    renderDevice(gateway)
+    await screen.findByText('SER123')
+    expect(screen.getByText('offline')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /inventory/i })).toBeDisabled()
+    expect(screen.getByRole('button', { name: /backup/i })).toBeDisabled()
+  })
+
   it('shows a not-found state for an unknown device', async () => {
     const gateway = fakeGateway({ devices: () => Promise.resolve([]) })
     renderDevice(gateway)
