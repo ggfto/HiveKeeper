@@ -25,7 +25,9 @@ import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -116,5 +118,31 @@ class FleetControllerSecurityTest {
 
         verify(guard).require(eq(principal), eq(Role.ADMIN), eq(deviceScope));
         verify(guard).require(eq(principal), eq(Role.ADMIN), eq(groupScope));   // the security fix
+    }
+
+    @Test
+    void untagDeviceRequiresAdminOnBothTheDeviceAndTheGroup() throws Exception {
+        ResourceScope deviceScope = ResourceScope.device("s1", Set.of("g0"));
+        ResourceScope groupScope = ResourceScope.group("s2", "g1");
+        when(fleet.deviceScope("acme", "d1")).thenReturn(Optional.of(deviceScope));
+        when(fleet.groupScope("acme", "g1")).thenReturn(Optional.of(groupScope));
+
+        mvc.perform(delete("/api/devices/d1/groups/g1")).andExpect(status().isOk());
+
+        verify(guard).require(eq(principal), eq(Role.ADMIN), eq(deviceScope));
+        verify(guard).require(eq(principal), eq(Role.ADMIN), eq(groupScope));
+    }
+
+    @Test
+    void updateDeviceRequiresAdminOnTheDeviceAndOnTheTargetSiteWhenMoving() throws Exception {
+        ResourceScope deviceScope = ResourceScope.device("s1", Set.of());
+        when(fleet.deviceScope("acme", "d1")).thenReturn(Optional.of(deviceScope));
+
+        mvc.perform(patch("/api/devices/d1").contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"label\":\"Lab AP\",\"siteId\":\"s2\"}"))
+                .andExpect(status().isOk());
+
+        verify(guard).require(eq(principal), eq(Role.ADMIN), eq(deviceScope));          // edit the device
+        verify(guard).require(eq(principal), eq(Role.ADMIN), eq(ResourceScope.site("s2"))); // move into the site
     }
 }

@@ -146,6 +146,23 @@ public class FleetService {
                 + "on conflict do nothing", tenantId, deviceId, groupId);
     }
 
+    /** Remove a device from a group (idempotent — removing an absent membership is a no-op). */
+    @Transactional
+    public void untagDevice(String tenantId, String deviceId, String groupId) {
+        setTenant(tenantId);
+        jdbc.update("delete from device_group where device_id = ? and group_id = ?", deviceId, groupId);
+    }
+
+    /** Update a device's HiveKeeper metadata (label and/or its pinned site). A null argument keeps the current
+     *  value; the composite {@code (site_id, tenant_id)} FK rejects a site from another tenant, and RLS scopes
+     *  the update to this tenant's rows. */
+    @Transactional
+    public void updateDevice(String tenantId, String deviceId, String label, String siteId) {
+        setTenant(tenantId);
+        jdbc.update("update device set label = coalesce(?, label), site_id = coalesce(?, site_id) "
+                + "where device_id = ?", label, siteId, deviceId);
+    }
+
     /** The lineage of a group — its site (null for a cross-site tag) — so a SITE grant correctly covers a
      *  site-pinned group. Empty if the group does not exist. Derived from the DB, not from the caller. */
     @Transactional(readOnly = true)

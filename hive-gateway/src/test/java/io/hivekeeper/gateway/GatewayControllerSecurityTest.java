@@ -101,7 +101,7 @@ class GatewayControllerSecurityTest {
 
     @ParameterizedTest
     @ValueSource(strings = {"/api/agents/lab-agent/configure-ssid", "/api/agents/lab-agent/configure-hive",
-            "/api/agents/lab-agent/reboot"})
+            "/api/agents/lab-agent/reboot", "/api/agents/lab-agent/apply-config"})
     void agentScopedWritesRequireOperatorOnTheAgentSite(String path) throws Exception {
         mvc.perform(post(path).contentType(JSON)
                 .content("{\"host\":\"10.0.0.1\",\"name\":\"X\",\"psk\":\"pw\",\"password\":\"pw\"}"));

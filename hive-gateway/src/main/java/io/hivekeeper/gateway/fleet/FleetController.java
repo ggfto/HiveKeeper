@@ -7,7 +7,9 @@ import io.hivekeeper.gateway.access.ResourceScope;
 import io.hivekeeper.gateway.access.Role;
 import org.springframework.context.annotation.Profile;
 import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
@@ -36,6 +38,9 @@ public class FleetController {
     }
 
     public record TagRequest(String groupId) {
+    }
+
+    public record UpdateDevice(String label, String siteId) {
     }
 
     public record IdResponse(String id) {
@@ -133,6 +138,43 @@ public class FleetController {
         guard.require(p, Role.ADMIN, deviceScope.get());
         guard.require(p, Role.ADMIN, groupScope.get());
         fleet.tagDevice(p.tenantId(), deviceId, req.groupId().trim());
+        return ResponseEntity.ok().build();
+    }
+
+    /** Remove a device from a group. Like tagging, it touches BOTH lineages, so require admin on EACH. */
+    @DeleteMapping("/api/devices/{deviceId}/groups/{groupId}")
+    public ResponseEntity<?> untagDevice(@PathVariable String deviceId, @PathVariable String groupId) {
+        Principal p = guard.authenticate();
+        Optional<ResourceScope> deviceScope = fleet.deviceScope(p.tenantId(), deviceId);
+        if (deviceScope.isEmpty()) {
+            return status404("device_not_found", deviceId);
+        }
+        Optional<ResourceScope> groupScope = fleet.groupScope(p.tenantId(), groupId);
+        if (groupScope.isEmpty()) {
+            return status404("group_not_found", groupId);
+        }
+        guard.require(p, Role.ADMIN, deviceScope.get());
+        guard.require(p, Role.ADMIN, groupScope.get());
+        fleet.untagDevice(p.tenantId(), deviceId, groupId);
+        return ResponseEntity.ok().build();
+    }
+
+    /** Update a device's HiveKeeper metadata (display label and/or pinned site). Admin on the device's lineage;
+     *  moving it into a site additionally requires admin on the target site (you are changing its lineage). */
+    @PatchMapping("/api/devices/{deviceId}")
+    public ResponseEntity<?> updateDevice(@PathVariable String deviceId, @RequestBody UpdateDevice req) {
+        Principal p = guard.authenticate();
+        Optional<ResourceScope> deviceScope = fleet.deviceScope(p.tenantId(), deviceId);
+        if (deviceScope.isEmpty()) {
+            return status404("device_not_found", deviceId);
+        }
+        guard.require(p, Role.ADMIN, deviceScope.get());
+        String siteId = isBlank(req.siteId()) ? null : req.siteId().trim();
+        if (siteId != null) {
+            guard.require(p, Role.ADMIN, ResourceScope.site(siteId));
+        }
+        String label = isBlank(req.label()) ? null : req.label().trim();
+        fleet.updateDevice(p.tenantId(), deviceId, label, siteId);
         return ResponseEntity.ok().build();
     }
 

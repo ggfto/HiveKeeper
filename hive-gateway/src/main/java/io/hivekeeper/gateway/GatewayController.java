@@ -66,6 +66,11 @@ public class GatewayController {
     public record HiveRequest(String host, Integer port, String name, String password, String boundInterface) {
     }
 
+    /** Apply raw HiveOS CLI configuration lines to a device, optionally persisting with {@code save config}.
+     *  The universal config escape hatch — anything the CLI can do (hostname, radio, capwap, captive portal). */
+    public record ApplyConfigRequest(String host, Integer port, List<String> commands, boolean save) {
+    }
+
     /** Submit a durable job. {@code type} is inventory|backup|discover|configure-ssid|configure-hive;
      *  the write types carry the secret fields, which are encrypted at rest by the {@link JobGateway}. */
     public record JobRequest(String type, String host, String cidr, Integer port,
@@ -328,6 +333,24 @@ public class GatewayController {
         Principal p = guard.authenticate();
         guard.require(p, Role.OPERATOR, agentScope(p, agentId));
         return () -> dispatch(p, agentId, "reboot", req, Command.Reboot::of);
+    }
+
+    /** Apply raw HiveOS CLI lines to a device (the universal config escape hatch — hostname, radio, capwap,
+     *  captive portal, anything the CLI supports). Operator-level; the result is secret-redacted by dispatch. */
+    @PostMapping("/api/agents/{agentId}/apply-config")
+    public Callable<ResponseEntity<String>> applyConfig(@PathVariable String agentId,
+                                                        @RequestBody ApplyConfigRequest req) {
+        Principal p = guard.authenticate();
+        guard.require(p, Role.OPERATOR, agentScope(p, agentId));
+        return () -> {
+            List<String> commands = req.commands() == null ? List.of()
+                    : req.commands().stream().map(String::strip).filter(s -> !s.isEmpty()).toList();
+            if (commands.isEmpty()) {
+                return status(400, new ApiError("bad_request", "at least one CLI command is required"));
+            }
+            return dispatch(p, agentId, "apply-config", new DeviceRequest(req.host(), req.port()),
+                    ref -> Command.ApplyConfig.of(ref, commands, req.save()));
+        };
     }
 
     /** Adopt a discovered host into the managed fleet: inventory it through the agent to learn its real
