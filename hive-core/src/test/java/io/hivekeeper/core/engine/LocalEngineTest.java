@@ -3,6 +3,7 @@ package io.hivekeeper.core.engine;
 import io.hivekeeper.core.api.Command;
 import io.hivekeeper.core.api.Engine;
 import io.hivekeeper.core.api.Event;
+import io.hivekeeper.core.api.HiveException;
 import io.hivekeeper.core.api.Result;
 import io.hivekeeper.core.discovery.Scanner;
 import io.hivekeeper.core.drivers.DriverRegistry;
@@ -27,6 +28,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /** Exercises the full engine wiring (transport -> session -> driver -> task) with a fake transport,
@@ -156,6 +158,19 @@ class LocalEngineTest {
         Result.ConfigApplied applied = assertInstanceOf(Result.ConfigApplied.class, result);
         assertFalse(applied.saved());
         assertEquals(List.of("reboot"), applied.commands());
+    }
+
+    @Test
+    void executeFailsAndEmitsFailedWhenNoCredentialsResolve() {
+        // The provider returns empty for this device (e.g. an explicit credRef the vault could not resolve and
+        // no default): the engine must surface a clean failure, not a silent skip.
+        CredentialProvider noCreds = ref -> Optional.empty();
+        Engine engine = new LocalEngine(transport, noCreds, drivers, new CapturingStore(), scanner);
+
+        List<Event> events = new ArrayList<>();
+        assertThrows(HiveException.class,
+                () -> engine.execute(Command.Inventory.of(DeviceRef.ssh("192.168.1.10")), events::add));
+        assertInstanceOf(Event.Failed.class, events.get(events.size() - 1));
     }
 
     @Test

@@ -1,18 +1,25 @@
 package io.hivekeeper.gateway;
 
+import io.hivekeeper.core.api.Command;
+import io.hivekeeper.core.api.Result;
+import io.hivekeeper.core.model.DeviceId;
+import io.hivekeeper.core.model.DeviceRef;
 import io.hivekeeper.gateway.access.AccessException;
 import io.hivekeeper.gateway.access.AccessExceptionAdvice;
 import io.hivekeeper.gateway.access.AccessGuard;
 import io.hivekeeper.gateway.access.Principal;
 import io.hivekeeper.gateway.access.ResourceScope;
 import io.hivekeeper.gateway.access.Role;
+import io.hivekeeper.gateway.fleet.FleetService;
 import io.hivekeeper.gateway.tenant.AgentEnrollment;
 import io.hivekeeper.gateway.tenant.TenantStore;
+import io.hivekeeper.protocol.RemoteEngine;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.CsvSource;
 import org.junit.jupiter.params.provider.ValueSource;
+import org.mockito.ArgumentCaptor;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
@@ -20,13 +27,20 @@ import org.springframework.context.annotation.Import;
 import org.springframework.http.MediaType;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
+import org.springframework.test.web.servlet.MvcResult;
+import java.util.List;
 import java.util.Optional;
 import java.util.Set;
+import java.util.UUID;
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.doThrow;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.asyncDispatch;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
@@ -55,6 +69,8 @@ class GatewayControllerSecurityTest {
     private AgentRegistry registry;
     @MockitoBean
     private TenantStore tenants;
+    @MockitoBean
+    private FleetService fleet;
 
     private final Principal principal = Principal.user("acme", "usr-1");
 
@@ -146,5 +162,79 @@ class GatewayControllerSecurityTest {
                 .andExpect(status().isOk())
                 .andExpect(content().string(org.hamcrest.Matchers.containsString("a-visible")))
                 .andExpect(content().string(org.hamcrest.Matchers.not(org.hamcrest.Matchers.containsString("a-hidden"))));
+    }
+
+    // -- bulk fleet ops: scope mapping, op whitelist, per-device re-authorization, credRef wiring ----------
+
+    @Test
+    void bulkGroupTargetAuthorizesAgainstTheGroupsOwnScope() throws Exception {
+        when(fleet.groupScope("acme", "g1")).thenReturn(Optional.of(ResourceScope.group("s1", "g1")));
+        mvc.perform(post("/api/fleet/bulk/inventory").contentType(JSON).content("{\"groupId\":\"g1\"}"));
+        verify(guard).require(eq(principal), eq(Role.VIEWER), eq(ResourceScope.group("s1", "g1")));
+    }
+
+    @Test
+    void bulkSiteTargetAuthorizesAgainstTheSiteScope() throws Exception {
+        mvc.perform(post("/api/fleet/bulk/inventory").contentType(JSON).content("{\"siteId\":\"s1\"}"));
+        verify(guard).require(eq(principal), eq(Role.VIEWER), eq(ResourceScope.site("s1")));
+    }
+
+    @Test
+    void bulkOrgTargetAuthorizesAgainstTheOrgScope() throws Exception {
+        mvc.perform(post("/api/fleet/bulk/inventory").contentType(JSON).content("{}"));
+        verify(guard).require(eq(principal), eq(Role.VIEWER), eq(ResourceScope.org()));
+    }
+
+    @Test
+    void bulkRejectsAnOpThatIsNotBackupOrInventory() throws Exception {
+        when(fleet.devicesFor(any(), any(), any())).thenReturn(List.of());
+        MvcResult result = mvc.perform(post("/api/fleet/bulk/reboot").contentType(JSON).content("{}")).andReturn();
+        mvc.perform(asyncDispatch(result))
+                .andExpect(status().isBadRequest())
+                .andExpect(content().string(org.hamcrest.Matchers.containsString("op must be backup or inventory")));
+    }
+
+    @Test
+    void bulkReAuthorizesEachDeviceAndSkipsOnesTheCallerCannotView() throws Exception {
+        // The scope-level check (group/site/org) passed, but a cross-site GROUP can contain a device pinned to
+        // another site. Bulk must re-check each device against its OWN lineage and never touch a forbidden one.
+        FleetService.Device viewable = new FleetService.Device(
+                "dev-A", "site-1", "lab-agent", "SER-A", "AP230", "A", "10.0.0.1", null, List.of());
+        FleetService.Device foreign = new FleetService.Device(
+                "dev-B", "site-2", "lab-agent", "SER-B", "AP230", "B", "10.0.0.2", null, List.of());
+        when(fleet.devicesFor("acme", null, null)).thenReturn(List.of(viewable, foreign));
+        when(guard.allows(eq(principal), eq(Role.VIEWER), eq(ResourceScope.device("site-1", Set.of())))).thenReturn(true);
+        // the site-2 device: guard.allows defaults to false -> "forbidden", never dispatched
+        when(registry.engine("acme", "lab-agent")).thenReturn(Optional.empty());   // viewable -> agent_offline
+
+        MvcResult result = mvc.perform(post("/api/fleet/bulk/inventory").contentType(JSON).content("{}")).andReturn();
+        mvc.perform(asyncDispatch(result))
+                .andExpect(status().isOk())
+                .andExpect(content().string(org.hamcrest.Matchers.containsString("dev-B")))
+                .andExpect(content().string(org.hamcrest.Matchers.containsString("forbidden")))
+                .andExpect(content().string(org.hamcrest.Matchers.containsString("agent_offline")));
+        // the forbidden device short-circuited BEFORE dispatch: engine() was looked up only for the viewable one
+        verify(registry, times(1)).engine("acme", "lab-agent");
+    }
+
+    @Test
+    void bulkAttachesEachDevicesOwnCredRefToTheDispatchedCommand() throws Exception {
+        FleetService.Device d = new FleetService.Device(
+                "dev-A", "site-1", "lab-agent", "SER-A", "AP230", "A", "10.0.0.1", "cred-x", List.of());
+        when(fleet.devicesFor("acme", null, null)).thenReturn(List.of(d));
+        when(guard.allows(eq(principal), eq(Role.VIEWER), any())).thenReturn(true);
+        RemoteEngine engine = mock(RemoteEngine.class);
+        when(registry.engine("acme", "lab-agent")).thenReturn(Optional.of(engine));
+        when(engine.execute(any(), any()))
+                .thenReturn(new Result.Discovered(UUID.randomUUID(), DeviceId.of("10.0.0.1"), List.of()));
+
+        MvcResult result = mvc.perform(post("/api/fleet/bulk/inventory").contentType(JSON).content("{}")).andReturn();
+        mvc.perform(asyncDispatch(result)).andExpect(status().isOk());
+
+        ArgumentCaptor<Command> cmd = ArgumentCaptor.forClass(Command.class);
+        verify(engine).execute(cmd.capture(), any());
+        // the cloud sends ONLY the reference: the dispatched command carries the device row's own credRef
+        DeviceRef ref = ((Command.Inventory) cmd.getValue()).device();
+        assertEquals("cred-x", ref.credRef());
     }
 }

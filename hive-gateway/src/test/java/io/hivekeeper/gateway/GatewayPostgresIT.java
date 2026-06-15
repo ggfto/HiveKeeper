@@ -19,6 +19,7 @@ import org.testcontainers.containers.PostgreSQLContainer;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 import java.util.List;
+import java.util.Optional;
 import java.util.Set;
 import java.util.stream.Collectors;
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -131,6 +132,62 @@ class GatewayPostgresIT {
         // a same-tenant registration succeeds and is listed
         fleet.registerDevice("acme", "SER-OK", "AP230", "lab", "10.0.0.10", "site-acme-default", "lab-agent", "lab-cred");
         assertTrue(fleet.listDevices("acme").stream().anyMatch(d -> "SER-OK".equals(d.serial())));
+    }
+
+    // -- credRefForHost: by mgmt_ip, null-filtered, and RLS tenant-isolated -------------------------------
+
+    @Test
+    void credRefForHostResolvesByIpFiltersNullsAndIsTenantIsolated() {
+        // a device registered WITH a cred_ref resolves by its management IP
+        fleet.registerDevice("acme", "SER-CR", "AP230", "cr", "10.7.0.1", "site-acme-default", "lab-agent", "lab-cred");
+        assertEquals(Optional.of("lab-cred"), fleet.credRefForHost("acme", "10.7.0.1"));
+
+        // a device with NO cred_ref -> empty (the agent then falls back to its own default)
+        fleet.registerDevice("acme", "SER-NOCR", "AP230", "nocr", "10.7.0.2", "site-acme-default", "lab-agent", null);
+        assertEquals(Optional.empty(), fleet.credRefForHost("acme", "10.7.0.2"));
+
+        // an unknown host -> empty
+        assertEquals(Optional.empty(), fleet.credRefForHost("acme", "203.0.113.254"));
+
+        // RLS: a globex device's cred_ref is invisible from the acme context, and vice versa
+        String gxSite = fleet.createSite("globex", "GX cred");
+        fleet.registerDevice("globex", "SER-GXCR", "AP230", "gx", "10.7.9.9", gxSite, null, "gx-cred");
+        assertEquals(Optional.empty(), fleet.credRefForHost("acme", "10.7.9.9"));
+        assertEquals(Optional.of("gx-cred"), fleet.credRefForHost("globex", "10.7.9.9"));
+    }
+
+    // -- devicesFor: group / site / org resolution under RLS, carrying cred_ref + groups -------------------
+
+    @Test
+    void devicesForResolvesGroupSiteAndOrgUnderRlsCarryingCredRefAndGroups() {
+        String devA = fleet.registerDevice("acme", "SER-DA", "AP230", "A", "10.8.0.1",
+                "site-acme-default", "lab-agent", "cred-a");
+        fleet.registerDevice("acme", "SER-DB", "AP230", "B", "10.8.0.2", "site-acme-default", "lab-agent", null);
+        fleet.tagDevice("acme", devA, "grp-acme-default");
+        // a globex device must never appear in acme's org-wide resolution
+        String gxSite = fleet.createSite("globex", "GX fleet");
+        fleet.registerDevice("globex", "SER-GXF", "AP230", "gx", "10.8.9.9", gxSite, null, null);
+
+        // SITE -> contains both acme devices pinned to that site (other tests may add more, so not exact)
+        Set<String> bySite = serials(fleet.devicesFor("acme", "site-acme-default", null));
+        assertTrue(bySite.containsAll(Set.of("SER-DA", "SER-DB")));
+
+        // GROUP -> only the tagged device, and the row carries its group membership
+        List<FleetService.Device> byGroup = fleet.devicesFor("acme", null, "grp-acme-default");
+        assertEquals(Set.of("SER-DA"), serials(byGroup));
+        assertTrue(byGroup.get(0).groups().contains("grp-acme-default"));
+        assertEquals("cred-a", byGroup.get(0).credRef());
+
+        // ORG -> contains acme's devices, never globex's (RLS); the cred_ref is carried on the row
+        Set<String> byOrg = serials(fleet.devicesFor("acme", null, null));
+        assertTrue(byOrg.containsAll(Set.of("SER-DA", "SER-DB")));
+        assertFalse(byOrg.contains("SER-GXF"));
+        assertEquals("cred-a", fleet.devicesFor("acme", null, null).stream()
+                .filter(d -> "SER-DA".equals(d.serial())).findFirst().orElseThrow().credRef());
+    }
+
+    private static Set<String> serials(List<FleetService.Device> devices) {
+        return devices.stream().map(FleetService.Device::serial).collect(Collectors.toSet());
     }
 
     private static Set<String> tenantIds(List<UserService.Membership> memberships) {

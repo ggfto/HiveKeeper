@@ -3,6 +3,7 @@ package io.hivekeeper.agent;
 import io.hivekeeper.core.model.DeviceRef;
 import io.hivekeeper.core.spi.CredentialProvider;
 import io.hivekeeper.core.spi.Credentials;
+import lombok.extern.slf4j.Slf4j;
 import java.io.IOException;
 import java.io.InputStream;
 import java.nio.file.Files;
@@ -26,6 +27,7 @@ import java.util.Properties;
  *   branch-2.password = ...
  * </pre>
  */
+@Slf4j
 final class VaultCredentialProvider implements CredentialProvider {
 
     private final Map<String, Credentials> byRef;
@@ -43,7 +45,12 @@ final class VaultCredentialProvider implements CredentialProvider {
             if (c != null) {
                 return Optional.of(c);
             }
-            // a credRef was given but not in the vault — fall through to the default rather than fail hard
+            // A credRef was explicitly requested but is not in the vault (typo, or the vault was not updated
+            // when the device was adopted). Fall back to the default rather than fail hard, but WARN — this is
+            // a credential misconfiguration that would otherwise be silent. Credentials.toString masks the
+            // password, but we log no secret here regardless.
+            log.warn("credRef '{}' for host {} not found in the vault; falling back to the default credential",
+                    device.credRef(), device.host());
         }
         return Optional.ofNullable(fallback);
     }
@@ -64,8 +71,23 @@ final class VaultCredentialProvider implements CredentialProvider {
                     .put(key.substring(dot + 1), props.getProperty(key));
         }
         Map<String, Credentials> byRef = new LinkedHashMap<>();
-        grouped.forEach((ref, fields) ->
-                byRef.put(ref, new Credentials(fields.getOrDefault("user", ""), fields.getOrDefault("password", ""))));
+        int skipped = 0;
+        for (var entry : grouped.entrySet()) {
+            String user = entry.getValue().get("user");
+            if (user == null || user.isBlank()) {
+                // One malformed entry (a stray dotted key, or a '.password' with no '.user') must NOT abort the
+                // whole load and take the agent down — skip it and let that credRef fall back to the default.
+                log.warn("vault entry '{}' has no '.user' line; skipping it (its credRef will fall back to the "
+                        + "default credential)", entry.getKey());
+                skipped++;
+                continue;
+            }
+            byRef.put(entry.getKey(), new Credentials(user, entry.getValue().getOrDefault("password", "")));
+        }
+        if (skipped > 0) {
+            log.warn("loaded vault from {} with {} malformed entr{} skipped", file, skipped,
+                    skipped == 1 ? "y" : "ies");
+        }
         return new VaultCredentialProvider(byRef, fallback);
     }
 }

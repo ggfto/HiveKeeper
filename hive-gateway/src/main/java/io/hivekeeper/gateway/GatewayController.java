@@ -29,9 +29,11 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 import java.io.IOException;
+import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
+import java.util.Set;
 import java.util.concurrent.Callable;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -93,6 +95,11 @@ public class GatewayController {
 
     public record ApiError(String error, String detail) {
     }
+
+    /** Wall-clock budget for a bulk op's device loop. Kept under the MVC async timeout (120s, see AsyncConfig)
+     *  minus one worst-case agent round-trip (60s, see RemoteEngine) so the LAST device we start still finishes
+     *  before Spring would abort the request and discard the partial BulkResponse. */
+    private static final Duration BULK_BUDGET = Duration.ofSeconds(50);
 
     private final JsonCodec codec = new JsonCodec();
     private final AgentRegistry registry;
@@ -400,7 +407,26 @@ public class GatewayController {
         List<FleetService.Device> devices = fleet.get().devicesFor(p.tenantId(), siteId, groupId);
         List<BulkOutcome> results = new ArrayList<>(devices.size());
         int ok = 0;
-        for (FleetService.Device d : devices) {
+        // The single scope-level check in bulk() is only sound when every resolved device is individually
+        // covered by it. For a cross-site GROUP that is false (a device pinned to another site can be tagged
+        // in), so re-authorize each device against its OWN lineage before touching it. And cap the loop to a
+        // wall-clock budget under the MVC async timeout so a slow/large fleet returns the partial results
+        // gathered so far instead of being discarded by a timeout.
+        long deadline = System.nanoTime() + BULK_BUDGET.toNanos();
+        for (int i = 0; i < devices.size(); i++) {
+            FleetService.Device d = devices.get(i);
+            if (System.nanoTime() > deadline) {
+                for (FleetService.Device pending : devices.subList(i, devices.size())) {
+                    results.add(new BulkOutcome(pending.deviceId(), pending.serial(), pending.mgmtIp(),
+                            "timeout", "bulk time budget exceeded before this device was reached"));
+                }
+                break;
+            }
+            if (!guard.allows(p, Role.VIEWER, ResourceScope.device(d.siteId(), Set.copyOf(d.groups())))) {
+                results.add(new BulkOutcome(d.deviceId(), d.serial(), d.mgmtIp(), "forbidden",
+                        "not authorized to view this device"));
+                continue;
+            }
             if (d.agentId() == null || d.mgmtIp() == null) {
                 results.add(new BulkOutcome(d.deviceId(), d.serial(), d.mgmtIp(), "skipped", "no agent or host"));
                 continue;
@@ -411,7 +437,9 @@ public class GatewayController {
                 continue;
             }
             try {
-                DeviceRef ref = deviceRefFor(p.tenantId(), d.mgmtIp(), null);
+                // Use the device row's OWN credential reference — not a re-lookup by mgmt_ip, which is not
+                // unique and could attach a sibling device's credRef on an IP collision.
+                DeviceRef ref = DeviceRef.ssh(d.mgmtIp(), 22, d.credRef());
                 Command cmd = "inventory".equals(op)
                         ? Command.Inventory.of(ref) : Command.BackupConfig.of(ref);
                 Result result = engine.get().execute(cmd, EventSink.NOOP);
@@ -423,7 +451,11 @@ public class GatewayController {
                         e.getMessage() == null ? "" : e.getMessage()));
             }
         }
-        return json(new BulkResponse(op, devices.size(), ok, devices.size() - ok, results));
+        // failed counts only true failures — skipped/agent_offline/forbidden/timeout devices were never
+        // attempted, so folding them into 'failed' (total - ok) would over-report. The per-device list carries
+        // their real status.
+        int failed = (int) results.stream().filter(o -> "failed".equals(o.status())).count();
+        return json(new BulkResponse(op, devices.size(), ok, failed, results));
     }
 
     private ResponseEntity<String> doDiscover(Principal p, String agentId, DiscoverRequest req) {
