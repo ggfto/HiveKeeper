@@ -4,6 +4,7 @@ import {
   hostnameCommands,
   meshCommands,
   hiveTuningCommands,
+  captivePortalCommands,
   capwapCommands,
   managementCommands,
   clientModeConnectCommands,
@@ -70,6 +71,39 @@ describe('hiveTuningCommands', () => {
   it('emits nothing without a hive name or any field', () => {
     expect(hiveTuningCommands('hk-mesh', {})).toEqual([])
     expect(hiveTuningCommands('', { fragThreshold: '2000' })).toEqual([])
+  })
+})
+
+// Confirmed via `?`: security-object <so> web-server [port <n>] [ssl] ; web-directory <dir> ;
+//   walled-garden ip-address|hostname <v>
+describe('captivePortalCommands', () => {
+  it('enables the internal web server (port + ssl), sets the directory and walled garden', () => {
+    expect(
+      captivePortalCommands('HK-JOB', {
+        webServer: true,
+        port: '8080',
+        ssl: true,
+        webDirectory: 'guest',
+        walledGarden: ['192.168.1.10', 'updates.example.com'],
+      }),
+    ).toEqual([
+      'security-object HK-JOB web-server',
+      'security-object HK-JOB web-server port 8080',
+      'security-object HK-JOB web-server ssl',
+      'security-object HK-JOB web-directory guest',
+      'security-object HK-JOB walled-garden ip-address 192.168.1.10',
+      'security-object HK-JOB walled-garden hostname updates.example.com',
+    ])
+  })
+  it('classifies an IPv4 entry as ip-address and a name as hostname', () => {
+    expect(captivePortalCommands('SO', { walledGarden: ['10.0.0.0', 'cdn.test'] })).toEqual([
+      'security-object SO walled-garden ip-address 10.0.0.0',
+      'security-object SO walled-garden hostname cdn.test',
+    ])
+  })
+  it('emits nothing without a security object', () => {
+    expect(captivePortalCommands('', { webServer: true })).toEqual([])
+    expect(captivePortalCommands('HK-JOB', {})).toEqual([])
   })
 })
 

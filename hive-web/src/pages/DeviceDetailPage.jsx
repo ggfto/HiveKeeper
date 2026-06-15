@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { MriPageHeader, MriButton, MriStatusBadge } from '@mriqbox/ui-kit'
-import { Boxes, Wifi, Network, Radio, Globe, Terminal, Power, ArrowLeft, Router, Activity } from 'lucide-react'
+import { Boxes, Wifi, Network, Radio, Globe, Terminal, Power, ArrowLeft, Router, Activity, DoorOpen } from 'lucide-react'
 import { useAuth } from '../context/AuthProvider'
 import { ConfigNav } from '../components/molecules/ConfigNav'
 import { WifiSection } from '../components/organisms/WifiSection'
@@ -12,6 +12,7 @@ import { ClientModeForm } from '../components/organisms/ClientModeForm'
 import { AdvancedConfigForm } from '../components/organisms/AdvancedConfigForm'
 import { PowerForm } from '../components/organisms/PowerForm'
 import { DeviceOverviewForm } from '../components/organisms/DeviceOverviewForm'
+import { CaptivePortalForm } from '../components/organisms/CaptivePortalForm'
 import { MonitoringSection } from '../components/organisms/MonitoringSection'
 import { MONITORING_SECTIONS } from '../lib/configSchema'
 import { parseSsids, parseHives, parseCapwap, parseAcsp } from '../lib/hiveosParse'
@@ -21,6 +22,7 @@ import { groupNamesFor, siteName } from '../lib/fleet'
 const SECTIONS = [
   { id: 'overview', label: 'Overview', icon: Boxes },
   { id: 'wifi', label: 'Wi-Fi', icon: Wifi },
+  { id: 'captiveportal', label: 'Captive portal', icon: DoorOpen },
   { id: 'mesh', label: 'Mesh', icon: Network },
   { id: 'radio', label: 'Radio', icon: Radio },
   { id: 'clientmode', label: 'Client mode', icon: Router },
@@ -254,6 +256,9 @@ export function DeviceDetailPage() {
           )}
           {section === 'wifi' && (
             <WifiSection device={device} loadSsids={loadSsids} configureSsid={onConfigureSsid} busy={busy} />
+          )}
+          {section === 'captiveportal' && (
+            <CaptivePortalForm device={device} onApply={onApplyConfig} busy={busy} />
           )}
           {section === 'mesh' && (
             <MeshSection

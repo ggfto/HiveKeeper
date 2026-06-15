@@ -44,6 +44,31 @@ export function hiveTuningCommands(name, { fragThreshold, rtsThreshold, connecti
   return cmds
 }
 
+/**
+ * Captive web portal on a security object. Confirmed grammar: `security-object <so> web-server` enables the
+ * AP's internal splash server (with `web-server port <n>` / `web-server ssl`), `security-object <so>
+ * web-directory <dir>` picks the uploaded page set, and `security-object <so> walled-garden
+ * ip-address|hostname <v>` lets unauthenticated clients reach specific hosts before they log in. An entry that
+ * looks like an IPv4 address uses ip-address, otherwise hostname. Bind the security object to an SSID in the
+ * Wi-Fi tab. Nothing without a security object name.
+ */
+export function captivePortalCommands(securityObject, { webServer, port, ssl, webDirectory, walledGarden = [] } = {}) {
+  const so = (securityObject || '').trim()
+  if (!so) return []
+  const cmds = []
+  if (webServer) cmds.push(`security-object ${so} web-server`)
+  if (port && String(port).trim()) cmds.push(`security-object ${so} web-server port ${String(port).trim()}`)
+  if (ssl) cmds.push(`security-object ${so} web-server ssl`)
+  if (webDirectory && webDirectory.trim()) cmds.push(`security-object ${so} web-directory ${webDirectory.trim()}`)
+  for (const raw of walledGarden) {
+    const v = (raw || '').trim()
+    if (!v) continue
+    const isIp = /^\d{1,3}(\.\d{1,3}){3}/.test(v)
+    cmds.push(`security-object ${so} walled-garden ${isIp ? 'ip-address' : 'hostname'} ${v}`)
+  }
+  return cmds
+}
+
 /** Cloud (CAPWAP) connection: standalone cuts the link to HiveManager / ExtremeCloud IQ. */
 export function capwapCommands(connected) {
   return [connected ? 'capwap client enable' : 'no capwap client enable']
