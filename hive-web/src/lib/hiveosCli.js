@@ -19,15 +19,35 @@ export function hostnameCommands(name) {
   return [`hostname ${name}`]
 }
 
+/** Create/join a hive (mesh) and bind it to the chosen interfaces. Confirmed grammar: `hive <name>`,
+ *  `hive <name> password <pwd>`, `interface <iface> hive <name>` (iface = mgt0 control, wifi0/wifi1 backhaul). */
+export function meshCommands({ name, password, interfaces = [] } = {}) {
+  const cmds = [`hive ${name}`]
+  if (password) cmds.push(`hive ${name} password ${password}`)
+  for (const iface of interfaces) cmds.push(`interface ${iface} hive ${name}`)
+  return cmds
+}
+
 /** Cloud (CAPWAP) connection: standalone cuts the link to HiveManager / ExtremeCloud IQ. */
 export function capwapCommands(connected) {
   return [connected ? 'capwap client enable' : 'no capwap client enable']
 }
 
-/** Set the mgt0 management IP. Confirmed grammar: `interface mgt0 ip <ip_addr/netmask>` (or bare ip).
- *  DANGER: changing this drops the AP's connectivity; the caller must warn + re-adopt at the new IP. */
-export function mgtIpCommands(ip, netmask) {
-  return [netmask ? `interface mgt0 ip ${ip}/${netmask}` : `interface mgt0 ip ${ip}`]
+/**
+ * Management (mgt0) network settings. Confirmed grammar: `interface mgt0 ip <ip/netmask>`,
+ * `interface mgt0 vlan <id>`, `interface mgt0 native-vlan <id>`, `ip route default gateway <ip>`,
+ * `[no] interface mgt0 dhcp client`. Only set fields emit a line. DANGER: any of these can drop the AP's
+ * connectivity, so the caller must warn + confirm.
+ */
+export function managementCommands({ ip, netmask, vlan, nativeVlan, gateway, dhcp } = {}) {
+  const cmds = []
+  if (ip) cmds.push(netmask ? `interface mgt0 ip ${ip}/${netmask}` : `interface mgt0 ip ${ip}`)
+  if (vlan) cmds.push(`interface mgt0 vlan ${vlan}`)
+  if (nativeVlan) cmds.push(`interface mgt0 native-vlan ${nativeVlan}`)
+  if (gateway) cmds.push(`ip route default gateway ${gateway}`)
+  if (dhcp === 'enable') cmds.push('interface mgt0 dhcp client')
+  if (dhcp === 'disable') cmds.push('no interface mgt0 dhcp client')
+  return cmds
 }
 
 /** Device-level CLIENT mode: the AP stops serving and associates with another AP using an existing SSID

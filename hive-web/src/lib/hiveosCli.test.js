@@ -2,8 +2,9 @@ import { describe, it, expect } from 'vitest'
 import {
   radioCommands,
   hostnameCommands,
+  meshCommands,
   capwapCommands,
-  mgtIpCommands,
+  managementCommands,
   clientModeConnectCommands,
   clientModeDisconnectCommands,
 } from './hiveosCli'
@@ -34,6 +35,20 @@ describe('hostnameCommands', () => {
   })
 })
 
+describe('meshCommands', () => {
+  it('creates a hive, sets the password, and binds the chosen interfaces', () => {
+    expect(meshCommands({ name: 'hk-mesh', password: 'secret', interfaces: ['mgt0', 'wifi1'] })).toEqual([
+      'hive hk-mesh',
+      'hive hk-mesh password secret',
+      'interface mgt0 hive hk-mesh',
+      'interface wifi1 hive hk-mesh',
+    ])
+  })
+  it('works with no password and no interfaces', () => {
+    expect(meshCommands({ name: 'hk-mesh' })).toEqual(['hive hk-mesh'])
+  })
+})
+
 describe('capwapCommands', () => {
   it('goes standalone (disconnect from cloud) by default', () => {
     expect(capwapCommands(false)).toEqual(['no capwap client enable'])
@@ -43,14 +58,22 @@ describe('capwapCommands', () => {
   })
 })
 
-describe('mgtIpCommands', () => {
-  it('sets the mgt0 IP with a netmask (slash form)', () => {
-    expect(mgtIpCommands('192.168.1.50', '255.255.255.0')).toEqual([
+describe('managementCommands', () => {
+  it('sets the mgt0 IP/netmask, VLAN, gateway, skipping blanks', () => {
+    expect(
+      managementCommands({ ip: '192.168.1.50', netmask: '255.255.255.0', vlan: '10', gateway: '192.168.1.1' }),
+    ).toEqual([
       'interface mgt0 ip 192.168.1.50/255.255.255.0',
+      'interface mgt0 vlan 10',
+      'ip route default gateway 192.168.1.1',
     ])
   })
-  it('accepts a bare IP', () => {
-    expect(mgtIpCommands('192.168.1.50')).toEqual(['interface mgt0 ip 192.168.1.50'])
+  it('toggles the DHCP client', () => {
+    expect(managementCommands({ dhcp: 'enable' })).toEqual(['interface mgt0 dhcp client'])
+    expect(managementCommands({ dhcp: 'disable' })).toEqual(['no interface mgt0 dhcp client'])
+  })
+  it('emits nothing when no field is set', () => {
+    expect(managementCommands({})).toEqual([])
   })
 })
 

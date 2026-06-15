@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { parseSsids } from './hiveosParse'
+import { parseSsids, parseHives } from './hiveosParse'
 
 // A real running-config excerpt captured from the AP230 (secrets already masked by the gateway).
 const CONFIG = `
@@ -32,5 +32,27 @@ describe('parseSsids', () => {
     expect(parseSsids('hostname x\nno capwap client enable')).toEqual([])
     expect(parseSsids('')).toEqual([])
     expect(parseSsids(null)).toEqual([])
+  })
+})
+
+// `show hive` output from the AP230.
+const SHOW_HIVE = `
+show hive
+Name    N-vlan  Frag    RTS     Mac filter
+----    ------  ----    ----    ----------
+hive0   1       2346    2346    None
+hk-mesh 1       2346    2346    None
+`
+
+describe('parseHives', () => {
+  it('lists each hive with its native VLAN, skipping header/separator/echo', () => {
+    expect(parseHives(SHOW_HIVE)).toEqual([
+      { name: 'hive0', nativeVlan: 1 },
+      { name: 'hk-mesh', nativeVlan: 1 },
+    ])
+  })
+  it('is empty for no hives', () => {
+    expect(parseHives('')).toEqual([])
+    expect(parseHives(null)).toEqual([])
   })
 })

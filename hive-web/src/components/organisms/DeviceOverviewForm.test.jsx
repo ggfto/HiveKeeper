@@ -7,7 +7,7 @@ const sites = [{ siteId: 's1', name: 'HQ' }]
 const groups = [{ groupId: 'g1', name: 'Floor 3' }, { groupId: 'g2', name: 'Roof' }]
 
 function setup(handlers = {}) {
-  const props = { device, sites, groups, onSave: vi.fn(), onTag: vi.fn(), onUntag: vi.fn(), ...handlers }
+  const props = { device, sites, groups, onSave: vi.fn(), onTag: vi.fn(), onUntag: vi.fn(), onApply: vi.fn(), ...handlers }
   render(<DeviceOverviewForm {...props} />)
   return props
 }
@@ -30,5 +30,13 @@ describe('DeviceOverviewForm', () => {
     const { onUntag } = setup()
     fireEvent.click(screen.getByRole('button', { name: /remove from Floor 3/i }))
     expect(onUntag).toHaveBeenCalledWith(device, 'g1')
+  })
+
+  it('sets the AP hostname (the on-device name, separate from the display label)', () => {
+    const { onApply } = setup()
+    // the hostname input is the one whose placeholder is the current label; its value starts empty
+    fireEvent.change(screen.getByPlaceholderText('lab-ap'), { target: { value: 'new-host' } })
+    fireEvent.click(screen.getByRole('button', { name: /set hostname/i }))
+    expect(onApply).toHaveBeenCalledWith(device, { commands: ['hostname new-host'], save: true })
   })
 })

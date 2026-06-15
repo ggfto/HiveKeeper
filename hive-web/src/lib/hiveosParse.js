@@ -40,3 +40,16 @@ export function parseSsids(config) {
     return { name, security, vlan, radios }
   })
 }
+
+/**
+ * Parse the hives (mesh profiles) from `show hive`. Each row starts with the hive name followed by its native
+ * VLAN, so a name + a number anchors a data row (skipping the header/separator/prompt). -> [{ name, nativeVlan }].
+ */
+export function parseHives(output) {
+  return (output || '')
+    .split('\n')
+    .map((l) => l.trim())
+    .map((l) => l.match(/^(\S+)\s+(\d+)\s+/))
+    .filter(Boolean)
+    .map((m) => ({ name: m[1], nativeVlan: Number(m[2]) }))
+}

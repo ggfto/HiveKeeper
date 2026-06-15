@@ -1,21 +1,21 @@
 import { useCallback, useEffect, useState } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { MriPageHeader, MriButton } from '@mriqbox/ui-kit'
-import { Boxes, Wifi, Network, Radio, Tag, Globe, Terminal, Power, ArrowLeft, Router } from 'lucide-react'
+import { Boxes, Wifi, Network, Radio, Globe, Terminal, Power, ArrowLeft, Router } from 'lucide-react'
 import { useAuth } from '../context/AuthProvider'
 import { ConfigNav } from '../components/molecules/ConfigNav'
 import { WifiSection } from '../components/organisms/WifiSection'
-import { HiveForm } from '../components/organisms/HiveForm'
+import { MeshSection } from '../components/organisms/MeshSection'
 import { RadioForm } from '../components/organisms/RadioForm'
-import { IdentityForm } from '../components/organisms/IdentityForm'
-import { NetworkForm } from '../components/organisms/NetworkForm'
+import { NetworkSection } from '../components/organisms/NetworkSection'
 import { ClientModeForm } from '../components/organisms/ClientModeForm'
 import { AdvancedConfigForm } from '../components/organisms/AdvancedConfigForm'
 import { PowerForm } from '../components/organisms/PowerForm'
 import { DeviceOverviewForm } from '../components/organisms/DeviceOverviewForm'
 import { SchemaConfigForm } from '../components/organisms/SchemaConfigForm'
 import { SCHEMA_SECTIONS } from '../lib/configSchema'
-import { parseSsids } from '../lib/hiveosParse'
+import { parseSsids, parseHives } from '../lib/hiveosParse'
+import { meshCommands } from '../lib/hiveosCli'
 import { groupNamesFor, siteName } from '../lib/fleet'
 
 const SECTIONS = [
@@ -24,7 +24,6 @@ const SECTIONS = [
   { id: 'mesh', label: 'Mesh', icon: Network },
   { id: 'radio', label: 'Radio', icon: Radio },
   { id: 'clientmode', label: 'Client mode', icon: Router },
-  { id: 'identity', label: 'Identity', icon: Tag },
   { id: 'network', label: 'Network', icon: Globe },
   // declarative field -> CLI categories (DNS, NTP, SNMP, Syslog, ...)
   ...SCHEMA_SECTIONS.map((s) => ({ id: s.id, label: s.label, icon: s.icon })),
@@ -100,7 +99,15 @@ export function DeviceDetailPage() {
         .then((r) => parseSsids((r.outputs || []).join('\n'))),
     [gateway],
   )
-  const onConfigureHive = (d, body) => run('Hive', () => apply(d, 'configure-hive', body))
+  // Read the hives from the AP (show hive) so the Mesh list reflects reality; apply binds the chosen interfaces.
+  const loadHives = useCallback(
+    (d) =>
+      gateway
+        .agentOp(d.agentId, 'apply-config', { host: d.mgmtIp, port: 22, commands: ['show hive'], save: false })
+        .then((r) => parseHives((r.outputs || []).join('\n'))),
+    [gateway],
+  )
+  const applyMesh = (d, spec) => onApplyConfig(d, { commands: meshCommands(spec), save: true })
   const onReboot = (d) => {
     if (!window.confirm(`Reboot ${d.mgmtIp}? It will be offline for ~1-2 minutes.`)) return
     run('Reboot', () => apply(d, 'reboot', {}))
@@ -169,17 +176,19 @@ export function DeviceDetailPage() {
               onSave={onSaveDevice}
               onTag={onTag}
               onUntag={onUntag}
+              onApply={onApplyConfig}
               busy={busy}
             />
           )}
           {section === 'wifi' && (
             <WifiSection device={device} loadSsids={loadSsids} configureSsid={onConfigureSsid} busy={busy} />
           )}
-          {section === 'mesh' && <HiveForm device={device} onConfigureHive={onConfigureHive} busy={busy} />}
+          {section === 'mesh' && (
+            <MeshSection device={device} loadHives={loadHives} applyMesh={applyMesh} busy={busy} />
+          )}
           {section === 'radio' && <RadioForm device={device} onApply={onApplyConfig} busy={busy} />}
           {section === 'clientmode' && <ClientModeForm device={device} onApply={onApplyConfig} busy={busy} />}
-          {section === 'identity' && <IdentityForm device={device} onApply={onApplyConfig} busy={busy} />}
-          {section === 'network' && <NetworkForm device={device} onApply={onApplyConfig} busy={busy} />}
+          {section === 'network' && <NetworkSection device={device} onApply={onApplyConfig} busy={busy} />}
           {schema && <SchemaConfigForm section={schema} device={device} onApply={onApplyConfig} busy={busy} />}
           {section === 'advanced' && (
             <AdvancedConfigForm device={device} onApply={onApplyConfig} result={configResult} busy={busy} />
