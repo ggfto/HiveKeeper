@@ -50,10 +50,14 @@ class AccessGuardTest {
         when(accessProvider.getIfAvailable()).thenReturn(access);
         when(decoderProvider.getIfAvailable()).thenReturn(decoder);
         when(userProvider.getIfAvailable()).thenReturn(users);
-        guard = new AccessGuard(tenants, accessProvider, decoderProvider, userProvider);
+        guard = newGuard(true);
 
         request = new MockHttpServletRequest();
         RequestContextHolder.setRequestAttributes(new ServletRequestAttributes(request));
+    }
+
+    private AccessGuard newGuard(boolean tenantKeyEnabled) {
+        return new AccessGuard(tenants, accessProvider, decoderProvider, userProvider, tenantKeyEnabled);
     }
 
     @AfterEach
@@ -80,14 +84,37 @@ class AccessGuardTest {
     @Test
     void tenantKeyResolvesToOwner() {
         request.addHeader("X-Tenant-Key", "acme-key");
-        when(tenants.tenantByApiKey("acme-key")).thenReturn(Optional.of(new Tenant("acme", "Acme", "acme-key")));
+        when(tenants.tenantByApiKey("acme-key"))
+                .thenReturn(Optional.of(new Tenant("acme", "Acme", "acme-key", "owner")));
 
         Principal p = guard.authenticate();
-        assertTrue(p.owner());
+        assertTrue(p.isService());
+        assertEquals(Role.OWNER, p.serviceRole());
         assertEquals("acme", p.tenantId());
         // owner passes any requirement within its tenant WITHOUT consulting the grant resolver
         guard.require(p, Role.OWNER, ResourceScope.org());
         verifyNoInteractions(access);
+    }
+
+    @Test
+    void tenantKeyWithALowerRoleIsLimitedToThatRole() {
+        request.addHeader("X-Tenant-Key", "ops-key");
+        when(tenants.tenantByApiKey("ops-key"))
+                .thenReturn(Optional.of(new Tenant("acme", "Acme", "ops-key", "operator")));
+
+        Principal p = guard.authenticate();
+        assertEquals(Role.OPERATOR, p.serviceRole());
+        guard.require(p, Role.OPERATOR, ResourceScope.org());                    // allowed
+        assertEquals(403, statusOf(() -> guard.require(p, Role.ADMIN, ResourceScope.org()))); // denied
+        verifyNoInteractions(access);   // a service role never consults the grant resolver
+    }
+
+    @Test
+    void tenantKeyIsIgnoredWhenDisabled() {
+        AccessGuard disabled = newGuard(false);
+        request.addHeader("X-Tenant-Key", "acme-key");   // a valid key, but the path is off
+        assertEquals(401, statusOf(disabled::authenticate));
+        verifyNoInteractions(tenants);   // the key was never even looked up
     }
 
     @Test
@@ -108,7 +135,7 @@ class AccessGuardTest {
         when(users.isMember("acme", "usr-1")).thenReturn(true);
 
         Principal p = guard.authenticate();
-        assertFalse(p.owner());
+        assertFalse(p.isService());
         assertEquals("acme", p.tenantId());
         assertEquals("usr-1", p.userId());
     }
@@ -147,10 +174,11 @@ class AccessGuardTest {
     void tenantKeyTakesPrecedenceOverBearer() {
         request.addHeader("X-Tenant-Key", "acme-key");
         request.addHeader("Authorization", "Bearer good");
-        when(tenants.tenantByApiKey("acme-key")).thenReturn(Optional.of(new Tenant("acme", "Acme", "acme-key")));
+        when(tenants.tenantByApiKey("acme-key"))
+                .thenReturn(Optional.of(new Tenant("acme", "Acme", "acme-key", "owner")));
 
         Principal p = guard.authenticate();
-        assertTrue(p.owner(), "an explicit service key authenticates as the owner principal");
+        assertTrue(p.isService(), "an explicit service key authenticates as the service principal");
     }
 
     // -- require() --------------------------------------------------------------

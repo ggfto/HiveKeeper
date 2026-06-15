@@ -16,8 +16,9 @@ import java.util.Optional;
 @Profile("postgres")
 public class PostgresTenantStore implements TenantStore {
 
-    private static final RowMapper<Tenant> TENANT =
-            (rs, n) -> new Tenant(rs.getString("tenant_id"), rs.getString("name"), rs.getString("operator_api_key"));
+    private static final RowMapper<Tenant> TENANT = (rs, n) -> new Tenant(
+            rs.getString("tenant_id"), rs.getString("name"), rs.getString("operator_api_key"),
+            rs.getString("operator_role"));
     private static final RowMapper<AgentEnrollment> ENROLLMENT =
             (rs, n) -> new AgentEnrollment(rs.getString("token"), rs.getString("agent_id"), rs.getString("tenant_id"));
 
@@ -51,7 +52,8 @@ public class PostgresTenantStore implements TenantStore {
             return Optional.empty();
         }
         return first(jdbc.query(
-                "select tenant_id, name, operator_api_key from tenant where operator_api_key = ?", TENANT, apiKey));
+                "select tenant_id, name, operator_api_key, operator_role from tenant where operator_api_key = ?",
+                TENANT, apiKey));
     }
 
     @Override
@@ -60,7 +62,8 @@ public class PostgresTenantStore implements TenantStore {
             return Optional.empty();
         }
         return first(jdbc.query(
-                "select tenant_id, name, operator_api_key from tenant where tenant_id = ?", TENANT, tenantId));
+                "select tenant_id, name, operator_api_key, operator_role from tenant where tenant_id = ?",
+                TENANT, tenantId));
     }
 
     @Override

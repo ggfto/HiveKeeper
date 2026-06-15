@@ -28,8 +28,8 @@ public class InMemoryTenantStore implements TenantStore {
 
     public InMemoryTenantStore(@Value("${hivekeeper.demo-seed:false}") boolean demoSeed) {
         List<Tenant> tenants = demoSeed
-                ? List.of(new Tenant("acme", "Acme Corp", "acme-key"),
-                        new Tenant("globex", "Globex", "globex-key"))
+                ? List.of(new Tenant("acme", "Acme Corp", "acme-key", "owner"),
+                        new Tenant("globex", "Globex", "globex-key", "owner"))
                 : List.of();
         List<AgentEnrollment> enrollments = demoSeed
                 ? List.of(new AgentEnrollment("enroll-lab-agent", "lab-agent", "acme"))

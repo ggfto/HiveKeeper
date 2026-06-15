@@ -1,10 +1,10 @@
 package io.hivekeeper.gateway.access;
 
-import io.hivekeeper.gateway.tenant.Tenant;
 import io.hivekeeper.gateway.tenant.TenantStore;
 import io.hivekeeper.gateway.user.UserService;
 import jakarta.servlet.http.HttpServletRequest;
 import org.springframework.beans.factory.ObjectProvider;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.security.oauth2.jwt.JwtDecoder;
 import org.springframework.security.oauth2.jwt.JwtException;
@@ -35,22 +35,29 @@ public class AccessGuard {
     private final ObjectProvider<AccessService> access;
     private final ObjectProvider<JwtDecoder> jwtDecoder;
     private final ObjectProvider<UserService> users;
+    private final boolean tenantKeyEnabled;
 
     public AccessGuard(TenantStore tenants, ObjectProvider<AccessService> access,
-                       ObjectProvider<JwtDecoder> jwtDecoder, ObjectProvider<UserService> users) {
+                       ObjectProvider<JwtDecoder> jwtDecoder, ObjectProvider<UserService> users,
+                       @Value("${hivekeeper.tenantkey.enabled:true}") boolean tenantKeyEnabled) {
         this.tenants = tenants;
         this.access = access;
         this.jwtDecoder = jwtDecoder;
         this.users = users;
+        this.tenantKeyEnabled = tenantKeyEnabled;
     }
 
     /** Resolves the caller, or throws {@link AccessException} (401/400/403). */
     public Principal authenticate() {
         HttpServletRequest req = currentRequest();
 
+        // The X-Tenant-Key path can be turned off entirely (hivekeeper.tenantkey.enabled=false) so a hardened
+        // OIDC deployment accepts only user JWTs; when off, a key is ignored and the caller falls through to JWT.
         String apiKey = req.getHeader("X-Tenant-Key");
-        if (apiKey != null && !apiKey.isBlank()) {
-            return tenants.tenantByApiKey(apiKey).map(Tenant::tenantId).map(Principal::owner)
+        if (tenantKeyEnabled && apiKey != null && !apiKey.isBlank()) {
+            // A key grants its tenant's configured role (usually OWNER, but a key can be issued a lower one).
+            return tenants.tenantByApiKey(apiKey)
+                    .map(t -> Principal.service(t.tenantId(), Role.of(t.operatorRole())))
                     .orElseThrow(() -> new AccessException(401, "unauthorized", "invalid X-Tenant-Key"));
         }
 
@@ -81,8 +88,9 @@ public class AccessGuard {
     /** Whether the principal has at least {@code required} on {@code scope} (a service owner always does
      *  within its tenant). Non-throwing — used to filter lists. */
     public boolean allows(Principal principal, Role required, ResourceScope scope) {
-        if (principal.owner()) {
-            return true;
+        if (principal.isService()) {
+            // A service principal carries one fixed, tenant-wide role; scope does not narrow it.
+            return principal.serviceRole().atLeast(required);
         }
         AccessService resolver = access.getIfAvailable();
         return resolver != null && resolver.allows(principal.tenantId(), principal.userId(), required, scope);
