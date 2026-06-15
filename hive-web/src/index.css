@@ -1,0 +1,25 @@
+@tailwind components;
+@tailwind utilities;
+
+/*
+ * HiveKeeper identity layered over @mriqbox/ui-kit. The kit's dist/style.css (imported first in main.jsx)
+ * defines the shadcn token set + preflight + the dark palette; here we only swap the kit's neon-green accent
+ * for HiveKeeper amber and lock a comfortable dark control-panel background. The console runs dark-only
+ * (<html class="dark">), so we override both :root and .dark.
+ */
+:root,
+.dark {
+  --primary: 38 92% 52%; /* HiveKeeper amber (~#f5a623) */
+  --primary-foreground: 30 65% 8%;
+  --ring: 38 92% 52%;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+}

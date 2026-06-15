@@ -3,19 +3,38 @@
   "private": true,
   "version": "0.1.0",
   "type": "module",
-  "description": "HiveKeeper web UI (Vite + React) — talks to hive-server on localhost.",
+  "description": "HiveKeeper web UI (Vite + React) — multi-org control panel for the hive-gateway control plane.",
   "scripts": {
     "dev": "vite",
     "build": "vite build",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "test": "vitest run",
+    "test:watch": "vitest"
   },
   "dependencies": {
+    "@mriqbox/ui-kit": "^4.9.0",
+    "lucide-react": "^1.18.0",
     "oidc-client-ts": "^3.5.0",
     "react": "^18.3.1",
-    "react-dom": "^18.3.1"
+    "react-dom": "^18.3.1",
+    "react-router-dom": "^7.17.0"
   },
   "devDependencies": {
+    "@testing-library/jest-dom": "^6.9.1",
+    "@testing-library/react": "^16.3.2",
+    "@testing-library/user-event": "^14.6.1",
     "@vitejs/plugin-react": "^4.3.4",
-    "vite": "^6.0.7"
+    "autoprefixer": "^10.5.0",
+    "jsdom": "^29.1.1",
+    "postcss": "^8.5.15",
+    "tailwindcss": "^3.4.19",
+    "tailwindcss-animate": "^1.0.7",
+    "vite": "^6.0.7",
+    "vitest": "^4.1.9"
+  },
+  "pnpm": {
+    "onlyBuiltDependencies": [
+      "esbuild"
+    ]
   }
 }
