@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { MriPageHeader, MriButton, MriStatusBadge } from '@mriqbox/ui-kit'
-import { Boxes, Wifi, Network, Radio, Globe, Terminal, Power, ArrowLeft, Router } from 'lucide-react'
+import { Boxes, Wifi, Network, Radio, Globe, Terminal, Power, ArrowLeft, Router, Activity } from 'lucide-react'
 import { useAuth } from '../context/AuthProvider'
 import { ConfigNav } from '../components/molecules/ConfigNav'
 import { WifiSection } from '../components/organisms/WifiSection'
@@ -12,8 +12,8 @@ import { ClientModeForm } from '../components/organisms/ClientModeForm'
 import { AdvancedConfigForm } from '../components/organisms/AdvancedConfigForm'
 import { PowerForm } from '../components/organisms/PowerForm'
 import { DeviceOverviewForm } from '../components/organisms/DeviceOverviewForm'
-import { SchemaConfigForm } from '../components/organisms/SchemaConfigForm'
-import { SCHEMA_SECTIONS } from '../lib/configSchema'
+import { MonitoringSection } from '../components/organisms/MonitoringSection'
+import { MONITORING_SECTIONS } from '../lib/configSchema'
 import { parseSsids, parseHives } from '../lib/hiveosParse'
 import { meshCommands } from '../lib/hiveosCli'
 import { groupNamesFor, siteName } from '../lib/fleet'
@@ -25,8 +25,7 @@ const SECTIONS = [
   { id: 'radio', label: 'Radio', icon: Radio },
   { id: 'clientmode', label: 'Client mode', icon: Router },
   { id: 'network', label: 'Network', icon: Globe },
-  // declarative field -> CLI categories (DNS, NTP, SNMP, Syslog, ...)
-  ...SCHEMA_SECTIONS.map((s) => ({ id: s.id, label: s.label, icon: s.icon })),
+  { id: 'monitoring', label: 'Monitoring', icon: Activity },
   { id: 'advanced', label: 'Advanced', icon: Terminal },
   { id: 'power', label: 'Power', icon: Power },
 ]
@@ -128,6 +127,9 @@ export function DeviceDetailPage() {
         .then((r) => parseHives((r.outputs || []).join('\n'))),
     [gateway],
   )
+  // The live monitoring snapshot is the already-parsed inventory result (clients/radios/system facts), pulled
+  // through the agent. Memoized so MonitoringSection's auto-load fires once, not on every parent render.
+  const loadStatus = useCallback((d) => gateway.inventory(d.agentId, d.mgmtIp).then((r) => r.device), [gateway])
   const applyMesh = (d, spec) => onApplyConfig(d, { commands: meshCommands(spec), save: true })
   const onReboot = (d) => {
     if (!window.confirm(`Reboot ${d.mgmtIp}? It will be offline for ~1-2 minutes.`)) return
@@ -168,7 +170,6 @@ export function DeviceDetailPage() {
   }
   if (!device) return <p className="text-sm text-muted-foreground">Loading…</p>
 
-  const schema = SCHEMA_SECTIONS.find((s) => s.id === section)
   // Live status = the device's agent is currently connected to the gateway (so we can actually reach it).
   const online = agents.includes(device.agentId)
 
@@ -236,7 +237,17 @@ export function DeviceDetailPage() {
           {section === 'radio' && <RadioForm device={device} onApply={onApplyConfig} busy={busy} />}
           {section === 'clientmode' && <ClientModeForm device={device} onApply={onApplyConfig} busy={busy} />}
           {section === 'network' && <NetworkSection device={device} onApply={onApplyConfig} busy={busy} />}
-          {schema && <SchemaConfigForm section={schema} device={device} onApply={onApplyConfig} busy={busy} />}
+          {section === 'monitoring' && (
+            <MonitoringSection
+              device={device}
+              online={online}
+              loadStatus={loadStatus}
+              snmpSection={MONITORING_SECTIONS[0]}
+              syslogSection={MONITORING_SECTIONS[1]}
+              onApply={onApplyConfig}
+              busy={busy}
+            />
+          )}
           {section === 'advanced' && (
             <AdvancedConfigForm device={device} onApply={onApplyConfig} result={configResult} busy={busy} />
           )}

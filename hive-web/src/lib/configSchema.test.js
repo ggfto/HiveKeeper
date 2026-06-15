@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest'
-import { SCHEMA_SECTIONS, DNS_SECTION, NTP_SECTION } from './configSchema'
+import { MONITORING_SECTIONS, DNS_SECTION, NTP_SECTION } from './configSchema'
 
-const byId = (id) => SCHEMA_SECTIONS.find((s) => s.id === id)
+const byId = (id) => MONITORING_SECTIONS.find((s) => s.id === id)
 
 // CLI confirmed live on the AP230 via `?`.
 describe('DNS_SECTION', () => {
@@ -31,9 +31,9 @@ describe('NTP_SECTION', () => {
   })
 })
 
-describe('SCHEMA_SECTIONS (standalone)', () => {
+describe('MONITORING_SECTIONS (telemetry config)', () => {
   it('are SNMP and Syslog', () => {
-    expect(SCHEMA_SECTIONS.map((s) => s.id)).toEqual(['snmp', 'syslog'])
+    expect(MONITORING_SECTIONS.map((s) => s.id)).toEqual(['snmp', 'syslog'])
   })
   it('SNMP builds location + contact', () => {
     expect(byId('snmp').toCli({ location: 'Rack 3', contact: 'noc' })).toEqual([
@@ -45,7 +45,7 @@ describe('SCHEMA_SECTIONS (standalone)', () => {
     expect(byId('syslog').toCli({ server: '192.168.1.250' })).toEqual(['logging server 192.168.1.250'])
   })
   it('every section declares id/label/icon/fields/toCli', () => {
-    for (const s of SCHEMA_SECTIONS) {
+    for (const s of MONITORING_SECTIONS) {
       expect(s.id && s.label && s.icon && Array.isArray(s.fields) && typeof s.toCli === 'function').toBeTruthy()
     }
   })

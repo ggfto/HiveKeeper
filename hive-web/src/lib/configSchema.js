@@ -6,7 +6,7 @@ import { Globe2, Clock, Activity, ScrollText } from 'lucide-react'
  * and applies through apply-config. A section: { id, label, icon, hint?, fields[], toCli(values)->string[] }.
  *
  * DNS and NTP are exported individually because they live inside the Network section (alongside the management
- * IP), not as standalone nav items; SNMP and Syslog stay standalone (SCHEMA_SECTIONS).
+ * IP); SNMP and Syslog are grouped under the Monitoring tab (MONITORING_SECTIONS), next to the live snapshot.
  */
 const t = (s) => (s || '').trim()
 
@@ -75,5 +75,5 @@ const SYSLOG_SECTION = {
   toCli: (v) => (t(v.server) ? [`logging server ${t(v.server)}`] : []),
 }
 
-/** Standalone schema-driven nav sections (DNS/NTP are folded into the Network section instead). */
-export const SCHEMA_SECTIONS = [SNMP_SECTION, SYSLOG_SECTION]
+/** The telemetry-config sections shown under the Monitoring tab (DNS/NTP live in the Network section instead). */
+export const MONITORING_SECTIONS = [SNMP_SECTION, SYSLOG_SECTION]
