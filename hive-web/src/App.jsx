@@ -90,8 +90,12 @@ export default function App() {
   const [hive, setHive] = useState({ name: '', password: '' })
   const [configOut, setConfigOut] = useState(null)
 
-  // fleet (registered devices)
+  // fleet (registered devices, groups, sites)
   const [devices, setDevices] = useState(null)   // array | 'forbidden' | null
+  const [groups, setGroups] = useState(null)     // array | 'forbidden' | null
+  const [sites, setSites] = useState([])
+  const [newGroup, setNewGroup] = useState({ name: '', siteId: '' })
+  const [tagInto, setTagInto] = useState({})     // deviceId -> groupId chosen in its dropdown
 
   // OIDC identity (SSO sign-in: who you are + which organizations you belong to)
   const [account, setAccount] = useState(null)   // the oidc User (access_token + profile claims)
@@ -175,7 +179,7 @@ export default function App() {
       const list = await res.json()
       setAgents(Array.isArray(list) ? list : [])
       setStatus(`${Array.isArray(list) ? list.length : 0} agent(s) for this tenant.`)
-      loadDevices()
+      loadDevices(); loadGroups(); loadSites()
     } catch (e) { setAgents(null); setStatus(`gateway unreachable: ${e.message}`) }
   }
 
@@ -280,6 +284,55 @@ export default function App() {
       loadDevices()
     } catch (e) { setStatus(`Request failed: ${e.message}`) } finally { setBusy(false) }
   }
+
+  async function loadGroups() {
+    try {
+      const res = await gw('/api/groups')
+      if (res.status === 403) { setGroups('forbidden'); return }
+      if (!res.ok) { setGroups(null); return }
+      setGroups(await res.json())
+    } catch { setGroups(null) }
+  }
+
+  async function loadSites() {
+    try {
+      const res = await gw('/api/sites')
+      if (!res.ok) { setSites([]); return }
+      setSites(await res.json())
+    } catch { setSites([]) }
+  }
+
+  async function createGroup() {
+    if (!newGroup.name) { setStatus('Group name is required.'); return }
+    setBusy(true); setStatus(`Creating group '${newGroup.name}'…`)
+    try {
+      const res = await gw('/api/groups', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name: newGroup.name, siteId: newGroup.siteId || null })
+      })
+      const r = await res.json()
+      if (!res.ok) { setStatus(`Error ${res.status}: ${r.error} ${r.detail || ''}`); return }
+      setStatus(`Created group '${newGroup.name}'.`)
+      setNewGroup({ name: '', siteId: '' })
+      loadGroups()
+    } catch (e) { setStatus(`Request failed: ${e.message}`) } finally { setBusy(false) }
+  }
+
+  async function tagDeviceInGroup(deviceId) {
+    const groupId = tagInto[deviceId]
+    if (!groupId) { setStatus('Pick a group first.'); return }
+    setBusy(true)
+    try {
+      const res = await gw(`/api/devices/${deviceId}/groups`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ groupId })
+      })
+      if (!res.ok) { const r = await res.json().catch(() => ({})); setStatus(`Error ${res.status}: ${r.error || ''} ${r.detail || ''}`); return }
+      setStatus('Device tagged into the group.')
+      loadDevices()
+    } catch (e) { setStatus(`Request failed: ${e.message}`) } finally { setBusy(false) }
+  }
+
+  const groupName = (id) => (Array.isArray(groups) ? groups.find((g) => g.groupId === id)?.name : null) || id
 
   // resolve the OIDC session on load: complete an auth-code callback, or restore a stored session
   useEffect(() => {
@@ -472,6 +525,43 @@ export default function App() {
         </section>
       )}
 
+      {mode === 'gateway' && groups != null && (
+        <section className="panel">
+          <h2>Fleet — groups {Array.isArray(groups) ? `(${groups.length})` : ''}</h2>
+          {groups === 'forbidden' ? (
+            <p className="muted">The group list needs an organization-level viewer/admin role.</p>
+          ) : (
+            <>
+              {groups.length > 0 && (
+                <ul className="events">
+                  {groups.map((g) => (
+                    <li key={g.groupId}>
+                      <strong>{g.name}</strong>
+                      {g.siteId
+                        ? ` — site ${sites.find((s) => s.siteId === g.siteId)?.name || g.siteId}`
+                        : ' — cross-site tag'}
+                    </li>
+                  ))}
+                </ul>
+              )}
+              <div className="grid">
+                <Field label="New group" value={newGroup.name} onChange={(e) => setNewGroup({ ...newGroup, name: e.target.value })} placeholder="Floor 3" />
+                <label className="field">
+                  <span>Site (blank = cross-site tag)</span>
+                  <select value={newGroup.siteId} onChange={(e) => setNewGroup({ ...newGroup, siteId: e.target.value })}>
+                    <option value="">— cross-site tag —</option>
+                    {sites.map((s) => <option key={s.siteId} value={s.siteId}>{s.name}</option>)}
+                  </select>
+                </label>
+              </div>
+              <div className="actions">
+                <button onClick={createGroup} disabled={busy || !newGroup.name}>Create group</button>
+              </div>
+            </>
+          )}
+        </section>
+      )}
+
       {mode === 'gateway' && devices != null && (
         <section className="panel">
           <h2>Fleet — devices {Array.isArray(devices) ? `(${devices.length})` : ''}</h2>
@@ -482,11 +572,22 @@ export default function App() {
           ) : (
             <table className="kv">
               <tbody>
-                <tr><td><strong>Label</strong></td><td><strong>Serial</strong></td><td><strong>Model</strong></td><td><strong>Mgmt IP</strong></td><td><strong>Groups</strong></td></tr>
+                <tr><td><strong>Label</strong></td><td><strong>Serial</strong></td><td><strong>Model</strong></td><td><strong>Mgmt IP</strong></td><td><strong>Groups</strong></td><td><strong>Tag into</strong></td></tr>
                 {devices.map((d) => (
                   <tr key={d.deviceId}>
                     <td>{d.label || '—'}</td><td>{d.serial}</td><td>{d.model || '—'}</td>
-                    <td>{d.mgmtIp || '—'}</td><td>{(d.groups || []).length}</td>
+                    <td>{d.mgmtIp || '—'}</td>
+                    <td>{(d.groups || []).map(groupName).join(', ') || '—'}</td>
+                    <td>
+                      <select value={tagInto[d.deviceId] || ''} onChange={(e) => setTagInto({ ...tagInto, [d.deviceId]: e.target.value })}>
+                        <option value="">—</option>
+                        {(Array.isArray(groups) ? groups : [])
+                          .filter((g) => !(d.groups || []).includes(g.groupId))
+                          .map((g) => <option key={g.groupId} value={g.groupId}>{g.name}</option>)}
+                      </select>
+                      {' '}
+                      <button className="link" onClick={() => tagDeviceInGroup(d.deviceId)} disabled={busy || !tagInto[d.deviceId]}>add</button>
+                    </td>
                   </tr>
                 ))}
               </tbody>
