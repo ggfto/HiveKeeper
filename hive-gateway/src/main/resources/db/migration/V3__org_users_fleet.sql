@@ -154,25 +154,5 @@ create policy device_group_tenant_isolation on device_group
     using (tenant_id = current_setting('app.current_tenant', true))
     with check (tenant_id = current_setting('app.current_tenant', true));
 
--- ---------------------------------------------------------------------------
--- Seed: a Default site + group for the demo tenant, the lab agent bound to that site, and demo users that
--- exercise scoped roles (owner@org, operator@site, viewer@group) so the resolver can be tried via API.
--- ---------------------------------------------------------------------------
-insert into site (site_id, tenant_id, name) values
-    ('site-acme-default', 'acme', 'Default');
-insert into fleet_group (group_id, tenant_id, site_id, name) values
-    ('grp-acme-default', 'acme', 'site-acme-default', 'Default');
-update agent_enrollment set site_id = 'site-acme-default' where agent_id = 'lab-agent';
-
-insert into app_user (user_id, oidc_issuer, oidc_subject, email, name) values
-    ('usr-owner', 'dev', 'owner', 'owner@acme.test', 'Olivia Owner'),
-    ('usr-op',    'dev', 'op',    'op@acme.test',    'Otto Operator'),
-    ('usr-view',  'dev', 'view',  'view@acme.test',  'Vera Viewer');
-insert into membership (membership_id, user_id, tenant_id) values
-    ('mb-owner', 'usr-owner', 'acme'),
-    ('mb-op',    'usr-op',    'acme'),
-    ('mb-view',  'usr-view',  'acme');
-insert into role_grant (grant_id, membership_id, tenant_id, role, scope_type, scope_id) values
-    ('g-owner', 'mb-owner', 'acme', 'owner',    'org',   null),
-    ('g-op',    'mb-op',    'acme', 'operator', 'site',  'site-acme-default'),
-    ('g-view',  'mb-view',  'acme', 'viewer',   'group', 'grp-acme-default');
+-- The demo site/group/users/memberships/grants that exercise scoped roles live in the dev-only seed
+-- (classpath:db/seed-dev, applied only under the 'demo' profile). Baseline migrations are schema-only.

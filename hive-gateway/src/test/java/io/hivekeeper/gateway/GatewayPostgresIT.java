@@ -35,8 +35,11 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  * tenant-context coupling, the {@code user_memberships} SECURITY DEFINER cross-org lookup, JIT idempotency,
  * and the composite-FK cross-tenant rejection. Self-skips when no container engine is available.
  */
-@SpringBootTest
-@ActiveProfiles({"postgres", "oidc"})
+// RANDOM_PORT (a real embedded servlet container) so the WebSocket message-buffer bean
+// (ServletServerContainerFactoryBean, which needs a real jakarta.websocket ServerContainer) can initialize;
+// the default MOCK environment has none. The tests below still call the services directly, not over HTTP.
+@SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
+@ActiveProfiles({"postgres", "oidc", "demo"})   // 'demo' applies the dev-only seed this IT asserts against
 @Testcontainers(disabledWithoutDocker = true)
 class GatewayPostgresIT {
 

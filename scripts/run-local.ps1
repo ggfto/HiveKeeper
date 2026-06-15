@@ -23,6 +23,9 @@ if (-not (Test-Path 'hive-web\node_modules')) { Push-Location hive-web; pnpm ins
 
 Write-Host 'Starting backends...' -ForegroundColor Cyan
 Start-Process -FilePath '.\hive-server\build\install\hive-server\bin\hive-server.bat' -WindowStyle Minimized | Out-Null
+# The gateway ships NO tenants/keys by default (the public demo keys are gated). The 'demo' profile seeds the
+# local acme/globex tenants + lab-agent enrollment so this dev stack works out of the box. Never use it in prod.
+$env:SPRING_PROFILES_ACTIVE = 'demo'
 Start-Process -FilePath '.\hive-gateway\build\install\hive-gateway\bin\hive-gateway.bat' -WindowStyle Minimized | Out-Null
 
 $env:HIVEKEEPER_GATEWAY_URL = 'ws://127.0.0.1:8090/agent?token=enroll-lab-agent'

@@ -1,5 +1,6 @@
 package io.hivekeeper.gateway.tenant;
 
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Profile;
 import org.springframework.stereotype.Component;
 import java.util.List;
@@ -9,9 +10,12 @@ import java.util.function.Function;
 import java.util.stream.Collectors;
 
 /**
- * In-memory tenant store (the default when no database is configured), seeded with two demo tenants
- * and one enrolled agent. The {@code postgres} profile swaps in {@code PostgresTenantStore} — callers
- * depend only on {@link TenantStore}.
+ * In-memory tenant store (the default when no database is configured). It is EMPTY unless
+ * {@code hivekeeper.demo-seed=true} (set by the {@code demo} profile), in which case it is seeded with two
+ * public demo tenants and one enrolled agent for the local stack. This gating matters: the seed keys
+ * ({@code acme-key}, {@code globex-key}, {@code enroll-lab-agent}) are well-known and in source — shipping them
+ * active by default would hand owner rights to anyone. The {@code postgres} profile swaps in
+ * {@code PostgresTenantStore}; callers depend only on {@link TenantStore}.
  */
 @Component
 @Profile("!postgres")
@@ -22,12 +26,14 @@ public class InMemoryTenantStore implements TenantStore {
     private final Map<String, AgentEnrollment> byToken;
     private final Map<String, AgentEnrollment> byAgentId;
 
-    public InMemoryTenantStore() {
-        List<Tenant> tenants = List.of(
-                new Tenant("acme", "Acme Corp", "acme-key"),
-                new Tenant("globex", "Globex", "globex-key"));
-        List<AgentEnrollment> enrollments = List.of(
-                new AgentEnrollment("enroll-lab-agent", "lab-agent", "acme"));
+    public InMemoryTenantStore(@Value("${hivekeeper.demo-seed:false}") boolean demoSeed) {
+        List<Tenant> tenants = demoSeed
+                ? List.of(new Tenant("acme", "Acme Corp", "acme-key"),
+                        new Tenant("globex", "Globex", "globex-key"))
+                : List.of();
+        List<AgentEnrollment> enrollments = demoSeed
+                ? List.of(new AgentEnrollment("enroll-lab-agent", "lab-agent", "acme"))
+                : List.of();
 
         this.byId = tenants.stream().collect(Collectors.toMap(Tenant::tenantId, Function.identity()));
         this.byApiKey = tenants.stream().collect(Collectors.toMap(Tenant::operatorApiKey, Function.identity()));

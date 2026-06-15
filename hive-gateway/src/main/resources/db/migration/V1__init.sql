@@ -26,12 +26,9 @@ create table operation_log (
     created_at timestamptz not null default now()
 );
 
--- Seed two demo tenants and one enrolled agent.
-insert into tenant (tenant_id, name, operator_api_key) values
-    ('acme', 'Acme Corp', 'acme-key'),
-    ('globex', 'Globex', 'globex-key');
-insert into agent_enrollment (token, agent_id, tenant_id) values
-    ('enroll-lab-agent', 'lab-agent', 'acme');
+-- No demo data here: tenants + the enrolled agent are seeded only under the 'demo' profile
+-- (classpath:db/seed-dev). Baseline migrations are schema-only so a production database ships no
+-- known-public credentials.
 
 -- Grant the restricted app role exactly what it needs.
 grant select on tenant to hivekeeper_app;

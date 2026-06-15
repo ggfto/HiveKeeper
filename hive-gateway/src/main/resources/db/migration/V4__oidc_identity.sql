@@ -26,16 +26,5 @@ $$;
 revoke all on function user_memberships(text) from public;
 grant execute on function user_memberships(text) to hivekeeper_app;
 
--- Point the demo users at the dev Keycloak realm (fixed user ids declared in scripts/hivekeeper-realm.json)
--- so a real login resolves to the seeded users that already hold scoped grants. Dev/demo data only.
-update app_user set oidc_issuer = 'http://localhost:8081/realms/hivekeeper',
-    oidc_subject = '11111111-1111-1111-1111-111111111111' where user_id = 'usr-owner';
-update app_user set oidc_issuer = 'http://localhost:8081/realms/hivekeeper',
-    oidc_subject = '22222222-2222-2222-2222-222222222222' where user_id = 'usr-op';
-update app_user set oidc_issuer = 'http://localhost:8081/realms/hivekeeper',
-    oidc_subject = '33333333-3333-3333-3333-333333333333' where user_id = 'usr-view';
-
--- Give the owner a second organization so the switcher has something to switch to.
-insert into membership (membership_id, user_id, tenant_id) values ('mb-owner-globex', 'usr-owner', 'globex');
-insert into role_grant (grant_id, membership_id, tenant_id, role, scope_type, scope_id) values
-    ('g-owner-globex', 'mb-owner-globex', 'globex', 'viewer', 'org', null);
+-- The demo users' OIDC binding (to the dev Keycloak) and the owner's second org live in the dev-only seed
+-- (classpath:db/seed-dev), applied only under the 'demo' profile. Baseline migrations are schema-only.

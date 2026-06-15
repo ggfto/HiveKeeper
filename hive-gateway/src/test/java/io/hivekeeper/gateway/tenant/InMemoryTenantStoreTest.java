@@ -6,7 +6,15 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class InMemoryTenantStoreTest {
 
-    private final TenantStore store = new InMemoryTenantStore();
+    private final TenantStore store = new InMemoryTenantStore(true);   // demo-seeded
+
+    @Test
+    void isEmptyByDefault() {
+        // The default (no demo-seed flag) must ship NO known-public credentials.
+        TenantStore unseeded = new InMemoryTenantStore(false);
+        assertTrue(unseeded.tenantByApiKey("acme-key").isEmpty());
+        assertTrue(unseeded.enrollmentByToken("enroll-lab-agent").isEmpty());
+    }
 
     @Test
     void resolvesAgentEnrollmentToItsTenant() {
