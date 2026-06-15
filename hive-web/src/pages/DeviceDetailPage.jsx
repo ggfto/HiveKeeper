@@ -15,7 +15,7 @@ import { DeviceOverviewForm } from '../components/organisms/DeviceOverviewForm'
 import { CaptivePortalForm } from '../components/organisms/CaptivePortalForm'
 import { MonitoringSection } from '../components/organisms/MonitoringSection'
 import { MONITORING_SECTIONS } from '../lib/configSchema'
-import { parseSsids, parseHives, parseCapwap, parseAcsp } from '../lib/hiveosParse'
+import { parseSsids, parseHives, parseCapwap, parseAcsp, parseLog } from '../lib/hiveosParse'
 import { meshCommands } from '../lib/hiveosCli'
 import { groupNamesFor, siteName } from '../lib/fleet'
 
@@ -156,6 +156,19 @@ export function DeviceDetailPage() {
     },
     [gateway],
   )
+  // The recent on-AP log (show log buffered), pulled on demand and trimmed to the most recent entries.
+  const loadLog = useCallback(
+    (d) =>
+      gateway
+        .agentOp(d.agentId, 'apply-config', {
+          host: d.mgmtIp,
+          port: 22,
+          commands: ['show log buffered'],
+          save: false,
+        })
+        .then((r) => parseLog((r.outputs || [])[0] || '', 120)),
+    [gateway],
+  )
   const applyMesh = (d, spec) => onApplyConfig(d, { commands: meshCommands(spec), save: true })
   const onReboot = (d) => {
     if (!window.confirm(`Reboot ${d.mgmtIp}? It will be offline for ~1-2 minutes.`)) return
@@ -277,6 +290,7 @@ export function DeviceDetailPage() {
               device={device}
               online={online}
               loadStatus={loadStatus}
+              loadLog={loadLog}
               snmpSection={MONITORING_SECTIONS[0]}
               syslogSection={MONITORING_SECTIONS[1]}
               onApply={onApplyConfig}

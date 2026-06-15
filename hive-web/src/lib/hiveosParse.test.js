@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { parseSsids, parseHives, parseCapwap, parseAcsp } from './hiveosParse'
+import { parseSsids, parseHives, parseCapwap, parseAcsp, parseLog } from './hiveosParse'
 
 // A real running-config excerpt captured from the AP230 (secrets already masked by the gateway).
 const CONFIG = `
@@ -94,5 +94,31 @@ describe('parseAcsp', () => {
   it('is empty for no radio rows', () => {
     expect(parseAcsp('')).toEqual([])
     expect(parseAcsp(null)).toEqual([])
+  })
+})
+
+// `show log buffered` from the AP230 (newest entry first): "<date> <time> <level>  <message>".
+const SHOW_LOG = `2026-06-15 20:19:32 info    ah_cli: security: admin:<show log buffered>
+2026-06-15 20:19:31 notice  -ah_cli_ui: security: Admin logged in
+a non-timestamped continuation line that should be skipped
+2026-06-15 20:19:30 error   kernel: something failed`
+
+describe('parseLog', () => {
+  it('parses timestamped entries (newest first) into {time, level, message}, skipping noise', () => {
+    expect(parseLog(SHOW_LOG)).toEqual([
+      { time: '2026-06-15 20:19:32', level: 'info', message: 'ah_cli: security: admin:<show log buffered>' },
+      { time: '2026-06-15 20:19:31', level: 'notice', message: '-ah_cli_ui: security: Admin logged in' },
+      { time: '2026-06-15 20:19:30', level: 'error', message: 'kernel: something failed' },
+    ])
+  })
+  it('keeps only the most recent `limit` entries (the buffer is newest-first)', () => {
+    expect(parseLog(SHOW_LOG, 1)).toEqual([
+      { time: '2026-06-15 20:19:32', level: 'info', message: 'ah_cli: security: admin:<show log buffered>' },
+    ])
+  })
+  it('is empty when nothing parses', () => {
+    expect(parseLog('')).toEqual([])
+    expect(parseLog(null)).toEqual([])
+    expect(parseLog('no timestamp here')).toEqual([])
   })
 })

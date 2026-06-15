@@ -56,6 +56,25 @@ export function parseHives(output) {
 
 const num = (x) => (x !== undefined && x !== '' && !Number.isNaN(Number(x)) ? Number(x) : null)
 
+const LOG_LINE = /^(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2})\s+(\S+)\s+(.*)$/
+
+/**
+ * Parse `show log buffered` into structured entries. Each entry is "<date> <time> <level>  <message>"; the
+ * buffer is newest-first, so the first `limit` parseable lines are the most recent. Non-timestamped lines
+ * (wrapped continuations, banners) are skipped. -> [{ time, level, message }].
+ */
+export function parseLog(output, limit = 120) {
+  const rows = []
+  for (const line of (output || '').split('\n')) {
+    const m = line.match(LOG_LINE)
+    if (m) {
+      rows.push({ time: m[1], level: m[2], message: m[3].trim() })
+      if (rows.length >= limit) break
+    }
+  }
+  return rows
+}
+
 /**
  * Parse `show capwap client`. The first line reads "CAPWAP client:   Enabled|Disabled" — disabled means the AP
  * is standalone (not phoning home to a cloud controller), which is the whole point of HiveKeeper. -> { known,

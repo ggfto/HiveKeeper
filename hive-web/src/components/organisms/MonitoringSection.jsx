@@ -10,8 +10,22 @@ import {
   MriStatusBadge,
   MriSectionHeader,
 } from '@mriqbox/ui-kit'
-import { Activity, Wifi, Radio as RadioIcon, ScrollText } from 'lucide-react'
+import { Activity, Wifi, Radio as RadioIcon, Send, History } from 'lucide-react'
 import { SchemaConfigForm } from './SchemaConfigForm'
+
+// Syslog severity -> badge variant for the recent-log view.
+const LEVEL_VARIANT = {
+  emerg: 'destructive',
+  alert: 'destructive',
+  crit: 'destructive',
+  err: 'destructive',
+  error: 'destructive',
+  warning: 'warning',
+  warn: 'warning',
+  notice: 'warning',
+  info: 'outline',
+  debug: 'ghost',
+}
 
 function Fact({ label, value }) {
   return (
@@ -29,10 +43,13 @@ function Fact({ label, value }) {
  * applies whenever. `loadStatus(device)` returns the parsed Device snapshot; keep it stable (useCallback) so the
  * auto-load fires once, not on every render.
  */
-export function MonitoringSection({ device, online, loadStatus, snmpSection, syslogSection, onApply, busy }) {
+export function MonitoringSection({ device, online, loadStatus, loadLog, snmpSection, syslogSection, onApply, busy }) {
   const [live, setLive] = useState(null)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
+  const [log, setLog] = useState(null)
+  const [logBusy, setLogBusy] = useState(false)
+  const [logError, setLogError] = useState('')
 
   const refresh = useCallback(async () => {
     if (!online) return
@@ -51,6 +68,19 @@ export function MonitoringSection({ device, online, loadStatus, snmpSection, sys
   useEffect(() => {
     refresh()
   }, [refresh])
+
+  // The log is an on-demand read (it pulls the whole buffer, ~0.5 MB), so it is loaded by a button, not auto.
+  const fetchLog = async () => {
+    setLogBusy(true)
+    setLogError('')
+    try {
+      setLog(await loadLog(device))
+    } catch (e) {
+      setLogError(e.message)
+    } finally {
+      setLogBusy(false)
+    }
+  }
 
   const stations = live?.stations || []
   const radios = live?.radios || []
@@ -162,8 +192,48 @@ export function MonitoringSection({ device, online, loadStatus, snmpSection, sys
         ) : null}
       </div>
 
+      <div className="space-y-3 border-t border-border pt-5">
+        <div className="flex items-center justify-between">
+          <MriSectionHeader icon={History} title="Recent log" />
+          <MriButton size="sm" variant="ghost" disabled={!online || logBusy} onClick={fetchLog}>
+            {log ? 'Refresh' : 'Load'}
+          </MriButton>
+        </div>
+        {!online ? (
+          <p className="text-sm text-muted-foreground">Agent offline — the log is unavailable.</p>
+        ) : logBusy ? (
+          <p className="text-sm text-muted-foreground">Reading the AP log…</p>
+        ) : logError ? (
+          <p className="text-sm text-destructive">{logError}</p>
+        ) : log == null ? (
+          <p className="text-sm text-muted-foreground">Load the AP&apos;s most recent log entries.</p>
+        ) : log.length === 0 ? (
+          <p className="text-sm text-muted-foreground">No log entries.</p>
+        ) : (
+          <div className="max-h-96 overflow-y-auto rounded-md border border-border">
+            <table className="w-full text-xs">
+              <tbody>
+                {log.map((e, i) => (
+                  <tr key={i} className="border-b border-border/50 align-top last:border-0">
+                    <td className="whitespace-nowrap px-2 py-1 font-mono text-muted-foreground">{e.time}</td>
+                    <td className="px-2 py-1">
+                      <MriStatusBadge
+                        label={e.level}
+                        variant={LEVEL_VARIANT[e.level?.toLowerCase()] || 'outline'}
+                        size="xs"
+                      />
+                    </td>
+                    <td className="px-2 py-1 font-mono">{e.message}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+
       <div className="space-y-4 border-t border-border pt-5">
-        <MriSectionHeader icon={ScrollText} title="Telemetry & log forwarding" />
+        <MriSectionHeader icon={Send} title="Telemetry & log forwarding" />
         <p className="text-xs text-muted-foreground">
           Where the AP pushes its own telemetry: an SNMP identity for your NMS, and a syslog destination for its
           logs.

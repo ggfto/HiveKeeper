@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest'
-import { render, screen } from '@testing-library/react'
+import { render, screen, fireEvent } from '@testing-library/react'
 import { MonitoringSection } from './MonitoringSection'
 import { MONITORING_SECTIONS } from '../../lib/configSchema'
 
@@ -48,11 +48,24 @@ describe('MonitoringSection', () => {
     expect(await screen.findByText(/no clients associated/i)).toBeInTheDocument()
   })
 
+  it('loads the recent log on demand (not automatically)', async () => {
+    const loadStatus = vi.fn().mockResolvedValue({ stations: [], radios: [] })
+    const loadLog = vi.fn().mockResolvedValue([
+      { time: '2026-06-15 20:19:32', level: 'error', message: 'kernel: something failed' },
+    ])
+    renderSection({ online: true, loadStatus, loadLog })
+    await screen.findByText(/no clients associated/i)
+    expect(loadLog).not.toHaveBeenCalled() // on-demand, not auto
+    fireEvent.click(screen.getByRole('button', { name: /^load$/i }))
+    expect(await screen.findByText(/kernel: something failed/)).toBeInTheDocument()
+    expect(screen.getByText('error')).toBeInTheDocument() // severity badge
+  })
+
   it('does not pull live status when the agent is offline', () => {
     const loadStatus = vi.fn()
     renderSection({ online: false, loadStatus })
     expect(loadStatus).not.toHaveBeenCalled()
-    expect(screen.getByText(/agent offline/i)).toBeInTheDocument()
+    expect(screen.getByText(/live status is unavailable/i)).toBeInTheDocument()
     expect(screen.getByRole('button', { name: /refresh/i })).toBeDisabled()
     // config still editable even when the AP is unreachable (it is queued/applied when back)
     expect(screen.getByRole('button', { name: /apply snmp/i })).toBeInTheDocument()
