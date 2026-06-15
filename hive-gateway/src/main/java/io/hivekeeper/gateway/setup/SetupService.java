@@ -89,6 +89,12 @@ public class SetupService {
                 tenantId, orgName.trim(), operatorKey);
 
         UserService.AppUser user = users.provision(issuer, kcUserId, email, name);
+
+        // membership + role_grant are RLS-protected: the policy's WITH CHECK compares tenant_id to the
+        // transaction-local app.current_tenant, so set it before inserting (the same pattern the other services
+        // use). tenant + app_user are global (no RLS), so they were written above without it.
+        jdbc.queryForObject("select set_config('app.current_tenant', ?, true)", String.class, tenantId);
+
         String membershipId = "mb-" + UUID.randomUUID();
         jdbc.update("insert into membership (membership_id, user_id, tenant_id) values (?, ?, ?)",
                 membershipId, user.userId(), tenantId);
