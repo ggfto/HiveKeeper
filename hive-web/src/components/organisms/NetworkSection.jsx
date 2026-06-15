@@ -6,10 +6,12 @@ import { DNS_SECTION, NTP_SECTION } from '../../lib/configSchema'
  *  items before). Each part applies confirmed HiveOS CLI through apply-config. */
 export function NetworkSection({ device, onApply, busy }) {
   return (
-    <div className="space-y-8">
+    <div className="grid items-start gap-8 xl:grid-cols-2">
       <NetworkForm device={device} onApply={onApply} busy={busy} />
-      <SchemaConfigForm section={DNS_SECTION} device={device} onApply={onApply} busy={busy} />
-      <SchemaConfigForm section={NTP_SECTION} device={device} onApply={onApply} busy={busy} />
+      <div className="space-y-8">
+        <SchemaConfigForm section={DNS_SECTION} device={device} onApply={onApply} busy={busy} />
+        <SchemaConfigForm section={NTP_SECTION} device={device} onApply={onApply} busy={busy} />
+      </div>
     </div>
   )
 }
