@@ -1,5 +1,5 @@
 import { createContext, useContext, useEffect, useMemo, useRef, useState } from 'react'
-import { login, logout, resolveUser } from '../auth'
+import { login, logout, resolveUser, userManager } from '../auth'
 import { createGateway } from '../api/gateway'
 import { resolveAuth, defaultOrg } from '../lib/authState'
 
@@ -24,6 +24,27 @@ export function AuthProvider({ children }) {
   const authRef = useRef({ user: null, activeOrg: '', tenantKey: DEFAULT_TENANT_KEY, devMode: false })
   authRef.current = { user, activeOrg, tenantKey: DEFAULT_TENANT_KEY, devMode }
   const gateway = useMemo(() => createGateway({ getAuth: () => resolveAuth(authRef.current) }), [])
+
+  // Keep the session fresh: when oidc-client-ts silently renews the access token it emits userLoaded with the
+  // new user — re-point the gateway client at it so subsequent calls carry the fresh token. If renewal ever
+  // fails and the token expires, drop to the sign-in gate rather than silently 401ing every request.
+  useEffect(() => {
+    const onLoaded = (u) => {
+      authRef.current = { ...authRef.current, user: u }
+      setUser(u)
+    }
+    const onExpired = () => {
+      setUser(null)
+      setMe(null)
+      setActiveOrg('')
+    }
+    userManager.events.addUserLoaded(onLoaded)
+    userManager.events.addAccessTokenExpired(onExpired)
+    return () => {
+      userManager.events.removeUserLoaded(onLoaded)
+      userManager.events.removeAccessTokenExpired(onExpired)
+    }
+  }, [])
 
   const didInit = useRef(false)
   useEffect(() => {

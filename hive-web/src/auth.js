@@ -11,7 +11,12 @@ const settings = {
   scope: 'openid profile email',
   // Keep tokens in sessionStorage so a refresh restores the session but closing the tab signs out.
   userStore: new WebStorageStateStore({ store: window.sessionStorage }),
-  automaticSilentRenew: false,
+  // Renew the (short, ~5 min) access token in the background using the refresh token before it expires, so a
+  // longer session does not start 401ing every gateway call mid-work. The Keycloak SSO session (30 min idle /
+  // 10 h) backs the refresh; AuthProvider listens for the renewed user and re-points the gateway client at it.
+  automaticSilentRenew: true,
+  // renew ~1 min before expiry
+  accessTokenExpiringNotificationTimeInSeconds: 60,
 }
 
 export const userManager = new UserManager(settings)
