@@ -102,6 +102,9 @@ export function MeshSection({ device, loadHives, applyMesh, onApply, busy }) {
           Refresh
         </MriButton>
       </div>
+      <p className="text-xs text-muted-foreground">
+        Hives group APs into a wireless mesh that shares a key; list, create or tune the hives on this AP.
+      </p>
 
       {hives === null ? (
         <p className="text-sm text-muted-foreground">Loading hives from the AP…</p>

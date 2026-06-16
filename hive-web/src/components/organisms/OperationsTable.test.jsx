@@ -8,6 +8,12 @@ describe('OperationsTable', () => {
     expect(screen.getByText(/no operations recorded/i)).toBeInTheDocument()
   })
 
+  it('shows a loading note (not the empty state) while loading', () => {
+    render(<OperationsTable operations={[]} loading />)
+    expect(screen.getByText(/loading operations/i)).toBeInTheDocument()
+    expect(screen.queryByText(/no operations recorded/i)).not.toBeInTheDocument()
+  })
+
   it('renders an audit row (agent, op type, host, summary)', () => {
     render(
       <OperationsTable

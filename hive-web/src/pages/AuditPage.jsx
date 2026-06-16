@@ -33,7 +33,7 @@ export function AuditPage() {
           Refresh
         </MriButton>
       </MriPageHeader>
-      <OperationsTable operations={operations} />
+      <OperationsTable operations={operations} loading={busy} />
     </div>
   )
 }

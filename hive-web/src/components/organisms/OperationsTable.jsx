@@ -15,9 +15,13 @@ function formatTime(value) {
 }
 
 /** The per-tenant audit of operations dispatched to agents (GET /api/operations). RLS-scoped on the gateway. */
-export function OperationsTable({ operations }) {
+export function OperationsTable({ operations, loading }) {
   if (!operations || operations.length === 0) {
-    return <p className="text-sm text-muted-foreground">No operations recorded yet.</p>
+    return (
+      <p className="text-sm text-muted-foreground">
+        {loading ? 'Loading operations…' : 'No operations recorded yet.'}
+      </p>
+    )
   }
   return (
     <MriTable>
