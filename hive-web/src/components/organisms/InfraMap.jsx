@@ -1,7 +1,8 @@
 import { useMemo } from 'react'
-import { ReactFlow, Background, Controls, Panel, Handle, Position } from '@xyflow/react'
+import { ReactFlow, Background, Panel, Handle, Position, useReactFlow } from '@xyflow/react'
 import '@xyflow/react/dist/style.css'
-import { Wifi, Boxes, Smartphone } from 'lucide-react'
+import { MriButton } from '@mriqbox/ui-kit'
+import { Wifi, Boxes, Smartphone, ZoomIn, ZoomOut, Maximize } from 'lucide-react'
 
 /** A site: the left-column anchor that its APs hang off. */
 function SiteNode({ data }) {
@@ -90,6 +91,31 @@ function HiveGroupNode({ data }) {
 
 const NODE_TYPES = { site: SiteNode, ap: ApNode, client: ClientNode, hiveGroup: HiveGroupNode }
 
+/** Themed zoom / reset controls (replacing React Flow's default light ones). Rendered inside ReactFlow so it
+ *  can drive the viewport via useReactFlow. */
+function MapControls() {
+  const { zoomIn, zoomOut, fitView } = useReactFlow()
+  return (
+    <Panel position="bottom-left" className="flex gap-1">
+      <MriButton size="icon" variant="outline" className="h-8 w-8" onClick={() => zoomIn()} aria-label="Zoom in">
+        <ZoomIn className="h-4 w-4" />
+      </MriButton>
+      <MriButton size="icon" variant="outline" className="h-8 w-8" onClick={() => zoomOut()} aria-label="Zoom out">
+        <ZoomOut className="h-4 w-4" />
+      </MriButton>
+      <MriButton
+        size="icon"
+        variant="outline"
+        className="h-8 w-8"
+        onClick={() => fitView({ padding: 0.2 })}
+        aria-label="Reset view"
+      >
+        <Maximize className="h-4 w-4" />
+      </MriButton>
+    </Panel>
+  )
+}
+
 /**
  * The infrastructure map: sites on the left, their APs on the right, a solid edge site -> AP and a dashed
  * "mesh" edge between APs sharing a hive. Nodes + positions are computed by ../../lib/topology (pure, tested);
@@ -120,7 +146,7 @@ export function InfraMap({ nodes, edges, onSelectDevice, onExpand }) {
         }}
       >
         <Background />
-        <Controls showInteractive={false} />
+        <MapControls />
         <Panel
           position="top-right"
           className="space-y-0.5 rounded-md border border-border bg-card/90 px-3 py-2 text-xs text-muted-foreground backdrop-blur"

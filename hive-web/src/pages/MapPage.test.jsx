@@ -17,10 +17,10 @@ vi.mock('@xyflow/react', () => ({
     </div>
   ),
   Background: () => null,
-  Controls: () => null,
   Panel: ({ children }) => <div>{children}</div>,
   Handle: () => null,
   Position: { Left: 'left', Right: 'right', Top: 'top', Bottom: 'bottom' },
+  useReactFlow: () => ({ zoomIn: () => {}, zoomOut: () => {}, fitView: () => {} }),
 }))
 
 const oneApGateway = () =>
