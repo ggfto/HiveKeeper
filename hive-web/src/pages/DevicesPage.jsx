@@ -82,6 +82,7 @@ export function DevicesPage() {
           devices={Array.isArray(rows) ? rows : []}
           groups={groups}
           sites={sites}
+          loading={busy}
           onOpen={(d) => navigate(`/devices/${d.deviceId}`)}
         />
       )}

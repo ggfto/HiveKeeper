@@ -15,6 +15,12 @@ describe('DevicesTable', () => {
     expect(screen.getByText(/no devices yet/i)).toBeInTheDocument()
   })
 
+  it('shows a loading note (not the empty state) while loading', () => {
+    render(<DevicesTable devices={[]} loading onOpen={() => {}} />)
+    expect(screen.getByText(/loading devices/i)).toBeInTheDocument()
+    expect(screen.queryByText(/no devices yet/i)).not.toBeInTheDocument()
+  })
+
   it('shows live status, the agent, and the resolved site per device', () => {
     render(<DevicesTable devices={devices} sites={sites} groups={groups} onOpen={() => {}} />)
     expect(screen.getByText('online')).toBeInTheDocument()

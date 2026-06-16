@@ -8,6 +8,12 @@ describe('AgentsList', () => {
     expect(screen.getByText(/unreachable/i)).toBeInTheDocument()
   })
 
+  it('shows a loading note (not unreachable) before the first response', () => {
+    render(<AgentsList agents={null} loading />)
+    expect(screen.getByText(/loading agents/i)).toBeInTheDocument()
+    expect(screen.queryByText(/unreachable/i)).not.toBeInTheDocument()
+  })
+
   it('shows an empty state when no agents are connected', () => {
     render(<AgentsList agents={[]} />)
     expect(screen.getByText(/no agents connected/i)).toBeInTheDocument()

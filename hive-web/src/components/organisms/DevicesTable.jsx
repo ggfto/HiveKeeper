@@ -14,11 +14,13 @@ import { groupNamesFor, siteName } from '../../lib/fleet'
  * connected — i.e. whether we can reach it), its agent and site, and its group tags. Clicking a row opens the
  * device's management page. `online` is computed by the page from the connected-agents list.
  */
-export function DevicesTable({ devices, groups = [], sites = [], onOpen }) {
+export function DevicesTable({ devices, groups = [], sites = [], onOpen, loading }) {
   if (!devices || devices.length === 0) {
     return (
       <p className="text-sm text-muted-foreground">
-        No devices yet. Open an agent, discover its LAN, then adopt a host into the fleet.
+        {loading
+          ? 'Loading devices…'
+          : 'No devices yet. Open an agent, discover its LAN, then adopt a host into the fleet.'}
       </p>
     )
   }

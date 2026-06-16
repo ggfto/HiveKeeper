@@ -20,16 +20,22 @@ export function AgentsPage() {
   const [discoverAgent, setDiscoverAgent] = useState('')
   const [status, setStatus] = useState('')
   const [busy, setBusy] = useState(false)
+  const [loading, setLoading] = useState(true)
 
   const load = useCallback(async () => {
-    const [a, d, s] = await Promise.all([
-      gateway.agents().catch(() => null),
-      gateway.devices().catch(() => []),
-      gateway.sites().catch(() => []),
-    ])
-    setAgents(Array.isArray(a) ? a : null)
-    setDevices(Array.isArray(d) ? d : [])
-    setSites(Array.isArray(s) ? s : [])
+    setLoading(true)
+    try {
+      const [a, d, s] = await Promise.all([
+        gateway.agents().catch(() => null),
+        gateway.devices().catch(() => []),
+        gateway.sites().catch(() => []),
+      ])
+      setAgents(Array.isArray(a) ? a : null)
+      setDevices(Array.isArray(d) ? d : [])
+      setSites(Array.isArray(s) ? s : [])
+    } finally {
+      setLoading(false)
+    }
   }, [gateway])
 
   useEffect(() => {
@@ -99,6 +105,7 @@ export function AgentsPage() {
       </MriPageHeader>
       <AgentsList
         agents={enriched}
+        loading={loading}
         onView={(id) => navigate(`/devices?agent=${id}`)}
         onDiscover={onDiscover}
         busy={busy}

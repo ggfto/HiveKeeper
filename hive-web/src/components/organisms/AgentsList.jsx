@@ -6,7 +6,10 @@ import { Boxes } from 'lucide-react'
  * site those devices sit in. Anything listed is online (agents dial out to the gateway). View devices jumps to
  * the fleet filtered to that agent; Discover sweeps its LAN. Agents are { id, deviceCount, site }.
  */
-export function AgentsList({ agents, onView, onDiscover, busy }) {
+export function AgentsList({ agents, onView, onDiscover, busy, loading }) {
+  if (loading && agents == null) {
+    return <p className="text-sm text-muted-foreground">Loading agents…</p>
+  }
   if (agents == null) {
     return <p className="text-sm text-muted-foreground">Gateway unreachable.</p>
   }
