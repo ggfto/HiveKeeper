@@ -9,6 +9,7 @@ import {
   managementCommands,
   clientModeConnectCommands,
   clientModeDisconnectCommands,
+  ledCommands,
 } from './hiveosCli'
 
 // Syntax confirmed live on an AP230 (HiveOS 10.6r1a) via `?` context help:
@@ -141,5 +142,23 @@ describe('clientMode', () => {
   })
   it('reverts to AP mode', () => {
     expect(clientModeDisconnectCommands()).toEqual(['no client-mode connect'])
+  })
+})
+
+// Confirmed via `?`: system led brightness <bright|off> ; [no] system led power-saving-mode
+describe('ledCommands', () => {
+  it('sets brightness and toggles power-saving', () => {
+    expect(ledCommands({ brightness: 'off', powerSaving: 'disable' })).toEqual([
+      'system led brightness off',
+      'no system led power-saving-mode',
+    ])
+    expect(ledCommands({ brightness: 'bright', powerSaving: 'enable' })).toEqual([
+      'system led brightness bright',
+      'system led power-saving-mode',
+    ])
+  })
+  it('leaves power-saving unchanged when blank, and emits nothing for an empty request', () => {
+    expect(ledCommands({ brightness: 'off', powerSaving: '' })).toEqual(['system led brightness off'])
+    expect(ledCommands({})).toEqual([])
   })
 })

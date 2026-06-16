@@ -11,6 +11,7 @@ import { NetworkSection } from '../components/organisms/NetworkSection'
 import { ClientModeForm } from '../components/organisms/ClientModeForm'
 import { AdvancedConfigForm } from '../components/organisms/AdvancedConfigForm'
 import { PowerForm } from '../components/organisms/PowerForm'
+import { LedForm } from '../components/organisms/LedForm'
 import { DeviceOverviewForm } from '../components/organisms/DeviceOverviewForm'
 import { CaptivePortalForm } from '../components/organisms/CaptivePortalForm'
 import { MonitoringSection } from '../components/organisms/MonitoringSection'
@@ -300,7 +301,12 @@ export function DeviceDetailPage() {
           {section === 'advanced' && (
             <AdvancedConfigForm device={device} onApply={onApplyConfig} result={configResult} busy={busy} />
           )}
-          {section === 'power' && <PowerForm device={device} onApply={onApplyConfig} onReboot={onReboot} busy={busy} />}
+          {section === 'power' && (
+            <div className="space-y-8">
+              <PowerForm device={device} onApply={onApplyConfig} onReboot={onReboot} busy={busy} />
+              <LedForm device={device} onApply={onApplyConfig} busy={busy} />
+            </div>
+          )}
         </div>
       </div>
 

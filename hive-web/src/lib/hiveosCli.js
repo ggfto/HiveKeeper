@@ -102,3 +102,16 @@ export function clientModeConnectCommands(profile) {
 export function clientModeDisconnectCommands() {
   return ['no client-mode connect']
 }
+
+/**
+ * Status LED control. Confirmed grammar: `system led brightness <bright|off>` (off turns the LEDs off) and
+ * `system led power-saving-mode` / `no system led power-saving-mode` to enable/disable the power-saving dimming.
+ * powerSaving is 'enable' | 'disable' | '' (leave unchanged). Blank fields emit nothing.
+ */
+export function ledCommands({ brightness, powerSaving } = {}) {
+  const cmds = []
+  if (brightness) cmds.push(`system led brightness ${brightness}`)
+  if (powerSaving === 'enable') cmds.push('system led power-saving-mode')
+  if (powerSaving === 'disable') cmds.push('no system led power-saving-mode')
+  return cmds
+}
