@@ -6,10 +6,10 @@ import { MapPage } from './MapPage'
 // React Flow needs a real canvas + element measurements that jsdom lacks; stub it to render the node labels so
 // the test can assert the page fetched, built the topology, and handed real nodes (with live counts) to the map.
 vi.mock('@xyflow/react', () => ({
-  ReactFlow: ({ nodes }) => (
+  ReactFlow: ({ nodes, onNodeClick }) => (
     <div data-testid="flow">
       {nodes.map((n) => (
-        <div key={n.id}>
+        <div key={n.id} onClick={(e) => onNodeClick?.(e, n)}>
           {n.data.label}
           {n.type === 'ap' && n.data.clientCount != null ? ` (${n.data.clientCount})` : ''}
         </div>
@@ -59,6 +59,23 @@ describe('MapPage', () => {
     fireEvent.click(screen.getByRole('checkbox', { name: /show clients/i })) // MriSwitch is a styled checkbox
     expect(screen.queryByText('aa:bb')).not.toBeInTheDocument() // clients gone
     expect(screen.getByText('Lobby AP (2)')).toBeInTheDocument() // the AP still mapped, count intact
+  })
+
+  it('expands an AP to all its clients when the "+N more" node is clicked', async () => {
+    const stations = Array.from({ length: 8 }, (_, i) => ({ mac: `m${i}`, rssi: -40 - i }))
+    const gateway = fakeGateway({
+      agents: () => Promise.resolve(['lab-agent']),
+      sites: () => Promise.resolve([{ siteId: 's1', name: 'HQ' }]),
+      devices: () =>
+        Promise.resolve([{ deviceId: 'd1', siteId: 's1', agentId: 'lab-agent', label: 'AP', mgmtIp: '10.0.0.1' }]),
+      inventory: () => Promise.resolve({ device: { stations } }),
+    })
+    renderWithAuth(<MapPage />, { gateway })
+    expect(await screen.findByText('+2 more')).toBeInTheDocument() // 8 clients, capped at 6
+    expect(screen.queryByText('m7')).not.toBeInTheDocument()
+    fireEvent.click(screen.getByText('+2 more'))
+    expect(screen.queryByText('+2 more')).not.toBeInTheDocument() // expanded -> overflow node gone
+    expect(screen.getByText('m7')).toBeInTheDocument() // the 8th (weakest) client now shown
   })
 
   it('shows an empty note when there is nothing to map', async () => {

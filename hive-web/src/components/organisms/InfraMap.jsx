@@ -78,14 +78,24 @@ function ClientNode({ data }) {
   )
 }
 
-const NODE_TYPES = { site: SiteNode, ap: ApNode, client: ClientNode }
+/** A translucent box drawn behind a cluster of meshed (same-hive) APs. Sized by the node's style; clicks pass
+ *  through (pointer-events-none) so the APs on top stay clickable. */
+function HiveGroupNode({ data }) {
+  return (
+    <div className="pointer-events-none h-full w-full rounded-xl border border-dashed border-primary/40 bg-primary/5">
+      <div className="px-2 py-0.5 text-xs font-medium text-primary/70">hive {data.label}</div>
+    </div>
+  )
+}
+
+const NODE_TYPES = { site: SiteNode, ap: ApNode, client: ClientNode, hiveGroup: HiveGroupNode }
 
 /**
  * The infrastructure map: sites on the left, their APs on the right, a solid edge site -> AP and a dashed
  * "mesh" edge between APs sharing a hive. Nodes + positions are computed by ../../lib/topology (pure, tested);
  * this is the React Flow canvas around them. Clicking an AP opens its device page.
  */
-export function InfraMap({ nodes, edges, onSelectDevice }) {
+export function InfraMap({ nodes, edges, onSelectDevice, onExpand }) {
   const styledEdges = useMemo(
     () =>
       (edges || []).map((e) =>
@@ -104,7 +114,10 @@ export function InfraMap({ nodes, edges, onSelectDevice }) {
         nodeTypes={NODE_TYPES}
         fitView
         nodesConnectable={false}
-        onNodeClick={(_, node) => node.type === 'ap' && onSelectDevice?.(node.data.deviceId)}
+        onNodeClick={(_, node) => {
+          if (node.type === 'ap') onSelectDevice?.(node.data.deviceId)
+          else if (node.data?.more) onExpand?.(node.data.deviceId)
+        }}
       >
         <Background />
         <Controls showInteractive={false} />

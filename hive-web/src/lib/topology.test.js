@@ -93,4 +93,39 @@ describe('buildTopology with clients', () => {
     expect(nodes.some((n) => n.type === 'client')).toBe(false)
     expect(nodes.find((n) => n.id === 'ap:d1').data.clientCount).toBe(1)
   })
+
+  it('expands a given AP to all its clients (no +N more)', () => {
+    const stations = Array.from({ length: 9 }, (_, i) => ({ mac: `m${i}`, rssi: -40 - i }))
+    const statuses = { d1: { online: true, stations } }
+    const capped = buildTopology({ sites: oneSite, devices: oneAp, statuses }, { showClients: true, clientCap: 6 })
+    expect(capped.nodes.some((n) => n.data.more)).toBe(true)
+    expect(capped.nodes.filter((n) => n.type === 'client' && !n.data.more)).toHaveLength(6)
+    const open = buildTopology({ sites: oneSite, devices: oneAp, statuses }, { showClients: true, clientCap: 6, expanded: ['d1'] })
+    expect(open.nodes.some((n) => n.data.more)).toBe(false)
+    expect(open.nodes.filter((n) => n.type === 'client')).toHaveLength(9)
+  })
+})
+
+describe('buildTopology hive grouping', () => {
+  const oneSite = [{ siteId: 's1', name: 'HQ' }]
+  const threeAps = [
+    { deviceId: 'd1', siteId: 's1', agentId: 'a1', label: 'A' },
+    { deviceId: 'd2', siteId: 's1', agentId: 'a1', label: 'B' },
+    { deviceId: 'd3', siteId: 's1', agentId: 'a1', label: 'C' },
+  ]
+
+  it('draws a hive box behind a cluster of 2+ same-hive APs (not for a lone AP)', () => {
+    const statuses = { d1: { hive: 'hk' }, d2: { hive: 'hk' }, d3: { hive: 'solo' } }
+    const { nodes } = buildTopology({ sites: oneSite, devices: threeAps, statuses })
+    const groups = nodes.filter((n) => n.type === 'hiveGroup')
+    expect(groups.map((g) => g.data.label)).toEqual(['hk']) // only the 2-AP hive
+    expect(nodes[0].type).toBe('hiveGroup') // prepended so it renders behind
+    expect(groups[0].zIndex).toBeLessThan(0)
+  })
+
+  it('orders same-hive APs contiguously within a site', () => {
+    const statuses = { d1: { hive: 'x' }, d2: { hive: 'y' }, d3: { hive: 'x' } }
+    const { nodes } = buildTopology({ sites: oneSite, devices: threeAps, statuses })
+    expect(nodes.filter((n) => n.type === 'ap').map((n) => n.id)).toEqual(['ap:d1', 'ap:d3', 'ap:d2'])
+  })
 })
