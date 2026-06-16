@@ -6,6 +6,7 @@ import io.hivekeeper.gateway.access.Principal;
 import io.hivekeeper.gateway.access.ResourceScope;
 import io.hivekeeper.gateway.access.Role;
 import org.springframework.context.annotation.Profile;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -41,6 +42,12 @@ public class FleetController {
     }
 
     public record UpdateDevice(String label, String siteId) {
+    }
+
+    public record EnrollAgent(String agentId, String siteId) {
+    }
+
+    public record EnrollmentResponse(String agentId, String token) {
     }
 
     public record IdResponse(String id) {
@@ -176,6 +183,28 @@ public class FleetController {
         String label = isBlank(req.label()) ? null : req.label().trim();
         fleet.updateDevice(p.tenantId(), deviceId, label, siteId);
         return ResponseEntity.ok().build();
+    }
+
+    /**
+     * Register a new agent and return its one-time enrollment token (the operator configures the on-prem agent
+     * with it). Admin on the org, or on the site when the agent is pinned to one. The token is returned ONCE;
+     * the agent appears in the connected-agents list only after it dials in with it.
+     */
+    @PostMapping("/api/enrollments")
+    public ResponseEntity<?> enrollAgent(@RequestBody EnrollAgent req) {
+        Principal p = guard.authenticate();
+        if (isBlank(req.agentId())) {
+            return badRequest("agentId is required");
+        }
+        String siteId = isBlank(req.siteId()) ? null : req.siteId().trim();
+        guard.require(p, Role.ADMIN, siteId == null ? ResourceScope.org() : ResourceScope.site(siteId));
+        try {
+            String token = fleet.createEnrollment(p.tenantId(), req.agentId().trim(), siteId);
+            return ResponseEntity.ok(new EnrollmentResponse(req.agentId().trim(), token));
+        } catch (DataIntegrityViolationException e) {
+            return ResponseEntity.status(409)
+                    .body(new ApiError("agent_exists", "an agent '" + req.agentId().trim() + "' is already enrolled"));
+        }
     }
 
     /**

@@ -4,6 +4,7 @@ import { MriPageHeader, MriButton } from '@mriqbox/ui-kit'
 import { Server } from 'lucide-react'
 import { useAuth } from '../context/AuthProvider'
 import { AgentsList } from '../components/organisms/AgentsList'
+import { AddAgentForm } from '../components/organisms/AddAgentForm'
 import { DiscoveredHosts } from '../components/organisms/DiscoveredHosts'
 import { siteName } from '../lib/fleet'
 
@@ -62,6 +63,13 @@ export function AgentsPage() {
     }
   }
 
+  // Register a new agent -> its one-time enrollment token. Refresh the list (it shows once the agent connects).
+  const createEnrollment = (agentId, siteId) =>
+    gateway.createEnrollment({ agentId, siteId }).then((r) => {
+      load()
+      return r
+    })
+
   const onAdopt = async (host) => {
     if (!discoverAgent) return
     setBusy(true)
@@ -95,6 +103,7 @@ export function AgentsPage() {
         onDiscover={onDiscover}
         busy={busy}
       />
+      <AddAgentForm sites={sites} createEnrollment={createEnrollment} busy={busy} />
       {discovered.length > 0 && (
         <section className="space-y-2">
           <h2 className="text-sm font-semibold text-muted-foreground">Discovered on {discoverAgent}</h2>

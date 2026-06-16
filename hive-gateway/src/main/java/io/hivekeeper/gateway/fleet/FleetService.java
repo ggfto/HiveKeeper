@@ -78,6 +78,23 @@ public class FleetService {
         return id;
     }
 
+    // -- agent enrollments ------------------------------------------------------
+
+    /**
+     * Register an agent: mint an enrollment token the operator gives the on-prem agent (it authenticates the
+     * WebSocket handshake). agent_enrollment has no RLS (it is an auth-lookup table), but we still set the
+     * tenant context for the site FK + consistency. agent_id is globally unique; a clash surfaces as a
+     * {@code DataIntegrityViolationException} (the controller maps it to 409).
+     */
+    @Transactional
+    public String createEnrollment(String tenantId, String agentId, String siteId) {
+        setTenant(tenantId);
+        String token = "enroll-" + UUID.randomUUID().toString().replace("-", "");
+        jdbc.update("insert into agent_enrollment (token, agent_id, tenant_id, site_id) values (?, ?, ?, ?)",
+                token, agentId, tenantId, siteId);
+        return token;
+    }
+
     // -- devices ----------------------------------------------------------------
 
     @Transactional(readOnly = true)

@@ -62,6 +62,7 @@ export function createGateway({ getAuth = () => ({}), fetchImpl = fetch, baseUrl
     groups: () => req('/api/groups'),
     devices: () => req('/api/devices'),
     operations: () => req('/api/operations'),
+    createEnrollment: (body) => req('/api/enrollments', { method: 'POST', body }),
     createSite: (name) => req('/api/sites', { method: 'POST', body: { name } }),
     createGroup: (name, siteId) => req('/api/groups', { method: 'POST', body: { name, siteId: siteId || null } }),
     tagDevice: (deviceId, groupId) => req(`/api/devices/${deviceId}/groups`, { method: 'POST', body: { groupId } }),

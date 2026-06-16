@@ -6,6 +6,8 @@ import io.hivekeeper.gateway.access.ResourceScope;
 import io.hivekeeper.gateway.access.Role;
 import io.hivekeeper.gateway.access.ScopeType;
 import io.hivekeeper.gateway.fleet.FleetService;
+import io.hivekeeper.gateway.tenant.AgentEnrollment;
+import io.hivekeeper.gateway.tenant.TenantStore;
 import io.hivekeeper.gateway.user.UserService;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -72,6 +74,8 @@ class GatewayPostgresIT {
     private UserService users;
     @Autowired
     private FleetService fleet;
+    @Autowired
+    private TenantStore tenants;
 
     // -- AccessService: scoped roles under real RLS + the @Transactional tenant-context coupling -----------
 
@@ -187,6 +191,17 @@ class GatewayPostgresIT {
         assertFalse(byOrg.contains("SER-GXF"));
         assertEquals("cred-a", fleet.devicesFor("acme", null, null).stream()
                 .filter(d -> "SER-DA".equals(d.serial())).findFirst().orElseThrow().credRef());
+    }
+
+    @Test
+    void enrollmentIsInsertableByTheAppRoleAndResolvableByToken() {
+        // proves the V8 INSERT grant on agent_enrollment (the app role only had SELECT before) end to end:
+        // an admin registers an agent and the handshake path can then resolve it by token.
+        String token = fleet.createEnrollment("acme", "ci-agent", "site-acme-default");
+        assertTrue(token.startsWith("enroll-"));
+        AgentEnrollment enrollment = tenants.enrollmentByToken(token).orElseThrow();
+        assertEquals("ci-agent", enrollment.agentId());
+        assertEquals("acme", enrollment.tenantId());
     }
 
     private static Set<String> serials(List<FleetService.Device> devices) {

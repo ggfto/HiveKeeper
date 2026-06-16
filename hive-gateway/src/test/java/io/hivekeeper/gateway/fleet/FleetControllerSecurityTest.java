@@ -106,6 +106,26 @@ class FleetControllerSecurityTest {
     }
 
     @Test
+    void enrollAgentRequiresAdminOnTheOrgAndReturnsTheToken() throws Exception {
+        when(fleet.createEnrollment(eq("acme"), eq("agent-1"), eq(null))).thenReturn("enroll-xyz");
+        mvc.perform(post("/api/enrollments").contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"agentId\":\"agent-1\"}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.agentId").value("agent-1"))
+                .andExpect(jsonPath("$.token").value("enroll-xyz"));
+        verify(guard).require(eq(principal), eq(Role.ADMIN), eq(ResourceScope.org()));
+    }
+
+    @Test
+    void enrollAgentPinnedToASiteRequiresAdminOnThatSite() throws Exception {
+        when(fleet.createEnrollment(eq("acme"), eq("agent-2"), eq("s1"))).thenReturn("enroll-2");
+        mvc.perform(post("/api/enrollments").contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"agentId\":\"agent-2\",\"siteId\":\"s1\"}"))
+                .andExpect(status().isOk());
+        verify(guard).require(eq(principal), eq(Role.ADMIN), eq(ResourceScope.site("s1")));
+    }
+
+    @Test
     void tagDeviceRequiresAdminOnBothTheDeviceAndTheTargetGroup() throws Exception {
         ResourceScope deviceScope = ResourceScope.device("s1", Set.of("g0"));
         ResourceScope groupScope = ResourceScope.group("s2", "g1");
