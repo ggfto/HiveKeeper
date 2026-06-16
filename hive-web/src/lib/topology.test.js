@@ -57,3 +57,40 @@ describe('buildTopology', () => {
     expect(buildTopology({})).toEqual({ nodes: [], edges: [] })
   })
 })
+
+describe('buildTopology with clients', () => {
+  const oneSite = [{ siteId: 's1', name: 'HQ' }]
+  const oneAp = [{ deviceId: 'd1', siteId: 's1', agentId: 'a1', serial: 'SER-1', model: 'AP230', label: 'AP' }]
+
+  it('emits a client node + edge per station, strongest signal first', () => {
+    const statuses = {
+      d1: {
+        online: true,
+        stations: [
+          { mac: 'aa', ipAddress: '10.0.0.2', ssid: 'g', rssi: -80 },
+          { mac: 'bb', ipAddress: '10.0.0.3', ssid: 'g', rssi: -50 },
+        ],
+      },
+    }
+    const { nodes, edges } = buildTopology({ sites: oneSite, agents: ['a1'], devices: oneAp, statuses }, { showClients: true })
+    expect(nodes.filter((n) => n.type === 'client').map((c) => c.data.mac)).toEqual(['bb', 'aa']) // -50 before -80
+    expect(edges).toContainEqual(expect.objectContaining({ source: 'ap:d1', target: 'client:d1:bb' }))
+  })
+
+  it('caps clients per AP and adds a single "+N more" node', () => {
+    const stations = Array.from({ length: 9 }, (_, i) => ({ mac: `m${i}`, rssi: -40 - i }))
+    const { nodes } = buildTopology(
+      { sites: oneSite, agents: ['a1'], devices: oneAp, statuses: { d1: { online: true, stations } } },
+      { showClients: true, clientCap: 6 },
+    )
+    expect(nodes.filter((n) => n.type === 'client' && !n.data.more)).toHaveLength(6)
+    expect(nodes.find((n) => n.data.more).data.label).toBe('+3 more')
+  })
+
+  it('omits client nodes when showClients is off (default), but still counts them on the AP', () => {
+    const statuses = { d1: { online: true, stations: [{ mac: 'aa', rssi: -50 }] } }
+    const { nodes } = buildTopology({ sites: oneSite, agents: ['a1'], devices: oneAp, statuses })
+    expect(nodes.some((n) => n.type === 'client')).toBe(false)
+    expect(nodes.find((n) => n.id === 'ap:d1').data.clientCount).toBe(1)
+  })
+})

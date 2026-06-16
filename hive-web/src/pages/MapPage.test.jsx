@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest'
-import { screen } from '@testing-library/react'
+import { screen, fireEvent } from '@testing-library/react'
 import { renderWithAuth, fakeGateway } from '../test/renderWithAuth'
 import { MapPage } from './MapPage'
 
@@ -18,32 +18,47 @@ vi.mock('@xyflow/react', () => ({
   ),
   Background: () => null,
   Controls: () => null,
+  Panel: ({ children }) => <div>{children}</div>,
   Handle: () => null,
   Position: { Left: 'left', Right: 'right', Top: 'top', Bottom: 'bottom' },
 }))
 
+const oneApGateway = () =>
+  fakeGateway({
+    agents: () => Promise.resolve(['lab-agent']),
+    sites: () => Promise.resolve([{ siteId: 's1', name: 'HQ' }]),
+    devices: () =>
+      Promise.resolve([
+        {
+          deviceId: 'd1',
+          siteId: 's1',
+          agentId: 'lab-agent',
+          serial: 'SER-1',
+          model: 'AP230',
+          label: 'Lobby AP',
+          mgmtIp: '10.0.0.1',
+        },
+      ]),
+    inventory: () =>
+      Promise.resolve({
+        device: { hiveName: 'hk-mesh', stations: [{ mac: 'aa:bb', rssi: -50 }, { mac: 'cc:dd', rssi: -70 }] },
+      }),
+  })
+
 describe('MapPage', () => {
-  it('builds a live map: site nodes, AP nodes, and per-AP client counts', async () => {
-    const gateway = fakeGateway({
-      agents: () => Promise.resolve(['lab-agent']),
-      sites: () => Promise.resolve([{ siteId: 's1', name: 'HQ' }]),
-      devices: () =>
-        Promise.resolve([
-          {
-            deviceId: 'd1',
-            siteId: 's1',
-            agentId: 'lab-agent',
-            serial: 'SER-1',
-            model: 'AP230',
-            label: 'Lobby AP',
-            mgmtIp: '10.0.0.1',
-          },
-        ]),
-      inventory: () => Promise.resolve({ device: { hiveName: 'hk-mesh', stations: [{ mac: 'a' }, { mac: 'b' }] } }),
-    })
-    renderWithAuth(<MapPage />, { gateway })
+  it('builds a live map: site nodes, AP nodes (with count), and per-AP client nodes', async () => {
+    renderWithAuth(<MapPage />, { gateway: oneApGateway() })
     expect(await screen.findByText('HQ')).toBeInTheDocument() // a site node
     expect(screen.getByText('Lobby AP (2)')).toBeInTheDocument() // the AP with its live client count
+    expect(screen.getByText('aa:bb')).toBeInTheDocument() // a client node, shown by default
+  })
+
+  it('hides the client nodes when the Clients switch is turned off', async () => {
+    renderWithAuth(<MapPage />, { gateway: oneApGateway() })
+    expect(await screen.findByText('aa:bb')).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('checkbox', { name: /show clients/i })) // MriSwitch is a styled checkbox
+    expect(screen.queryByText('aa:bb')).not.toBeInTheDocument() // clients gone
+    expect(screen.getByText('Lobby AP (2)')).toBeInTheDocument() // the AP still mapped, count intact
   })
 
   it('shows an empty note when there is nothing to map', async () => {

@@ -1,7 +1,7 @@
 import { useMemo } from 'react'
-import { ReactFlow, Background, Controls, Handle, Position } from '@xyflow/react'
+import { ReactFlow, Background, Controls, Panel, Handle, Position } from '@xyflow/react'
 import '@xyflow/react/dist/style.css'
-import { Wifi, Boxes } from 'lucide-react'
+import { Wifi, Boxes, Smartphone } from 'lucide-react'
 
 /** A site: the left-column anchor that its APs hang off. */
 function SiteNode({ data }) {
@@ -53,7 +53,32 @@ function ApNode({ data }) {
   )
 }
 
-const NODE_TYPES = { site: SiteNode, ap: ApNode }
+/** A connected client (station), or the "+N more" overflow node. */
+function ClientNode({ data }) {
+  if (data.more) {
+    return (
+      <div className="rounded-md border border-dashed border-border bg-muted/40 px-2 py-1 text-xs text-muted-foreground">
+        <Handle type="target" position={Position.Left} />
+        {data.label}
+      </div>
+    )
+  }
+  return (
+    <div className="rounded-md border border-border bg-card px-2 py-1 text-xs">
+      <Handle type="target" position={Position.Left} />
+      <div className="flex items-center gap-1.5">
+        <Smartphone className="h-3 w-3 text-muted-foreground" />
+        <span className="font-mono">{data.mac || '—'}</span>
+      </div>
+      <div className="flex gap-2 text-muted-foreground">
+        {data.ip && <span className="font-mono">{data.ip}</span>}
+        {data.rssi != null && <span>{data.rssi} dBm</span>}
+      </div>
+    </div>
+  )
+}
+
+const NODE_TYPES = { site: SiteNode, ap: ApNode, client: ClientNode }
 
 /**
  * The infrastructure map: sites on the left, their APs on the right, a solid edge site -> AP and a dashed
@@ -83,6 +108,17 @@ export function InfraMap({ nodes, edges, onSelectDevice }) {
       >
         <Background />
         <Controls showInteractive={false} />
+        <Panel
+          position="top-right"
+          className="space-y-0.5 rounded-md border border-border bg-card/90 px-3 py-2 text-xs text-muted-foreground backdrop-blur"
+        >
+          <div className="flex items-center gap-1.5">
+            <span className="h-2 w-2 rounded-full bg-green-500" /> online
+            <span className="ml-2 h-2 w-2 rounded-full bg-muted-foreground" /> offline
+          </div>
+          <div>- - - mesh (same hive)</div>
+          <div>click an AP to open it</div>
+        </Panel>
       </ReactFlow>
     </div>
   )
