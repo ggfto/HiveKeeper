@@ -151,13 +151,13 @@ describe('createGateway', () => {
     expect(fetchImpl.mock.calls[1][1].method).toBe('DELETE')
   })
 
-  it('renames a group with PATCH and deletes one with DELETE', async () => {
+  it('updates a group with PATCH (name + site) and deletes one with DELETE', async () => {
     const fetchImpl = okFetch(undefined)
     const gw = createGateway({ getAuth: () => ({ tenantKey: 'k' }), fetchImpl })
-    await gw.renameGroup('grp-1', 'Floor 9')
+    await gw.updateGroup('grp-1', { name: 'Floor 9', siteId: 's2' })
     expect(fetchImpl.mock.calls[0][0]).toBe('/gw/api/groups/grp-1')
     expect(fetchImpl.mock.calls[0][1].method).toBe('PATCH')
-    expect(JSON.parse(fetchImpl.mock.calls[0][1].body)).toEqual({ name: 'Floor 9' })
+    expect(JSON.parse(fetchImpl.mock.calls[0][1].body)).toEqual({ name: 'Floor 9', siteId: 's2' })
     await gw.deleteGroup('grp-1')
     expect(fetchImpl.mock.calls[1][0]).toBe('/gw/api/groups/grp-1')
     expect(fetchImpl.mock.calls[1][1].method).toBe('DELETE')

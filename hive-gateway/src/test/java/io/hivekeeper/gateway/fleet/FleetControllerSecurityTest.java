@@ -207,14 +207,39 @@ class FleetControllerSecurityTest {
     // -- groups: edit / delete --------------------------------------------------
 
     @Test
-    void renameGroupRequiresAdminOnTheGroupScope() throws Exception {
+    void renamingAGroupKeepingItsSiteRequiresAdminOnThatSite() throws Exception {
         ResourceScope groupScope = ResourceScope.group("s2", "g1");
         when(fleet.groupScope("acme", "g1")).thenReturn(Optional.of(groupScope));
         mvc.perform(patch("/api/groups/g1").contentType(MediaType.APPLICATION_JSON)
-                        .content("{\"name\":\"Floor 9\"}"))
+                        .content("{\"name\":\"Floor 9\",\"siteId\":\"s2\"}"))
+                .andExpect(status().isOk());
+        verify(guard).require(eq(principal), eq(Role.ADMIN), eq(groupScope));                // the group as it is
+        verify(guard).require(eq(principal), eq(Role.ADMIN), eq(ResourceScope.site("s2")));  // its (unchanged) site
+        verify(fleet).updateGroup("acme", "g1", "Floor 9", "s2");
+    }
+
+    @Test
+    void movingAGroupToAnotherSiteRequiresAdminOnBothEnds() throws Exception {
+        ResourceScope groupScope = ResourceScope.group("s2", "g1");
+        when(fleet.groupScope("acme", "g1")).thenReturn(Optional.of(groupScope));
+        mvc.perform(patch("/api/groups/g1").contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"name\":\"Floor 9\",\"siteId\":\"s3\"}"))
+                .andExpect(status().isOk());
+        verify(guard).require(eq(principal), eq(Role.ADMIN), eq(groupScope));                // the group as it is now
+        verify(guard).require(eq(principal), eq(Role.ADMIN), eq(ResourceScope.site("s3")));  // moving it into s3
+        verify(fleet).updateGroup("acme", "g1", "Floor 9", "s3");
+    }
+
+    @Test
+    void makingAGroupCrossSiteRequiresAdminOnTheOrg() throws Exception {
+        ResourceScope groupScope = ResourceScope.group("s2", "g1");
+        when(fleet.groupScope("acme", "g1")).thenReturn(Optional.of(groupScope));
+        mvc.perform(patch("/api/groups/g1").contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"name\":\"Floor 9\"}"))   // no siteId -> a cross-site tag
                 .andExpect(status().isOk());
         verify(guard).require(eq(principal), eq(Role.ADMIN), eq(groupScope));
-        verify(fleet).renameGroup("acme", "g1", "Floor 9");
+        verify(guard).require(eq(principal), eq(Role.ADMIN), eq(ResourceScope.org()));       // target = org
+        verify(fleet).updateGroup("acme", "g1", "Floor 9", null);
     }
 
     @Test

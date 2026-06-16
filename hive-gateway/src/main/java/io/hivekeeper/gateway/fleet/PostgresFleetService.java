@@ -105,9 +105,11 @@ public class PostgresFleetService implements FleetService {
 
     @Override
     @Transactional
-    public void renameGroup(String tenantId, String groupId, String name) {
+    public void updateGroup(String tenantId, String groupId, String name, String siteId) {
         setTenant(tenantId);
-        jdbc.update("update fleet_group set name = ? where group_id = ?", name, groupId);
+        // Sets both name and site; re-pinning to another tenant's site is rejected by the composite FK, and a
+        // null site_id (cross-site tag) simply skips that FK. RLS scopes the update to this tenant's rows.
+        jdbc.update("update fleet_group set name = ?, site_id = ? where group_id = ?", name, siteId, groupId);
     }
 
     @Override

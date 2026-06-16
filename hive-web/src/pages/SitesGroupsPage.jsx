@@ -48,8 +48,8 @@ export function SitesGroupsPage() {
   const onDeleteSite = (site) => run(`Deleted site ${site.name}.`, () => gateway.deleteSite(site.siteId))
 
   const onCreateGroup = (name, siteId) => run(`Created group ${name}.`, () => gateway.createGroup(name, siteId))
-  const onRenameGroup = (group, name) =>
-    run(`Renamed group to ${name}.`, () => gateway.renameGroup(group.groupId, name))
+  const onUpdateGroup = (group, body) =>
+    run(`Updated group ${body.name}.`, () => gateway.updateGroup(group.groupId, body))
   const onDeleteGroup = (group) => run(`Deleted group ${group.name}.`, () => gateway.deleteGroup(group.groupId))
 
   return (
@@ -73,7 +73,7 @@ export function SitesGroupsPage() {
           groups={groups}
           sites={sites}
           onCreate={onCreateGroup}
-          onRename={onRenameGroup}
+          onUpdate={onUpdateGroup}
           onDelete={onDeleteGroup}
           busy={busy}
         />

@@ -45,7 +45,8 @@ public interface FleetService {
 
     String createGroup(String tenantId, String name, String siteId);
 
-    void renameGroup(String tenantId, String groupId, String name);
+    /** Set a group's name and its pinned site (null = a cross-site tag) — used to rename and/or re-pin it. */
+    void updateGroup(String tenantId, String groupId, String name, String siteId);
 
     void deleteGroup(String tenantId, String groupId);
 

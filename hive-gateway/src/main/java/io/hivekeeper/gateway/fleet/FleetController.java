@@ -38,7 +38,7 @@ public class FleetController {
     public record CreateGroup(String name, String siteId) {
     }
 
-    public record UpdateGroup(String name) {
+    public record UpdateGroup(String name, String siteId) {
     }
 
     public record RegisterDevice(String serial, String model, String label, String mgmtIp,
@@ -152,8 +152,12 @@ public class FleetController {
         return ResponseEntity.ok(new IdResponse(fleet.createGroup(p.tenantId(), req.name().trim(), siteId)));
     }
 
-    /** Rename a group. Admin on the group's lineage (the site it is pinned to, or the org for a cross-site
-     *  tag) — the same scope its creation required, derived from the DB via {@link FleetService#groupScope}. */
+    /**
+     * Rename and/or move a group. The body carries the group's full desired state — its name and its pinned
+     * site ({@code siteId} null/blank = a cross-site tag). Re-pinning changes the group's lineage, so this
+     * requires admin on the group AS IT IS NOW (its current site, or the org for a cross-site tag) AND on where
+     * it is GOING (the target site, or the org), mirroring how moving a device into a site is authorized.
+     */
     @PatchMapping("/api/groups/{groupId}")
     public ResponseEntity<?> updateGroup(@PathVariable String groupId, @RequestBody UpdateGroup req) {
         Principal p = guard.authenticate();
@@ -164,8 +168,10 @@ public class FleetController {
         if (scope.isEmpty()) {
             return status404("group_not_found", groupId);
         }
-        guard.require(p, Role.ADMIN, scope.get());
-        fleet.renameGroup(p.tenantId(), groupId, req.name().trim());
+        guard.require(p, Role.ADMIN, scope.get());                          // control the group as it is now
+        String siteId = isBlank(req.siteId()) ? null : req.siteId().trim();
+        guard.require(p, Role.ADMIN, siteId == null ? ResourceScope.org() : ResourceScope.site(siteId)); // and the target
+        fleet.updateGroup(p.tenantId(), groupId, req.name().trim(), siteId);
         return ResponseEntity.ok().build();
     }
 

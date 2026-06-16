@@ -71,6 +71,21 @@ class InMemoryFleetServiceTest {
     }
 
     @Test
+    void updateGroupRenamesAndRePinsItAcrossSites() {
+        String a = fleet.createSite("acme", "A");
+        String b = fleet.createSite("acme", "B");
+        String g = fleet.createGroup("acme", "Floor", a);
+        assertEquals(Optional.of(ResourceScope.group(a, g)), fleet.groupScope("acme", g));
+
+        fleet.updateGroup("acme", g, "Floor 9", b);   // rename + move to site B
+        assertEquals("Floor 9", fleet.listGroups("acme").get(0).name());
+        assertEquals(Optional.of(ResourceScope.group(b, g)), fleet.groupScope("acme", g));
+
+        fleet.updateGroup("acme", g, "Floor 9", null); // turn it into a cross-site tag
+        assertEquals(Optional.of(ResourceScope.group(null, g)), fleet.groupScope("acme", g));
+    }
+
+    @Test
     void rejectsDuplicateSerials() {
         fleet.registerDevice("acme", "SER-1", null, null, null, null, null, null);
         assertThrows(DuplicateKeyException.class,

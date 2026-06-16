@@ -122,11 +122,10 @@ public class InMemoryFleetService implements FleetService {
     }
 
     @Override
-    public synchronized void renameGroup(String tenantId, String groupId, String name) {
+    public synchronized void updateGroup(String tenantId, String groupId, String name, String siteId) {
         Org org = org(tenantId);
-        Group g = org.groups.get(groupId);
-        if (g != null) {
-            org.groups.put(groupId, new Group(groupId, g.siteId(), name));
+        if (org.groups.containsKey(groupId)) {
+            org.groups.put(groupId, new Group(groupId, siteId, name));
         }
     }
 

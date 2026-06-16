@@ -72,7 +72,7 @@ export function createGateway({ getAuth = () => ({}), fetchImpl = fetch, baseUrl
     renameSite: (siteId, name) => req(`/api/sites/${siteId}`, { method: 'PATCH', body: { name } }),
     deleteSite: (siteId) => req(`/api/sites/${siteId}`, { method: 'DELETE' }),
     createGroup: (name, siteId) => req('/api/groups', { method: 'POST', body: { name, siteId: siteId || null } }),
-    renameGroup: (groupId, name) => req(`/api/groups/${groupId}`, { method: 'PATCH', body: { name } }),
+    updateGroup: (groupId, body) => req(`/api/groups/${groupId}`, { method: 'PATCH', body }),
     deleteGroup: (groupId) => req(`/api/groups/${groupId}`, { method: 'DELETE' }),
     tagDevice: (deviceId, groupId) => req(`/api/devices/${deviceId}/groups`, { method: 'POST', body: { groupId } }),
     untagDevice: (deviceId, groupId) => req(`/api/devices/${deviceId}/groups/${groupId}`, { method: 'DELETE' }),
