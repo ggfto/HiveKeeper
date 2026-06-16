@@ -75,6 +75,25 @@ export function parseLog(output, limit = 120) {
   return rows
 }
 
+// Syslog severities, most severe (0) to least (7). Unknown levels sort as info so a strict filter hides them.
+const LEVEL_RANK = { emerg: 0, alert: 1, crit: 2, err: 3, error: 3, warning: 4, warn: 4, notice: 5, info: 6, debug: 7 }
+const SEVERITY_MAX = { all: 99, notice: 5, warning: 4, error: 3 }
+
+/**
+ * Filter parsed log entries by a minimum severity (all | notice | warning | error -> show that level and
+ * anything more severe) and a free-text query (matched against the message and the level). Pure, so the log
+ * view can filter ~120 entries without a re-read.
+ */
+export function filterLog(entries, level = 'all', query = '') {
+  const max = SEVERITY_MAX[level] ?? 99
+  const q = (query || '').trim().toLowerCase()
+  return (entries || []).filter((e) => {
+    const rank = LEVEL_RANK[(e.level || '').toLowerCase()] ?? 6
+    if (rank > max) return false
+    return !q || (e.message || '').toLowerCase().includes(q) || (e.level || '').toLowerCase().includes(q)
+  })
+}
+
 /**
  * Parse `show capwap client`. The first line reads "CAPWAP client:   Enabled|Disabled" — disabled means the AP
  * is standalone (not phoning home to a cloud controller), which is the whole point of HiveKeeper. -> { known,

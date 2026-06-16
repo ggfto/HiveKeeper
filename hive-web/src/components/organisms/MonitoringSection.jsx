@@ -9,9 +9,20 @@ import {
   MriButton,
   MriStatusBadge,
   MriSectionHeader,
+  MriInput,
+  MriSelect,
+  MriSwitch,
 } from '@mriqbox/ui-kit'
 import { Activity, Wifi, Radio as RadioIcon, Send, History } from 'lucide-react'
 import { SchemaConfigForm } from './SchemaConfigForm'
+import { filterLog } from '../../lib/hiveosParse'
+
+const LOG_FILTERS = [
+  { label: 'All levels', value: 'all' },
+  { label: 'Notice +', value: 'notice' },
+  { label: 'Warning +', value: 'warning' },
+  { label: 'Errors', value: 'error' },
+]
 
 // Syslog severity -> badge variant for the recent-log view.
 const LEVEL_VARIANT = {
@@ -45,11 +56,15 @@ function Fact({ label, value }) {
  */
 export function MonitoringSection({ device, online, loadStatus, loadLog, snmpSection, syslogSection, onApply, busy }) {
   const [live, setLive] = useState(null)
+  const [liveAt, setLiveAt] = useState(null)
+  const [auto, setAuto] = useState(false)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
   const [log, setLog] = useState(null)
   const [logBusy, setLogBusy] = useState(false)
   const [logError, setLogError] = useState('')
+  const [logLevel, setLogLevel] = useState('all')
+  const [logQuery, setLogQuery] = useState('')
 
   const refresh = useCallback(async () => {
     if (!online) return
@@ -57,6 +72,7 @@ export function MonitoringSection({ device, online, loadStatus, loadLog, snmpSec
     setError('')
     try {
       setLive(await loadStatus(device))
+      setLiveAt(new Date())
     } catch (e) {
       setError(e.message)
       setLive(null)
@@ -68,6 +84,13 @@ export function MonitoringSection({ device, online, loadStatus, loadLog, snmpSec
   useEffect(() => {
     refresh()
   }, [refresh])
+
+  // Optional auto-refresh of the live snapshot (every 30s while online).
+  useEffect(() => {
+    if (!auto || !online) return undefined
+    const id = setInterval(() => refresh(), 30000)
+    return () => clearInterval(id)
+  }, [auto, online, refresh])
 
   // The log is an on-demand read (it pulls the whole buffer, ~0.5 MB), so it is loaded by a button, not auto.
   const fetchLog = async () => {
@@ -84,6 +107,7 @@ export function MonitoringSection({ device, online, loadStatus, loadLog, snmpSec
 
   const stations = live?.stations || []
   const radios = live?.radios || []
+  const filteredLog = log ? filterLog(log, logLevel, logQuery) : []
 
   return (
     <div className="space-y-6">
@@ -110,9 +134,16 @@ export function MonitoringSection({ device, online, loadStatus, loadLog, snmpSec
                 <MriStatusBadge label="Standalone" variant="success" size="xs" />
               ))}
           </div>
-          <MriButton size="sm" variant="ghost" disabled={!online || loading} onClick={refresh}>
-            Refresh
-          </MriButton>
+          <div className="flex items-center gap-3">
+            {liveAt && <span className="text-xs text-muted-foreground">Updated {liveAt.toLocaleTimeString()}</span>}
+            <label className="flex items-center gap-1.5 text-xs text-muted-foreground">
+              <MriSwitch checked={auto} onCheckedChange={setAuto} aria-label="Auto-refresh live status" />
+              Auto
+            </label>
+            <MriButton size="sm" variant="ghost" disabled={!online || loading} onClick={refresh}>
+              Refresh
+            </MriButton>
+          </div>
         </div>
 
         {!online ? (
@@ -222,24 +253,47 @@ export function MonitoringSection({ device, online, loadStatus, loadLog, snmpSec
         ) : log.length === 0 ? (
           <p className="text-sm text-muted-foreground">No log entries.</p>
         ) : (
-          <div className="max-h-96 overflow-y-auto rounded-md border border-border">
-            <table className="w-full text-xs">
-              <tbody>
-                {log.map((e, i) => (
-                  <tr key={i} className="border-b border-border/50 align-top last:border-0">
-                    <td className="whitespace-nowrap px-2 py-1 font-mono text-muted-foreground">{e.time}</td>
-                    <td className="px-2 py-1">
-                      <MriStatusBadge
-                        label={e.level}
-                        variant={LEVEL_VARIANT[e.level?.toLowerCase()] || 'outline'}
-                        size="xs"
-                      />
-                    </td>
-                    <td className="px-2 py-1 font-mono">{e.message}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+          <div className="space-y-2">
+            <div className="flex flex-wrap items-center gap-2">
+              <div className="w-36">
+                <MriSelect options={LOG_FILTERS} value={logLevel} onChange={setLogLevel} size="sm" />
+              </div>
+              <MriInput
+                value={logQuery}
+                onChange={(e) => setLogQuery(e.target.value)}
+                placeholder="Search log…"
+                className="h-8 w-full max-w-xs text-xs"
+              />
+              <span className="text-xs text-muted-foreground">
+                {filteredLog.length} of {log.length}
+              </span>
+            </div>
+            <div className="max-h-96 overflow-y-auto rounded-md border border-border">
+              <table className="w-full text-xs">
+                <tbody>
+                  {filteredLog.map((e, i) => (
+                    <tr key={i} className="border-b border-border/50 align-top last:border-0">
+                      <td className="whitespace-nowrap px-2 py-1 font-mono text-muted-foreground">{e.time}</td>
+                      <td className="px-2 py-1">
+                        <MriStatusBadge
+                          label={e.level}
+                          variant={LEVEL_VARIANT[e.level?.toLowerCase()] || 'outline'}
+                          size="xs"
+                        />
+                      </td>
+                      <td className="px-2 py-1 font-mono">{e.message}</td>
+                    </tr>
+                  ))}
+                  {filteredLog.length === 0 && (
+                    <tr>
+                      <td className="px-2 py-2 text-muted-foreground" colSpan={3}>
+                        No entries match the filter.
+                      </td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
           </div>
         )}
       </div>

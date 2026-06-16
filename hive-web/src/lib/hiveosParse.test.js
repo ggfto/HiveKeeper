@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { parseSsids, parseHives, parseCapwap, parseAcsp, parseLog } from './hiveosParse'
+import { parseSsids, parseHives, parseCapwap, parseAcsp, parseLog, filterLog } from './hiveosParse'
 
 // A real running-config excerpt captured from the AP230 (secrets already masked by the gateway).
 const CONFIG = `
@@ -120,5 +120,31 @@ describe('parseLog', () => {
     expect(parseLog('')).toEqual([])
     expect(parseLog(null)).toEqual([])
     expect(parseLog('no timestamp here')).toEqual([])
+  })
+})
+
+describe('filterLog', () => {
+  const log = [
+    { time: 't1', level: 'info', message: 'station assoc on wifi0' },
+    { time: 't2', level: 'notice', message: 'admin login' },
+    { time: 't3', level: 'error', message: 'dnsmasq failed' },
+    { time: 't4', level: 'warning', message: 'DFS radar on ch165' },
+  ]
+  it('keeps everything for level=all', () => {
+    expect(filterLog(log, 'all')).toHaveLength(4)
+  })
+  it('filters by minimum severity (error -> only error and worse)', () => {
+    expect(filterLog(log, 'error').map((e) => e.time)).toEqual(['t3'])
+  })
+  it('warning -> warning and worse', () => {
+    expect(filterLog(log, 'warning').map((e) => e.time).sort()).toEqual(['t3', 't4'])
+  })
+  it('matches the query against message and level', () => {
+    expect(filterLog(log, 'all', 'login').map((e) => e.time)).toEqual(['t2'])
+    expect(filterLog(log, 'all', 'notice').map((e) => e.time)).toEqual(['t2']) // by level too
+  })
+  it('is safe on empty/missing input', () => {
+    expect(filterLog([], 'all')).toEqual([])
+    expect(filterLog(null, 'error')).toEqual([])
   })
 })

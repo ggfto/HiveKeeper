@@ -37,6 +37,7 @@ describe('MonitoringSection', () => {
     expect(screen.getByText('18')).toBeInTheDocument() // its Tx power, which inventory leaves null
     expect(screen.getByText('10.6r1a')).toBeInTheDocument() // system health
     expect(screen.getByText(/standalone/i)).toBeInTheDocument() // cloud state: not phoning home
+    expect(screen.getByText(/updated/i)).toBeInTheDocument() // last-updated stamp after the snapshot loads
     // the merged telemetry config (SNMP + Syslog) is on the same tab
     expect(screen.getByRole('button', { name: /apply snmp/i })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: /apply syslog/i })).toBeInTheDocument()
@@ -59,6 +60,14 @@ describe('MonitoringSection', () => {
     fireEvent.click(screen.getByRole('button', { name: /^load$/i }))
     expect(await screen.findByText(/kernel: something failed/)).toBeInTheDocument()
     expect(screen.getByText('error')).toBeInTheDocument() // severity badge
+
+    // the search box filters the loaded entries client-side
+    const search = screen.getByPlaceholderText(/search log/i)
+    fireEvent.change(search, { target: { value: 'zzz-nomatch' } })
+    expect(screen.getByText(/no entries match/i)).toBeInTheDocument()
+    expect(screen.queryByText(/kernel: something failed/)).not.toBeInTheDocument()
+    fireEvent.change(search, { target: { value: 'kernel' } })
+    expect(screen.getByText(/kernel: something failed/)).toBeInTheDocument()
   })
 
   it('does not pull live status when the agent is offline', () => {
