@@ -13,8 +13,9 @@ import {
   MriSelect,
   MriSwitch,
 } from '@mriqbox/ui-kit'
-import { Activity, Wifi, Radio as RadioIcon, Send, History } from 'lucide-react'
+import { Activity, Radio as RadioIcon, Send, History } from 'lucide-react'
 import { SchemaConfigForm } from './SchemaConfigForm'
+import { ClientsTable } from './ClientsTable'
 import { filterLog } from '../../lib/hiveosParse'
 
 const LOG_FILTERS = [
@@ -161,41 +162,7 @@ export function MonitoringSection({ device, online, loadStatus, loadLog, snmpSec
               <Fact label="Hostname" value={live.hostname} />
             </div>
 
-            <div className="space-y-2">
-              <div className="flex items-center gap-2">
-                <Wifi className="h-4 w-4 text-muted-foreground" />
-                <span className="text-sm font-medium">Connected clients</span>
-                <MriStatusBadge label={String(stations.length)} variant="outline" size="xs" />
-              </div>
-              {stations.length === 0 ? (
-                <p className="text-sm text-muted-foreground">No clients associated.</p>
-              ) : (
-                <MriTable>
-                  <MriTableHeader>
-                    <MriTableRow>
-                      <MriTableHead>Host</MriTableHead>
-                      <MriTableHead>MAC</MriTableHead>
-                      <MriTableHead>IP</MriTableHead>
-                      <MriTableHead>SSID</MriTableHead>
-                      <MriTableHead>OS</MriTableHead>
-                      <MriTableHead>Signal (RSSI)</MriTableHead>
-                    </MriTableRow>
-                  </MriTableHeader>
-                  <MriTableBody>
-                    {stations.map((s, i) => (
-                      <MriTableRow key={s.mac || i}>
-                        <MriTableCell>{s.hostname || '—'}</MriTableCell>
-                        <MriTableCell className="font-mono text-xs">{s.mac || '—'}</MriTableCell>
-                        <MriTableCell className="font-mono text-xs">{s.ipAddress || '—'}</MriTableCell>
-                        <MriTableCell>{s.ssid || '—'}</MriTableCell>
-                        <MriTableCell>{s.osType || '—'}</MriTableCell>
-                        <MriTableCell className="font-mono text-xs">{s.rssi ?? '—'}</MriTableCell>
-                      </MriTableRow>
-                    ))}
-                  </MriTableBody>
-                </MriTable>
-              )}
-            </div>
+            <ClientsTable stations={stations} />
 
             <div className="space-y-2">
               <div className="flex items-center gap-2">
