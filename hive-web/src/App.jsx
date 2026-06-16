@@ -7,6 +7,7 @@ import { ConsoleLayout } from './components/templates/ConsoleLayout'
 import { SignInGate } from './components/organisms/SignInGate'
 import { SetupWizard } from './components/organisms/SetupWizard'
 import { OverviewPage } from './pages/OverviewPage'
+import { MapPage } from './pages/MapPage'
 import { AgentsPage } from './pages/AgentsPage'
 import { DevicesPage } from './pages/DevicesPage'
 import { DeviceDetailPage } from './pages/DeviceDetailPage'
@@ -23,6 +24,7 @@ function Console() {
     <ConsoleLayout activeRoute={location.pathname} onNavigate={(route) => navigate(route)} auth={auth}>
       <Routes>
         <Route path="/overview" element={<OverviewPage />} />
+        <Route path="/map" element={<MapPage />} />
         <Route path="/agents" element={<AgentsPage />} />
         <Route path="/devices" element={<DevicesPage />} />
         <Route path="/devices/:deviceId" element={<DeviceDetailPage />} />

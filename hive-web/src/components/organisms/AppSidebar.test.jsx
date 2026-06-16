@@ -5,7 +5,7 @@ import { AppSidebar } from './AppSidebar'
 describe('AppSidebar', () => {
   it('renders the console sections', () => {
     render(<AppSidebar activeRoute="/overview" onNavigate={() => {}} />)
-    for (const label of ['Overview', 'Agents', 'Devices', 'Sites & Groups', 'Members', 'Bulk ops', 'Audit log']) {
+    for (const label of ['Overview', 'Map', 'Agents', 'Devices', 'Sites & Groups', 'Members', 'Bulk ops', 'Audit log']) {
       expect(screen.getByText(label)).toBeInTheDocument()
     }
   })
@@ -27,7 +27,7 @@ describe('AppSidebar', () => {
 
   it('trims the navigation to the single-AP essentials in solo mode', () => {
     render(<AppSidebar activeRoute="/devices" onNavigate={() => {}} solo />)
-    for (const shown of ['Overview', 'Agents', 'Devices']) {
+    for (const shown of ['Overview', 'Map', 'Agents', 'Devices']) {
       expect(screen.getByText(shown)).toBeInTheDocument()
     }
     for (const hidden of ['Members', 'Sites & Groups', 'Bulk ops', 'Audit log']) {
