@@ -32,4 +32,16 @@ describe('ConsoleLayout', () => {
     expect(screen.getByText('DEV OWNER')).toBeInTheDocument()
     expect(screen.getByRole('button', { name: /exit/i })).toBeInTheDocument()
   })
+
+  it('shows a LOCAL marker and trims the nav in solo mode', () => {
+    render(
+      <ConsoleLayout activeRoute="/devices" onNavigate={() => {}} auth={{ ...auth, solo: true }}>
+        <p>x</p>
+      </ConsoleLayout>,
+    )
+    expect(screen.getByText('LOCAL')).toBeInTheDocument()
+    expect(screen.queryByText('DEV OWNER')).not.toBeInTheDocument()
+    expect(screen.queryByText('Members')).not.toBeInTheDocument() // multi-org nav hidden
+    expect(screen.getByText('Devices')).toBeInTheDocument()
+  })
 })

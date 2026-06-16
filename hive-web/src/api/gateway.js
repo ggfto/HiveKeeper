@@ -54,6 +54,8 @@ export function createGateway({ getAuth = () => ({}), fetchImpl = fetch, baseUrl
     // first-run setup (unauthenticated; gated server-side by a setup token + the uninitialized state)
     setupStatus: () => req('/api/setup/status'),
     setup: (body) => req('/api/setup', { method: 'POST', body }),
+    // deployment shape, read once on boot (solo = single-user, single-AP local mode)
+    mode: () => req('/api/mode'),
     // identity
     me: () => req('/api/me'),
     // organization members (admin; owner-gated for owner changes — the gateway enforces)

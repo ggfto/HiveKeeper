@@ -24,4 +24,14 @@ describe('AppSidebar', () => {
     expect(screen.getByText('HiveKeeper')).toBeInTheDocument()
     expect(screen.getByText('footer-content')).toBeInTheDocument()
   })
+
+  it('trims the navigation to the single-AP essentials in solo mode', () => {
+    render(<AppSidebar activeRoute="/devices" onNavigate={() => {}} solo />)
+    for (const shown of ['Overview', 'Agents', 'Devices']) {
+      expect(screen.getByText(shown)).toBeInTheDocument()
+    }
+    for (const hidden of ['Members', 'Sites & Groups', 'Bulk ops', 'Audit log']) {
+      expect(screen.queryByText(hidden)).not.toBeInTheDocument()
+    }
+  })
 })

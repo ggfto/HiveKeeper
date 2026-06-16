@@ -36,15 +36,21 @@ public class AccessGuard {
     private final ObjectProvider<JwtDecoder> jwtDecoder;
     private final ObjectProvider<UserService> users;
     private final boolean tenantKeyEnabled;
+    private final boolean solo;
+    private final String soloTenant;
 
     public AccessGuard(TenantStore tenants, ObjectProvider<AccessService> access,
                        ObjectProvider<JwtDecoder> jwtDecoder, ObjectProvider<UserService> users,
-                       @Value("${hivekeeper.tenantkey.enabled:true}") boolean tenantKeyEnabled) {
+                       @Value("${hivekeeper.tenantkey.enabled:true}") boolean tenantKeyEnabled,
+                       @Value("${hivekeeper.solo:false}") boolean solo,
+                       @Value("${hivekeeper.solo.tenant:local}") String soloTenant) {
         this.tenants = tenants;
         this.access = access;
         this.jwtDecoder = jwtDecoder;
         this.users = users;
         this.tenantKeyEnabled = tenantKeyEnabled;
+        this.solo = solo;
+        this.soloTenant = soloTenant;
     }
 
     /** Resolves the caller, or throws {@link AccessException} (401/400/403). */
@@ -80,6 +86,13 @@ public class AccessGuard {
                 throw new AccessException(403, "not_a_member", "not a member of organization " + org);
             }
             return Principal.user(org, userId);
+        }
+
+        // Solo (single-user, single-AP local) mode: there is no identity provider and no keys — the person at
+        // the machine IS the owner. Only reached when no credentials were supplied, so an explicit key/bearer
+        // still takes its normal path. Enabled by HIVEKEEPER_SOLO; never on by default.
+        if (solo) {
+            return Principal.owner(soloTenant);
         }
 
         throw new AccessException(401, "unauthorized", "provide an X-Tenant-Key or a bearer token + X-Org");

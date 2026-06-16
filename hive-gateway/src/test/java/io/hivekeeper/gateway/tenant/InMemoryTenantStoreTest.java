@@ -6,14 +6,24 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class InMemoryTenantStoreTest {
 
-    private final TenantStore store = new InMemoryTenantStore(true);   // demo-seeded
+    private final TenantStore store = new InMemoryTenantStore(true, false);   // demo-seeded
 
     @Test
     void isEmptyByDefault() {
-        // The default (no demo-seed flag) must ship NO known-public credentials.
-        TenantStore unseeded = new InMemoryTenantStore(false);
+        // The default (neither demo-seed nor solo) must ship NO known-public credentials.
+        TenantStore unseeded = new InMemoryTenantStore(false, false);
         assertTrue(unseeded.tenantByApiKey("acme-key").isEmpty());
         assertTrue(unseeded.enrollmentByToken("enroll-lab-agent").isEmpty());
+    }
+
+    @Test
+    void soloSeedsASingleLocalTenantAndAgent() {
+        TenantStore solo = new InMemoryTenantStore(false, true);
+        assertEquals("local", solo.tenant("local").orElseThrow().tenantId());
+        assertTrue(solo.tenantByApiKey("acme-key").isEmpty());   // no demo tenants when only solo is on
+        AgentEnrollment enrollment = solo.enrollmentByToken("enroll-local").orElseThrow();
+        assertEquals("local-agent", enrollment.agentId());
+        assertEquals("local", enrollment.tenantId());
     }
 
     @Test

@@ -57,7 +57,7 @@ class AccessGuardTest {
     }
 
     private AccessGuard newGuard(boolean tenantKeyEnabled) {
-        return new AccessGuard(tenants, accessProvider, decoderProvider, userProvider, tenantKeyEnabled);
+        return new AccessGuard(tenants, accessProvider, decoderProvider, userProvider, tenantKeyEnabled, false, "local");
     }
 
     @AfterEach
@@ -168,6 +168,26 @@ class AccessGuardTest {
     @Test
     void noCredentialsIs401() {
         assertEquals(401, statusOf(() -> guard.authenticate()));
+    }
+
+    @Test
+    void soloModeWithoutCredentialsResolvesToTheLocalOwner() {
+        AccessGuard solo = new AccessGuard(tenants, accessProvider, decoderProvider, userProvider, true, true, "local");
+        Principal p = solo.authenticate();   // no key, no bearer
+        assertTrue(p.isService());
+        assertEquals(Role.OWNER, p.serviceRole());
+        assertEquals("local", p.tenantId());
+        verifyNoInteractions(tenants);       // solo grants the owner directly; no key lookup
+    }
+
+    @Test
+    void soloModeStillHonoursAnExplicitTenantKey() {
+        AccessGuard solo = new AccessGuard(tenants, accessProvider, decoderProvider, userProvider, true, true, "local");
+        request.addHeader("X-Tenant-Key", "acme-key");
+        when(tenants.tenantByApiKey("acme-key"))
+                .thenReturn(Optional.of(new Tenant("acme", "Acme", "acme-key", "owner")));
+        Principal p = solo.authenticate();
+        assertEquals("acme", p.tenantId());  // the key path wins; solo is only the no-credentials fallback
     }
 
     @Test

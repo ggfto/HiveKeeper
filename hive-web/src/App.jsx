@@ -30,7 +30,8 @@ function Console() {
         <Route path="/members" element={<MembersPage />} />
         <Route path="/bulk" element={<BulkPage />} />
         <Route path="/audit" element={<AuditPage />} />
-        <Route path="*" element={<Navigate to="/overview" replace />} />
+        {/* Solo lands on the device list (its single AP); the full console lands on the overview. */}
+        <Route path="*" element={<Navigate to={auth.solo ? '/devices' : '/overview'} replace />} />
       </Routes>
     </ConsoleLayout>
   )
@@ -55,8 +56,12 @@ function Root() {
     }
   }, [auth.gateway])
 
-  if (setup.loading) {
+  if (setup.loading || !auth.bootReady) {
     return <div className="flex min-h-screen items-center justify-center text-sm text-muted-foreground">Loading…</div>
+  }
+  // Solo (single-user local) mode skips the wizard and the sign-in gate entirely.
+  if (auth.solo) {
+    return <Console />
   }
   if (!setup.initialized) {
     return <SetupWizard gateway={auth.gateway} onSignIn={auth.signIn} />

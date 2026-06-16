@@ -19,6 +19,10 @@ export function AuthProvider({ children }) {
   // Dev escape hatch: only when explicitly enabled does the console act as the X-Tenant-Key owner. Never the
   // silent default — signed out and not in dev mode is anonymous, and the app gates it behind sign-in.
   const [devMode, setDevMode] = useState(false)
+  // Deployment shape, learned once from the gateway on boot. Solo = a single-user, single-AP local gateway
+  // (HIVEKEEPER_SOLO): no sign-in, no organizations — the gateway authorizes every request as the local owner.
+  const [solo, setSolo] = useState(false)
+  const [bootReady, setBootReady] = useState(false)
 
   // The gateway client reads the latest auth through this ref, so it never needs to be recreated.
   const authRef = useRef({ user: null, activeOrg: '', tenantKey: DEFAULT_TENANT_KEY, devMode: false })
@@ -46,6 +50,20 @@ export function AuthProvider({ children }) {
     }
   }, [])
 
+  // One boot probe of the deployment shape. On failure we just assume a normal (non-solo) gateway. bootReady
+  // gates the app's first render so it never flashes the sign-in page before learning it is in solo mode.
+  useEffect(() => {
+    let active = true
+    gateway
+      .mode()
+      .then((m) => active && setSolo(!!m?.solo))
+      .catch(() => {})
+      .finally(() => active && setBootReady(true))
+    return () => {
+      active = false
+    }
+  }, [gateway])
+
   const didInit = useRef(false)
   useEffect(() => {
     if (didInit.current) return // resolveUser() consumes a one-time OIDC callback; never run it twice
@@ -72,8 +90,11 @@ export function AuthProvider({ children }) {
       setActiveOrg,
       gateway,
       devMode,
-      // The console renders only when there is a real identity OR the dev owner key was explicitly chosen.
-      authenticated: !!user || devMode,
+      solo,
+      bootReady,
+      // The console renders when there is a real identity, the dev owner key was chosen, OR the gateway is in
+      // solo mode (single-user local — no sign-in at all).
+      authenticated: !!user || devMode || solo,
       signIn: login,
       enableDevMode: () => setDevMode(true),
       signOut: () => {
@@ -84,7 +105,7 @@ export function AuthProvider({ children }) {
         setDevMode(false)
       },
     }),
-    [user, me, activeOrg, gateway, devMode],
+    [user, me, activeOrg, gateway, devMode, solo, bootReady],
   )
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>

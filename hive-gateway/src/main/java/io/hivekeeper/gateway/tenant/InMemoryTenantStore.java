@@ -3,6 +3,7 @@ package io.hivekeeper.gateway.tenant;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Profile;
 import org.springframework.stereotype.Component;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -26,14 +27,22 @@ public class InMemoryTenantStore implements TenantStore {
     private final Map<String, AgentEnrollment> byToken;
     private final Map<String, AgentEnrollment> byAgentId;
 
-    public InMemoryTenantStore(@Value("${hivekeeper.demo-seed:false}") boolean demoSeed) {
-        List<Tenant> tenants = demoSeed
-                ? List.of(new Tenant("acme", "Acme Corp", "acme-key", "owner"),
-                        new Tenant("globex", "Globex", "globex-key", "owner"))
-                : List.of();
-        List<AgentEnrollment> enrollments = demoSeed
-                ? List.of(new AgentEnrollment("enroll-lab-agent", "lab-agent", "acme"))
-                : List.of();
+    public InMemoryTenantStore(@Value("${hivekeeper.demo-seed:false}") boolean demoSeed,
+                               @Value("${hivekeeper.solo:false}") boolean solo) {
+        List<Tenant> tenants = new ArrayList<>();
+        List<AgentEnrollment> enrollments = new ArrayList<>();
+        if (demoSeed) {
+            tenants.add(new Tenant("acme", "Acme Corp", "acme-key", "owner"));
+            tenants.add(new Tenant("globex", "Globex", "globex-key", "owner"));
+            enrollments.add(new AgentEnrollment("enroll-lab-agent", "lab-agent", "acme"));
+        }
+        // Solo mode: one implicit local tenant + one local agent the user runs against their AP. AccessGuard
+        // grants the owner of this tenant to every request, so the operator-key here is unused (just satisfies
+        // the not-null/unique column).
+        if (solo) {
+            tenants.add(new Tenant("local", "Local", "local-key", "owner"));
+            enrollments.add(new AgentEnrollment("enroll-local", "local-agent", "local"));
+        }
 
         this.byId = tenants.stream().collect(Collectors.toMap(Tenant::tenantId, Function.identity()));
         this.byApiKey = tenants.stream().collect(Collectors.toMap(Tenant::operatorApiKey, Function.identity()));
