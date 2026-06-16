@@ -37,11 +37,11 @@ function Fact({ label, value }) {
 }
 
 /**
- * The device's Monitoring tab: a live snapshot pulled from the AP through its agent (connected clients, radios,
- * and system health — the already-parsed `inventory` result, no new backend) on top, and the telemetry the AP
- * pushes out (SNMP identity + a syslog destination) below. Live reads need the agent online; the config below
- * applies whenever. `loadStatus(device)` returns the parsed Device snapshot; keep it stable (useCallback) so the
- * auto-load fires once, not on every render.
+ * The device's Monitoring tab, top to bottom: the telemetry config the AP pushes out (SNMP identity + a syslog
+ * destination), then a live snapshot pulled from the AP through its agent (connected clients, radios, and system
+ * health — the already-parsed `inventory` result, no new backend), then the recent on-AP log. Config applies
+ * whenever; the live reads need the agent online. `loadStatus(device)` returns the parsed Device snapshot; keep
+ * it stable (useCallback) so the auto-load fires once, not on every render.
  */
 export function MonitoringSection({ device, online, loadStatus, loadLog, snmpSection, syslogSection, onApply, busy }) {
   const [live, setLive] = useState(null)
@@ -87,7 +87,19 @@ export function MonitoringSection({ device, online, loadStatus, loadLog, snmpSec
 
   return (
     <div className="space-y-6">
-      <div className="space-y-3">
+      <div className="space-y-4">
+        <MriSectionHeader icon={Send} title="Telemetry & log forwarding" />
+        <p className="text-xs text-muted-foreground">
+          Where the AP pushes its own telemetry: an SNMP identity for your NMS, and a syslog destination for its
+          logs.
+        </p>
+        <div className="grid items-start gap-8 xl:grid-cols-2">
+          <SchemaConfigForm section={snmpSection} device={device} onApply={onApply} busy={busy} />
+          <SchemaConfigForm section={syslogSection} device={device} onApply={onApply} busy={busy} />
+        </div>
+      </div>
+
+      <div className="space-y-3 border-t border-border pt-5">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-3">
             <MriSectionHeader icon={Activity} title="Live status" />
@@ -230,18 +242,6 @@ export function MonitoringSection({ device, online, loadStatus, loadLog, snmpSec
             </table>
           </div>
         )}
-      </div>
-
-      <div className="space-y-4 border-t border-border pt-5">
-        <MriSectionHeader icon={Send} title="Telemetry & log forwarding" />
-        <p className="text-xs text-muted-foreground">
-          Where the AP pushes its own telemetry: an SNMP identity for your NMS, and a syslog destination for its
-          logs.
-        </p>
-        <div className="grid items-start gap-8 xl:grid-cols-2">
-          <SchemaConfigForm section={snmpSection} device={device} onApply={onApply} busy={busy} />
-          <SchemaConfigForm section={syslogSection} device={device} onApply={onApply} busy={busy} />
-        </div>
       </div>
     </div>
   )
