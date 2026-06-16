@@ -16,8 +16,11 @@ import { filterStations, sortBySignal, countBySsid } from '../../lib/stations'
 /**
  * The AP's connected wireless clients (stations): a free-text search, a sort-by-signal toggle, and a per-SSID
  * count. Pure presentation over the already-parsed `stations` from the live inventory; the data work
- * (filter/sort/count) lives in ../../lib/stations so it is unit-tested without the DOM. `stations` come from
- * the AP's `show station`, so Host/OS may be blank (that output carries only MAC, IP, SSID and signal).
+ * (filter/sort/count) lives in ../../lib/stations so it is unit-tested without the DOM. Columns are MAC, IP,
+ * SSID and signal — all a standalone AP actually reports. There is no Host/OS column on purpose: confirmed via
+ * the live CLI, `show station` carries no hostname and the AP has no host table (in bridge mode a client's
+ * hostname lives on the upstream DHCP server, not the AP). The search still matches hostname for the day a
+ * non-AP source can supply one.
  */
 export function ClientsTable({ stations = [] }) {
   const [query, setQuery] = useState('')
@@ -67,22 +70,18 @@ export function ClientsTable({ stations = [] }) {
         <MriTable>
           <MriTableHeader>
             <MriTableRow>
-              <MriTableHead>Host</MriTableHead>
               <MriTableHead>MAC</MriTableHead>
               <MriTableHead>IP</MriTableHead>
               <MriTableHead>SSID</MriTableHead>
-              <MriTableHead>OS</MriTableHead>
               <MriTableHead>Signal (RSSI)</MriTableHead>
             </MriTableRow>
           </MriTableHeader>
           <MriTableBody>
             {rows.map((s, i) => (
               <MriTableRow key={s.mac || i}>
-                <MriTableCell>{s.hostname || '—'}</MriTableCell>
                 <MriTableCell className="font-mono text-xs">{s.mac || '—'}</MriTableCell>
                 <MriTableCell className="font-mono text-xs">{s.ipAddress || '—'}</MriTableCell>
                 <MriTableCell>{s.ssid || '—'}</MriTableCell>
-                <MriTableCell>{s.osType || '—'}</MriTableCell>
                 <MriTableCell className="font-mono text-xs">{s.rssi ?? '—'}</MriTableCell>
               </MriTableRow>
             ))}

@@ -30,7 +30,7 @@ describe('MonitoringSection', () => {
       radios: [{ name: 'Wifi0', mode: 'access', channel: 11, power: null, width: 20, txPower: 18, auto: 'Enable' }],
     })
     renderSection({ online: true, loadStatus })
-    expect(await screen.findByText('phone')).toBeInTheDocument() // a connected client
+    expect(await screen.findByText('aa:bb:cc')).toBeInTheDocument() // a connected client (its MAC)
     expect(screen.getByText('10.0.0.9')).toBeInTheDocument()
     expect(screen.getByText('Wifi0')).toBeInTheDocument() // a radio
     expect(screen.getByText('11')).toBeInTheDocument() // its channel (from show acsp)

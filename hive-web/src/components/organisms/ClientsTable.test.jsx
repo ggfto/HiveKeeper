@@ -8,19 +8,19 @@ const stations = [
 ]
 
 describe('ClientsTable', () => {
-  it('lists clients with a total and a per-SSID breakdown', () => {
+  it('lists clients (MAC/IP/SSID) with a total and a per-SSID breakdown', () => {
     render(<ClientsTable stations={stations} />)
-    expect(screen.getByText('phone')).toBeInTheDocument()
+    expect(screen.getByText('aa:bb:cc')).toBeInTheDocument()
     expect(screen.getByText('10.0.0.9')).toBeInTheDocument()
     expect(screen.getByText('guest: 1')).toBeInTheDocument()
     expect(screen.getByText('corp: 1')).toBeInTheDocument()
   })
 
-  it('filters the table by the search box', () => {
+  it('filters the table by the search box (still matches hostname even though it is not a column)', () => {
     render(<ClientsTable stations={stations} />)
     fireEvent.change(screen.getByPlaceholderText(/search clients/i), { target: { value: 'laptop' } })
-    expect(screen.getByText('laptop')).toBeInTheDocument()
-    expect(screen.queryByText('phone')).not.toBeInTheDocument()
+    expect(screen.getByText('dd:ee:ff')).toBeInTheDocument() // the laptop's row
+    expect(screen.queryByText('aa:bb:cc')).not.toBeInTheDocument() // the phone's row is filtered out
   })
 
   it('shows a no-match note when the search excludes everything', () => {
