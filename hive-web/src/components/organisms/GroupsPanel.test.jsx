@@ -31,4 +31,24 @@ describe('GroupsPanel', () => {
     fireEvent.click(screen.getByRole('button', { name: /create group/i }))
     expect(onCreate).toHaveBeenCalledWith('Roof', null)
   })
+
+  it('renames a group inline', () => {
+    const onRename = vi.fn()
+    const group = { groupId: 'g1', name: 'Floor 3', siteId: null }
+    render(<GroupsPanel groups={[group]} sites={[]} onRename={onRename} />)
+    fireEvent.click(screen.getByRole('button', { name: /rename/i }))
+    fireEvent.change(screen.getByLabelText('Rename Floor 3'), { target: { value: 'Floor 4' } })
+    fireEvent.click(screen.getByRole('button', { name: /save/i }))
+    expect(onRename).toHaveBeenCalledWith(group, 'Floor 4')
+  })
+
+  it('deletes a group only after confirming', () => {
+    const onDelete = vi.fn()
+    const group = { groupId: 'g1', name: 'Floor 3', siteId: null }
+    render(<GroupsPanel groups={[group]} sites={[]} onDelete={onDelete} />)
+    fireEvent.click(screen.getByRole('button', { name: 'Delete' }))
+    expect(onDelete).not.toHaveBeenCalled()
+    fireEvent.click(screen.getByRole('button', { name: /delete\?/i }))
+    expect(onDelete).toHaveBeenCalledWith(group)
+  })
 })

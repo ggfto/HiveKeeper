@@ -23,6 +23,7 @@ import java.util.Set;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.doThrow;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
@@ -164,5 +165,70 @@ class FleetControllerSecurityTest {
 
         verify(guard).require(eq(principal), eq(Role.ADMIN), eq(deviceScope));          // edit the device
         verify(guard).require(eq(principal), eq(Role.ADMIN), eq(ResourceScope.site("s2"))); // move into the site
+    }
+
+    // -- sites: edit / delete ---------------------------------------------------
+
+    @Test
+    void renameSiteRequiresAdminOnTheOrg() throws Exception {
+        when(fleet.siteExists("acme", "s1")).thenReturn(true);
+        mvc.perform(patch("/api/sites/s1").contentType(MediaType.APPLICATION_JSON).content("{\"name\":\"HQ2\"}"))
+                .andExpect(status().isOk());
+        verify(guard).require(eq(principal), eq(Role.ADMIN), eq(ResourceScope.org()));
+        verify(fleet).renameSite("acme", "s1", "HQ2");
+    }
+
+    @Test
+    void renamingAnUnknownSiteIs404() throws Exception {
+        when(fleet.siteExists("acme", "ghost")).thenReturn(false);
+        mvc.perform(patch("/api/sites/ghost").contentType(MediaType.APPLICATION_JSON).content("{\"name\":\"X\"}"))
+                .andExpect(status().isNotFound());
+    }
+
+    @Test
+    void deletingAnEmptySiteRequiresAdminAndSucceeds() throws Exception {
+        when(fleet.siteExists("acme", "s1")).thenReturn(true);
+        when(fleet.siteDependents("acme", "s1")).thenReturn(0);
+        mvc.perform(delete("/api/sites/s1")).andExpect(status().isOk());
+        verify(guard).require(eq(principal), eq(Role.ADMIN), eq(ResourceScope.org()));
+        verify(fleet).deleteSite("acme", "s1");
+    }
+
+    @Test
+    void deletingASiteThatStillHasDevicesOrGroupsIsRefused() throws Exception {
+        when(fleet.siteExists("acme", "s1")).thenReturn(true);
+        when(fleet.siteDependents("acme", "s1")).thenReturn(3);
+        mvc.perform(delete("/api/sites/s1"))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.error").value("site_not_empty"));
+        verify(fleet, never()).deleteSite(any(), any());
+    }
+
+    // -- groups: edit / delete --------------------------------------------------
+
+    @Test
+    void renameGroupRequiresAdminOnTheGroupScope() throws Exception {
+        ResourceScope groupScope = ResourceScope.group("s2", "g1");
+        when(fleet.groupScope("acme", "g1")).thenReturn(Optional.of(groupScope));
+        mvc.perform(patch("/api/groups/g1").contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"name\":\"Floor 9\"}"))
+                .andExpect(status().isOk());
+        verify(guard).require(eq(principal), eq(Role.ADMIN), eq(groupScope));
+        verify(fleet).renameGroup("acme", "g1", "Floor 9");
+    }
+
+    @Test
+    void deleteGroupRequiresAdminOnTheGroupScope() throws Exception {
+        ResourceScope groupScope = ResourceScope.group("s2", "g1");
+        when(fleet.groupScope("acme", "g1")).thenReturn(Optional.of(groupScope));
+        mvc.perform(delete("/api/groups/g1")).andExpect(status().isOk());
+        verify(guard).require(eq(principal), eq(Role.ADMIN), eq(groupScope));
+        verify(fleet).deleteGroup("acme", "g1");
+    }
+
+    @Test
+    void editingAnUnknownGroupIs404() throws Exception {
+        when(fleet.groupScope("acme", "ghost")).thenReturn(Optional.empty());
+        mvc.perform(delete("/api/groups/ghost")).andExpect(status().isNotFound());
     }
 }

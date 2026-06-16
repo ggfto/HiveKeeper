@@ -56,6 +56,11 @@ export function createGateway({ getAuth = () => ({}), fetchImpl = fetch, baseUrl
     setup: (body) => req('/api/setup', { method: 'POST', body }),
     // identity
     me: () => req('/api/me'),
+    // organization members (admin; owner-gated for owner changes — the gateway enforces)
+    members: () => req('/api/members'),
+    addMember: (body) => req('/api/members', { method: 'POST', body }),
+    setMemberRole: (userId, role) => req(`/api/members/${userId}`, { method: 'PATCH', body: { role } }),
+    removeMember: (userId) => req(`/api/members/${userId}`, { method: 'DELETE' }),
     // fleet structure
     agents: () => req('/api/agents'),
     sites: () => req('/api/sites'),
@@ -64,7 +69,11 @@ export function createGateway({ getAuth = () => ({}), fetchImpl = fetch, baseUrl
     operations: () => req('/api/operations'),
     createEnrollment: (body) => req('/api/enrollments', { method: 'POST', body }),
     createSite: (name) => req('/api/sites', { method: 'POST', body: { name } }),
+    renameSite: (siteId, name) => req(`/api/sites/${siteId}`, { method: 'PATCH', body: { name } }),
+    deleteSite: (siteId) => req(`/api/sites/${siteId}`, { method: 'DELETE' }),
     createGroup: (name, siteId) => req('/api/groups', { method: 'POST', body: { name, siteId: siteId || null } }),
+    renameGroup: (groupId, name) => req(`/api/groups/${groupId}`, { method: 'PATCH', body: { name } }),
+    deleteGroup: (groupId) => req(`/api/groups/${groupId}`, { method: 'DELETE' }),
     tagDevice: (deviceId, groupId) => req(`/api/devices/${deviceId}/groups`, { method: 'POST', body: { groupId } }),
     untagDevice: (deviceId, groupId) => req(`/api/devices/${deviceId}/groups/${groupId}`, { method: 'DELETE' }),
     updateDevice: (deviceId, body) => req(`/api/devices/${deviceId}`, { method: 'PATCH', body }),

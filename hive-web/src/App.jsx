@@ -11,6 +11,7 @@ import { AgentsPage } from './pages/AgentsPage'
 import { DevicesPage } from './pages/DevicesPage'
 import { DeviceDetailPage } from './pages/DeviceDetailPage'
 import { SitesGroupsPage } from './pages/SitesGroupsPage'
+import { MembersPage } from './pages/MembersPage'
 import { BulkPage } from './pages/BulkPage'
 import { AuditPage } from './pages/AuditPage'
 
@@ -26,6 +27,7 @@ function Console() {
         <Route path="/devices" element={<DevicesPage />} />
         <Route path="/devices/:deviceId" element={<DeviceDetailPage />} />
         <Route path="/sites-groups" element={<SitesGroupsPage />} />
+        <Route path="/members" element={<MembersPage />} />
         <Route path="/bulk" element={<BulkPage />} />
         <Route path="/audit" element={<AuditPage />} />
         <Route path="*" element={<Navigate to="/overview" replace />} />

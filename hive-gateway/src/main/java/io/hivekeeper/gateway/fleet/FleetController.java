@@ -31,7 +31,13 @@ public class FleetController {
     public record CreateSite(String name) {
     }
 
+    public record UpdateSite(String name) {
+    }
+
     public record CreateGroup(String name, String siteId) {
+    }
+
+    public record UpdateGroup(String name) {
     }
 
     public record RegisterDevice(String serial, String model, String label, String mgmtIp,
@@ -86,6 +92,44 @@ public class FleetController {
         return ResponseEntity.ok(new IdResponse(fleet.createSite(p.tenantId(), req.name().trim())));
     }
 
+    /** Rename a site. Org-admin (matching site creation); a duplicate name is a 409. */
+    @PatchMapping("/api/sites/{siteId}")
+    public ResponseEntity<?> updateSite(@PathVariable String siteId, @RequestBody UpdateSite req) {
+        Principal p = guard.authenticate();
+        guard.require(p, Role.ADMIN, ResourceScope.org());
+        if (isBlank(req.name())) {
+            return badRequest("name is required");
+        }
+        if (!fleet.siteExists(p.tenantId(), siteId)) {
+            return status404("site_not_found", siteId);
+        }
+        try {
+            fleet.renameSite(p.tenantId(), siteId, req.name().trim());
+        } catch (DataIntegrityViolationException e) {
+            return ResponseEntity.status(409)
+                    .body(new ApiError("site_exists", "a site named '" + req.name().trim() + "' already exists"));
+        }
+        return ResponseEntity.ok().build();
+    }
+
+    /** Delete a site. Org-admin, and only when empty — the site FKs have no cascade by design, so its devices
+     *  and groups must be moved or removed first (we report how many are blocking rather than fail on the FK). */
+    @DeleteMapping("/api/sites/{siteId}")
+    public ResponseEntity<?> deleteSite(@PathVariable String siteId) {
+        Principal p = guard.authenticate();
+        guard.require(p, Role.ADMIN, ResourceScope.org());
+        if (!fleet.siteExists(p.tenantId(), siteId)) {
+            return status404("site_not_found", siteId);
+        }
+        int dependents = fleet.siteDependents(p.tenantId(), siteId);
+        if (dependents > 0) {
+            return ResponseEntity.status(409).body(new ApiError("site_not_empty",
+                    "move or remove this site's " + dependents + " device(s)/group(s) first"));
+        }
+        fleet.deleteSite(p.tenantId(), siteId);
+        return ResponseEntity.ok().build();
+    }
+
     @GetMapping("/api/groups")
     public ResponseEntity<?> listGroups() {
         Principal p = guard.authenticate();
@@ -103,6 +147,36 @@ public class FleetController {
         String siteId = isBlank(req.siteId()) ? null : req.siteId().trim();
         guard.require(p, Role.ADMIN, siteId == null ? ResourceScope.org() : ResourceScope.site(siteId));
         return ResponseEntity.ok(new IdResponse(fleet.createGroup(p.tenantId(), req.name().trim(), siteId)));
+    }
+
+    /** Rename a group. Admin on the group's lineage (the site it is pinned to, or the org for a cross-site
+     *  tag) — the same scope its creation required, derived from the DB via {@link FleetService#groupScope}. */
+    @PatchMapping("/api/groups/{groupId}")
+    public ResponseEntity<?> updateGroup(@PathVariable String groupId, @RequestBody UpdateGroup req) {
+        Principal p = guard.authenticate();
+        if (isBlank(req.name())) {
+            return badRequest("name is required");
+        }
+        Optional<ResourceScope> scope = fleet.groupScope(p.tenantId(), groupId);
+        if (scope.isEmpty()) {
+            return status404("group_not_found", groupId);
+        }
+        guard.require(p, Role.ADMIN, scope.get());
+        fleet.renameGroup(p.tenantId(), groupId, req.name().trim());
+        return ResponseEntity.ok().build();
+    }
+
+    /** Delete a group (its device tags cascade away; the devices remain). Admin on the group's lineage. */
+    @DeleteMapping("/api/groups/{groupId}")
+    public ResponseEntity<?> deleteGroup(@PathVariable String groupId) {
+        Principal p = guard.authenticate();
+        Optional<ResourceScope> scope = fleet.groupScope(p.tenantId(), groupId);
+        if (scope.isEmpty()) {
+            return status404("group_not_found", groupId);
+        }
+        guard.require(p, Role.ADMIN, scope.get());
+        fleet.deleteGroup(p.tenantId(), groupId);
+        return ResponseEntity.ok().build();
     }
 
     @GetMapping("/api/devices")

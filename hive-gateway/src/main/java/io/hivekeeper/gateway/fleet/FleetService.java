@@ -61,6 +61,39 @@ public class FleetService {
         return id;
     }
 
+    @Transactional(readOnly = true)
+    public boolean siteExists(String tenantId, String siteId) {
+        setTenant(tenantId);
+        Integer n = jdbc.queryForObject("select count(*) from site where site_id = ?", Integer.class, siteId);
+        return n != null && n > 0;
+    }
+
+    /** Rename a site. The {@code unique (tenant_id, name)} constraint surfaces a clash as a
+     *  {@code DataIntegrityViolationException} (the controller maps it to 409). */
+    @Transactional
+    public void renameSite(String tenantId, String siteId, String name) {
+        setTenant(tenantId);
+        jdbc.update("update site set name = ? where site_id = ?", name, siteId);
+    }
+
+    /** How many devices + groups are still pinned to the site. The site FKs deliberately have no cascade, so a
+     *  non-zero count must block deletion — removing a site is an empty-first action, never a silent mass
+     *  delete of its devices and groups. */
+    @Transactional(readOnly = true)
+    public int siteDependents(String tenantId, String siteId) {
+        setTenant(tenantId);
+        Integer devices = jdbc.queryForObject("select count(*) from device where site_id = ?", Integer.class, siteId);
+        Integer groups = jdbc.queryForObject(
+                "select count(*) from fleet_group where site_id = ?", Integer.class, siteId);
+        return (devices == null ? 0 : devices) + (groups == null ? 0 : groups);
+    }
+
+    @Transactional
+    public void deleteSite(String tenantId, String siteId) {
+        setTenant(tenantId);
+        jdbc.update("delete from site where site_id = ?", siteId);
+    }
+
     // -- groups -----------------------------------------------------------------
 
     @Transactional(readOnly = true)
@@ -76,6 +109,20 @@ public class FleetService {
         jdbc.update("insert into fleet_group (group_id, tenant_id, site_id, name) values (?, ?, ?, ?)",
                 id, tenantId, siteId, name);
         return id;
+    }
+
+    @Transactional
+    public void renameGroup(String tenantId, String groupId, String name) {
+        setTenant(tenantId);
+        jdbc.update("update fleet_group set name = ? where group_id = ?", name, groupId);
+    }
+
+    /** Delete a group. Its device tags fall away with it (device_group has {@code on delete cascade} on the
+     *  group), so this only ever removes the grouping, never the devices themselves. */
+    @Transactional
+    public void deleteGroup(String tenantId, String groupId) {
+        setTenant(tenantId);
+        jdbc.update("delete from fleet_group where group_id = ?", groupId);
     }
 
     // -- agent enrollments ------------------------------------------------------

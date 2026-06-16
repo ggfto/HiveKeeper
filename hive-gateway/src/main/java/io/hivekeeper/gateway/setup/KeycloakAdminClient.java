@@ -49,12 +49,23 @@ public class KeycloakAdminClient {
     }
 
     /**
-     * Create a realm user with a (non-temporary) password and return their Keycloak id. A display name is split
-     * into first/last and {@code requiredActions} is cleared: Keycloak's user-profile requires a first + last
-     * name, so a user created without them is "not fully set up" and cannot sign in until they complete a
-     * profile prompt — clearing the actions + providing names lets the admin log in immediately.
+     * Create a realm user with a permanent password and no pending actions, returning their Keycloak id. Used
+     * by first-run setup for the very first admin, who must be able to sign in immediately.
      */
     public String createUser(String username, String email, String password, String displayName) {
+        return createUser(username, email, password, displayName, false);
+    }
+
+    /**
+     * Create a realm user and return their Keycloak id. A display name is split into first/last because
+     * Keycloak's user-profile requires a first + last name — a user created without them is "not fully set up"
+     * and cannot sign in until they complete a profile prompt. When {@code temporary} is true the password is
+     * marked temporary and an {@code UPDATE_PASSWORD} required action is set, so the new teammate is forced to
+     * choose their own password at first sign-in (the admin only ever sets a throwaway one); when false the
+     * password is permanent and no action is pending (the first-run admin).
+     */
+    public String createUser(String username, String email, String password, String displayName,
+                             boolean temporary) {
         String dn = (displayName == null || displayName.isBlank()) ? username : displayName.trim();
         String[] parts = dn.split("\\s+", 2);
         String firstName = parts[0];
@@ -73,9 +84,9 @@ public class KeycloakAdminClient {
                             "lastName", lastName,
                             "enabled", true,
                             "emailVerified", true,
-                            "requiredActions", List.of(),
+                            "requiredActions", temporary ? List.of("UPDATE_PASSWORD") : List.of(),
                             "credentials", List.of(Map.of(
-                                    "type", "password", "value", password, "temporary", false))))
+                                    "type", "password", "value", password, "temporary", temporary))))
                     .retrieve()
                     .toBodilessEntity();
             String location = created.getHeaders().getFirst("Location");

@@ -3,9 +3,9 @@ import { render, screen, fireEvent } from '@testing-library/react'
 import { AppSidebar } from './AppSidebar'
 
 describe('AppSidebar', () => {
-  it('renders the six console sections', () => {
+  it('renders the console sections', () => {
     render(<AppSidebar activeRoute="/overview" onNavigate={() => {}} />)
-    for (const label of ['Overview', 'Agents', 'Devices', 'Sites & Groups', 'Bulk ops', 'Audit log']) {
+    for (const label of ['Overview', 'Agents', 'Devices', 'Sites & Groups', 'Members', 'Bulk ops', 'Audit log']) {
       expect(screen.getByText(label)).toBeInTheDocument()
     }
   })

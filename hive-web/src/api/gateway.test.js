@@ -109,4 +109,57 @@ describe('createGateway', () => {
     expect(url).toBe('/gw/api/agents/lab-agent/adopt')
     expect(JSON.parse(opts.body)).toEqual({ host: '10.0.0.1', credRef: 'lab-ap' })
   })
+
+  it('adds an organization member with POST', async () => {
+    const fetchImpl = okFetch({ userId: 'usr-9' })
+    const gw = createGateway({ getAuth: () => ({ accessToken: 'tok', org: 'acme' }), fetchImpl })
+    await gw.addMember({ username: 'bob', password: 'pw', role: 'viewer' })
+    const [url, opts] = fetchImpl.mock.calls[0]
+    expect(url).toBe('/gw/api/members')
+    expect(opts.method).toBe('POST')
+    expect(JSON.parse(opts.body)).toEqual({ username: 'bob', password: 'pw', role: 'viewer' })
+  })
+
+  it('changes a member role with PATCH', async () => {
+    const fetchImpl = okFetch(undefined)
+    const gw = createGateway({ getAuth: () => ({ accessToken: 'tok', org: 'acme' }), fetchImpl })
+    await gw.setMemberRole('usr-2', 'admin')
+    const [url, opts] = fetchImpl.mock.calls[0]
+    expect(url).toBe('/gw/api/members/usr-2')
+    expect(opts.method).toBe('PATCH')
+    expect(JSON.parse(opts.body)).toEqual({ role: 'admin' })
+  })
+
+  it('removes a member with DELETE', async () => {
+    const fetchImpl = okFetch(undefined)
+    const gw = createGateway({ getAuth: () => ({ accessToken: 'tok', org: 'acme' }), fetchImpl })
+    await gw.removeMember('usr-2')
+    const [url, opts] = fetchImpl.mock.calls[0]
+    expect(url).toBe('/gw/api/members/usr-2')
+    expect(opts.method).toBe('DELETE')
+  })
+
+  it('renames a site with PATCH and deletes one with DELETE', async () => {
+    const fetchImpl = okFetch(undefined)
+    const gw = createGateway({ getAuth: () => ({ tenantKey: 'k' }), fetchImpl })
+    await gw.renameSite('site-1', 'HQ2')
+    expect(fetchImpl.mock.calls[0][0]).toBe('/gw/api/sites/site-1')
+    expect(fetchImpl.mock.calls[0][1].method).toBe('PATCH')
+    expect(JSON.parse(fetchImpl.mock.calls[0][1].body)).toEqual({ name: 'HQ2' })
+    await gw.deleteSite('site-1')
+    expect(fetchImpl.mock.calls[1][0]).toBe('/gw/api/sites/site-1')
+    expect(fetchImpl.mock.calls[1][1].method).toBe('DELETE')
+  })
+
+  it('renames a group with PATCH and deletes one with DELETE', async () => {
+    const fetchImpl = okFetch(undefined)
+    const gw = createGateway({ getAuth: () => ({ tenantKey: 'k' }), fetchImpl })
+    await gw.renameGroup('grp-1', 'Floor 9')
+    expect(fetchImpl.mock.calls[0][0]).toBe('/gw/api/groups/grp-1')
+    expect(fetchImpl.mock.calls[0][1].method).toBe('PATCH')
+    expect(JSON.parse(fetchImpl.mock.calls[0][1].body)).toEqual({ name: 'Floor 9' })
+    await gw.deleteGroup('grp-1')
+    expect(fetchImpl.mock.calls[1][0]).toBe('/gw/api/groups/grp-1')
+    expect(fetchImpl.mock.calls[1][1].method).toBe('DELETE')
+  })
 })
