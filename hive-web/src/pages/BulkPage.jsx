@@ -2,15 +2,16 @@ import { useCallback, useEffect, useState } from 'react'
 import { MriPageHeader } from '@mriqbox/ui-kit'
 import { ListChecks } from 'lucide-react'
 import { useAuth } from '../context/AuthProvider'
+import { useToast } from '../context/ToastProvider'
 import { BulkOpsPanel } from '../components/organisms/BulkOpsPanel'
 
 /** Fan a read op (backup|inventory) across a scope (org/site/group); the gateway re-authorizes each device. */
 export function BulkPage() {
   const { gateway, activeOrg } = useAuth()
+  const { toast } = useToast()
   const [sites, setSites] = useState([])
   const [groups, setGroups] = useState([])
   const [result, setResult] = useState(null)
-  const [status, setStatus] = useState('')
   const [busy, setBusy] = useState(false)
 
   const load = useCallback(async () => {
@@ -26,14 +27,11 @@ export function BulkPage() {
 
   const onRun = async (op, target) => {
     setBusy(true)
-    setStatus(`Running bulk ${op}…`)
     setResult(null)
     try {
-      const r = await gateway.bulk(op, target)
-      setResult(r)
-      setStatus('')
+      setResult(await gateway.bulk(op, target))
     } catch (e) {
-      setStatus(`Bulk ${op}: ${e.message}`)
+      toast(`Bulk ${op}: ${e.message}`, 'error')
     } finally {
       setBusy(false)
     }
@@ -43,7 +41,6 @@ export function BulkPage() {
     <div className="space-y-4">
       <MriPageHeader title="Bulk ops" icon={ListChecks} />
       <BulkOpsPanel sites={sites} groups={groups} onRun={onRun} result={result} busy={busy} />
-      {status && <p className="text-sm text-muted-foreground">{status}</p>}
     </div>
   )
 }

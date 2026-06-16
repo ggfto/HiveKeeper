@@ -1,6 +1,8 @@
 import { useEffect, useState } from 'react'
 import { HashRouter, Routes, Route, Navigate, useLocation, useNavigate } from 'react-router-dom'
 import { AuthProvider, useAuth } from './context/AuthProvider'
+import { ToastProvider } from './context/ToastProvider'
+import { Toaster } from './components/molecules/Toaster'
 import { ConsoleLayout } from './components/templates/ConsoleLayout'
 import { SignInGate } from './components/organisms/SignInGate'
 import { SetupWizard } from './components/organisms/SetupWizard'
@@ -68,7 +70,10 @@ export default function App() {
   return (
     <HashRouter>
       <AuthProvider>
-        <Root />
+        <ToastProvider>
+          <Root />
+          <Toaster />
+        </ToastProvider>
       </AuthProvider>
     </HashRouter>
   )

@@ -1,6 +1,8 @@
 import { render } from '@testing-library/react'
 import { MemoryRouter, Routes, Route } from 'react-router-dom'
 import { AuthContext } from '../context/AuthProvider'
+import { ToastProvider } from '../context/ToastProvider'
+import { Toaster } from '../components/molecules/Toaster'
 
 /** A gateway double whose every method resolves to [] unless overridden — so a page under test never hits an
  *  unstubbed method. Override the calls a given page makes with concrete resolved values. */
@@ -27,13 +29,16 @@ export function renderWithAuth(ui, { gateway = fakeGateway(), auth = {}, route =
   return render(
     <MemoryRouter initialEntries={[route]}>
       <AuthContext.Provider value={value}>
-        {path ? (
-          <Routes>
-            <Route path={path} element={ui} />
-          </Routes>
-        ) : (
-          ui
-        )}
+        <ToastProvider>
+          {path ? (
+            <Routes>
+              <Route path={path} element={ui} />
+            </Routes>
+          ) : (
+            ui
+          )}
+          <Toaster />
+        </ToastProvider>
       </AuthContext.Provider>
     </MemoryRouter>,
   )

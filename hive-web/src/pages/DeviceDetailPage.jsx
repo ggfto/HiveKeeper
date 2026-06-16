@@ -3,6 +3,7 @@ import { useParams, useNavigate } from 'react-router-dom'
 import { MriPageHeader, MriButton, MriStatusBadge } from '@mriqbox/ui-kit'
 import { Boxes, Wifi, Network, Radio, Globe, Terminal, Power, ArrowLeft, Router, Activity, DoorOpen } from 'lucide-react'
 import { useAuth } from '../context/AuthProvider'
+import { useToast } from '../context/ToastProvider'
 import { ConfigNav } from '../components/molecules/ConfigNav'
 import { WifiSection } from '../components/organisms/WifiSection'
 import { MeshSection } from '../components/organisms/MeshSection'
@@ -35,7 +36,7 @@ const SECTIONS = [
 
 function Info({ label, value, mono }) {
   return (
-    <div>
+    <div className="rounded-lg border border-border bg-card p-3">
       <div className="text-xs text-muted-foreground">{label}</div>
       <div className={mono ? 'font-mono text-xs' : 'text-sm'}>{value || '—'}</div>
     </div>
@@ -48,13 +49,13 @@ export function DeviceDetailPage() {
   const { deviceId } = useParams()
   const navigate = useNavigate()
   const { gateway, activeOrg } = useAuth()
+  const { toast } = useToast()
   const [device, setDevice] = useState(null)
   const [notFound, setNotFound] = useState(false)
   const [groups, setGroups] = useState([])
   const [sites, setSites] = useState([])
   const [agents, setAgents] = useState([])
   const [section, setSection] = useState('overview')
-  const [status, setStatus] = useState('')
   const [busy, setBusy] = useState(false)
   const [configResult, setConfigResult] = useState(null)
 
@@ -81,12 +82,11 @@ export function DeviceDetailPage() {
   // like inventory/backup can report what they found); otherwise we show a generic "done".
   const run = async (label, fn) => {
     setBusy(true)
-    setStatus(`${label}…`)
     try {
       const msg = await fn()
-      setStatus(typeof msg === 'string' ? msg : `${label}: done.`)
+      toast(typeof msg === 'string' ? msg : `${label}: done.`, 'success')
     } catch (e) {
-      setStatus(`${label}: ${e.message}`)
+      toast(`${label}: ${e.message}`, 'error')
     } finally {
       setBusy(false)
     }
@@ -244,7 +244,7 @@ export function DeviceDetailPage() {
         </MriButton>
       </MriPageHeader>
 
-      <div className="grid gap-3 rounded-lg border border-border bg-card p-4 sm:grid-cols-2 lg:grid-cols-4">
+      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
         <Info label="Serial" value={device.serial} mono />
         <Info label="Model" value={device.model} />
         <Info label="Mgmt IP" value={device.mgmtIp} mono />
@@ -310,7 +310,6 @@ export function DeviceDetailPage() {
         </div>
       </div>
 
-      {status && <p className="text-sm text-muted-foreground">{status}</p>}
     </div>
   )
 }

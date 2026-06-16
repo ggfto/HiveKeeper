@@ -2,15 +2,16 @@ import { useCallback, useEffect, useState } from 'react'
 import { MriPageHeader, MriButton, MriInput } from '@mriqbox/ui-kit'
 import { Layers } from 'lucide-react'
 import { useAuth } from '../context/AuthProvider'
+import { useToast } from '../context/ToastProvider'
 import { GroupsPanel } from '../components/organisms/GroupsPanel'
 
 /** The organization structure: sites (an agent's physical LAN) and groups (site-pinned or cross-site tags). */
 export function SitesGroupsPage() {
   const { gateway, activeOrg } = useAuth()
+  const { toast } = useToast()
   const [groups, setGroups] = useState(null)
   const [sites, setSites] = useState([])
   const [newSite, setNewSite] = useState('')
-  const [status, setStatus] = useState('')
   const [busy, setBusy] = useState(false)
 
   const load = useCallback(async () => {
@@ -26,13 +27,12 @@ export function SitesGroupsPage() {
 
   const onCreateGroup = async (name, siteId) => {
     setBusy(true)
-    setStatus(`Creating group ${name}…`)
     try {
       await gateway.createGroup(name, siteId)
-      setStatus(`Created group ${name}.`)
+      toast(`Created group ${name}.`, 'success')
       await load()
     } catch (e) {
-      setStatus(`Create group: ${e.message}`)
+      toast(`Create group: ${e.message}`, 'error')
     } finally {
       setBusy(false)
     }
@@ -42,14 +42,13 @@ export function SitesGroupsPage() {
     const name = newSite.trim()
     if (!name) return
     setBusy(true)
-    setStatus(`Creating site ${name}…`)
     try {
       await gateway.createSite(name)
       setNewSite('')
-      setStatus(`Created site ${name}.`)
+      toast(`Created site ${name}.`, 'success')
       await load()
     } catch (e) {
-      setStatus(`Create site: ${e.message}`)
+      toast(`Create site: ${e.message}`, 'error')
     } finally {
       setBusy(false)
     }
@@ -82,8 +81,6 @@ export function SitesGroupsPage() {
         <h2 className="text-sm font-semibold text-muted-foreground">Groups</h2>
         <GroupsPanel groups={groups} sites={sites} onCreate={onCreateGroup} busy={busy} />
       </section>
-
-      {status && <p className="text-sm text-muted-foreground">{status}</p>}
     </div>
   )
 }
