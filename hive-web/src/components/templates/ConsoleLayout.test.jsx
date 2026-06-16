@@ -23,7 +23,7 @@ describe('ConsoleLayout', () => {
     expect(screen.getByText('Hello content')).toBeInTheDocument()
   })
 
-  it('marks dev-owner mode in the topbar when there is no signed-in user', () => {
+  it('marks dev-owner mode in the sidebar footer when there is no signed-in user', () => {
     render(
       <ConsoleLayout activeRoute="/overview" onNavigate={() => {}} auth={auth}>
         <p>x</p>

@@ -9,10 +9,10 @@ export function OrgSwitcher({ me, activeOrg, onChange }) {
   const options = orgOptions(me)
   if (options.length === 0) return null
   if (options.length === 1) {
-    return <span className="text-sm font-medium">{options[0].label}</span>
+    return <span className="block truncate text-sm font-medium">{options[0].label}</span>
   }
   return (
-    <div className="w-44">
+    <div className="w-full">
       <MriSelect options={options} value={activeOrg} onChange={onChange} size="sm" />
     </div>
   )

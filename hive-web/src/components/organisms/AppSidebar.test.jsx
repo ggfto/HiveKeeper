@@ -16,4 +16,12 @@ describe('AppSidebar', () => {
     fireEvent.click(screen.getByText('Devices'))
     expect(onNavigate).toHaveBeenCalledWith('/devices')
   })
+
+  it('shows the brand at the top and renders the footer slot at the bottom', () => {
+    render(
+      <AppSidebar activeRoute="/overview" onNavigate={() => {}} footer={<span>footer-content</span>} />,
+    )
+    expect(screen.getByText('HiveKeeper')).toBeInTheDocument()
+    expect(screen.getByText('footer-content')).toBeInTheDocument()
+  })
 })
