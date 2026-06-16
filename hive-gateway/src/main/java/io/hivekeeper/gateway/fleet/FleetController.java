@@ -5,7 +5,7 @@ import io.hivekeeper.gateway.access.AccessService;
 import io.hivekeeper.gateway.access.Principal;
 import io.hivekeeper.gateway.access.ResourceScope;
 import io.hivekeeper.gateway.access.Role;
-import org.springframework.context.annotation.Profile;
+import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.DeleteMapping;
@@ -22,10 +22,11 @@ import java.util.Optional;
  * The organization's fleet + access API. Every endpoint resolves the caller via {@link AccessGuard} (a
  * user's bearer JWT + active org, or the {@code X-Tenant-Key} service principal) and requires a scoped role:
  * reads need {@code viewer}, structural changes need {@code admin}. Cross-tenant writes are additionally
- * impossible at the database (composite FKs). Only present under the {@code postgres} profile.
+ * impossible at the database (composite FKs). Always present: it is backed by {@link PostgresFleetService}
+ * under the {@code postgres} profile and by the in-memory store otherwise, so the fleet UI works in every
+ * deployment (the dev/demo stack included).
  */
 @RestController
-@Profile("postgres")
 public class FleetController {
 
     public record CreateSite(String name) {
@@ -67,9 +68,11 @@ public class FleetController {
 
     private final AccessGuard guard;
     private final FleetService fleet;
-    private final AccessService access;
+    // Optional: the per-user grant resolver only exists under postgres; the in-memory stack authorizes via the
+    // X-Tenant-Key service principal (owner), so the access-inspection endpoint simply degrades when it is absent.
+    private final ObjectProvider<AccessService> access;
 
-    public FleetController(AccessGuard guard, FleetService fleet, AccessService access) {
+    public FleetController(AccessGuard guard, FleetService fleet, ObjectProvider<AccessService> access) {
         this.guard = guard;
         this.fleet = fleet;
         this.access = access;
@@ -278,6 +281,9 @@ public class FleetController {
         } catch (DataIntegrityViolationException e) {
             return ResponseEntity.status(409)
                     .body(new ApiError("agent_exists", "an agent '" + req.agentId().trim() + "' is already enrolled"));
+        } catch (UnsupportedOperationException e) {
+            // the in-memory dev/demo stack cannot mint enrollments (they live in the agent-handshake auth store)
+            return ResponseEntity.status(501).body(new ApiError("not_supported", e.getMessage()));
         }
     }
 
@@ -321,7 +327,12 @@ public class FleetController {
             kind = "org";
             id = tenant;
         }
-        String role = access.effectiveRole(tenant, userId, scope).map(Role::name).orElse(null);
+        AccessService resolver = access.getIfAvailable();
+        if (resolver == null) {
+            return ResponseEntity.status(501).body(new ApiError("not_supported",
+                    "effective-role inspection requires the 'postgres' profile"));
+        }
+        String role = resolver.effectiveRole(tenant, userId, scope).map(Role::name).orElse(null);
         return ResponseEntity.ok(new EffectiveResponse(userId, kind, id, role));
     }
 
