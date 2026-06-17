@@ -1,6 +1,18 @@
 ---
 title: Introduction
 description: Open-source, cloud-free management for Aerohive / Extreme HiveOS access points over SSH.
+hero:
+  title: HiveKeeper
+  tagline: Manage Aerohive / Extreme HiveOS access points standalone over SSH — no vendor cloud.
+  actions:
+    - text: Try the live demo
+      link: /demo/
+      icon: external
+      variant: primary
+    - text: Get started
+      link: /getting-started/
+      icon: right-arrow
+      variant: minimal
 ---
 
 **HiveKeeper** is open-source tooling to manage **Aerohive / Extreme Networks HiveOS (IQ Engine)**
