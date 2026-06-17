@@ -25,6 +25,14 @@ pnpm preview    # serve the built site
 
 ## Deploy
 
-`pnpm build` emits a static site to `dist/` (with a Pagefind search index). Publish it to GitHub Pages,
-Cloudflare Pages, or any static host. Set the real domain in `site:` in `astro.config.mjs` first (it drives
-canonical URLs and the sitemap).
+`pnpm build` emits a static site to `dist/` (with a Pagefind search index).
+
+**GitHub Pages** is wired up via [`.github/workflows/deploy-docs.yml`](../.github/workflows/deploy-docs.yml):
+on push to `main` (when `docs/**` or `website/**` change) it builds and publishes. The site URL and base
+path are injected at build time from `actions/configure-pages` (env vars `SITE_URL` / `BASE_PATH`), so a
+project page at `https://<owner>.github.io/<repo>/` works with no hardcoding — a rehype plugin in
+`astro.config.mjs` also rewrites root-absolute links in the markdown to include the base. One-time setup:
+**Settings → Pages → Source: GitHub Actions** (the workflow also attempts to enable it).
+
+For any other static host (Cloudflare Pages, Netlify, …), run `pnpm build` and serve `dist/`, setting
+`SITE_URL` (and `BASE_PATH` if not at the domain root) in the environment.
