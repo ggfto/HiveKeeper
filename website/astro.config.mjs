@@ -47,6 +47,7 @@ export default defineConfig({
       description: 'Cloud-free management for Aerohive / Extreme HiveOS access points, over SSH.',
       customCss: ['./src/styles/theme.css'],
       sidebar: [
+        { label: 'Live demo ↗', link: '/demo/', attrs: { target: '_blank', rel: 'noopener' } },
         { label: 'Introduction', link: '/' },
         { label: 'Getting started', link: '/getting-started/' },
         { label: 'Capabilities', link: '/capabilities/' },

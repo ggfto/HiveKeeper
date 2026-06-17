@@ -34,6 +34,9 @@ function securityHeaders() {
 // Same-origin in dev via one proxy:
 //   /gw -> hive-gateway (mode C: cloud control plane + on-prem agent). The console is gateway-only.
 export default defineConfig({
+  // The VITE_DEMO build is a static, mock-backed demo published under a subpath (e.g. /HiveKeeper/demo/);
+  // a relative base lets its assets resolve there without hardcoding the path. The normal build stays at root.
+  base: process.env.VITE_DEMO ? './' : '/',
   plugins: [react(), securityHeaders()],
   server: {
     port: 5173,

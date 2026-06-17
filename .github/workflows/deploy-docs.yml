@@ -63,6 +63,21 @@ jobs:
           SITE_URL: ${{ steps.pages.outputs.origin }}
           BASE_PATH: ${{ steps.pages.outputs.base_path }}
 
+      # The interactive demo: the hive-web console built in VITE_DEMO mode (mock gateway, no backend), staged
+      # under the docs site at /demo so it's published alongside it.
+      - name: Install demo app (hive-web)
+        working-directory: hive-web
+        run: pnpm install --frozen-lockfile
+
+      - name: Build demo (hive-web)
+        working-directory: hive-web
+        env:
+          VITE_DEMO: '1'
+        run: pnpm build
+
+      - name: Stage demo under the docs site (/demo)
+        run: cp -r ../hive-web/dist dist/demo
+
       - name: Upload artifact
         uses: actions/upload-pages-artifact@v3
         with:

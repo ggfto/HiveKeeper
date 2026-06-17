@@ -39,7 +39,29 @@ export function ConsoleLayout({ activeRoute, onNavigate, auth, children }) {
     <MriDashboardLayout
       sidebar={<AppSidebar activeRoute={activeRoute} onNavigate={onNavigate} footer={footer} solo={auth.solo} />}
     >
-      <div className="h-full w-full p-4 lg:p-6">{children}</div>
+      <div className="flex h-full w-full flex-col">
+        {auth.demo && <DemoBanner />}
+        <div className="min-h-0 flex-1 p-4 lg:p-6">{children}</div>
+      </div>
     </MriDashboardLayout>
+  )
+}
+
+/** A thin strip making clear this is a sandbox: data is fake and any change is local + reset on reload. */
+function DemoBanner() {
+  return (
+    <div className="flex flex-wrap items-center justify-center gap-x-2 gap-y-0.5 border-b border-primary/30 bg-primary/10 px-4 py-1.5 text-center text-xs text-foreground">
+      <span>
+        <strong>Demo</strong> — sample data; changes are in-memory and reset on reload.
+      </span>
+      <a
+        href="https://github.com/ggfto/HiveKeeper"
+        target="_blank"
+        rel="noreferrer"
+        className="text-primary underline"
+      >
+        Source &amp; docs
+      </a>
+    </div>
   )
 }
