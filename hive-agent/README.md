@@ -39,9 +39,11 @@ docker run -e HIVEKEEPER_GATEWAY_URL=wss://gw/agent hivekeeper-agent
 - **Windows service**: `packaging/windows/hive-agent.xml` (WinSW). See the comments in that file.
 - **Linux service**: `packaging/linux/hive-agent.service` (systemd). See the comments in that file.
 
-## Not yet built
+## Status
 
-The gateway side (`hive-gateway`) isn't built yet, so end-to-end against a live cloud awaits it. The
-`WebSocketLoopbackTest` already proves the agent against a stub WebSocket gateway over a real socket.
-Resume/redelivery is best-effort here (sends `Hello` on reconnect); full idempotent redelivery needs the
-gateway's job DB.
+The gateway side (`hive-gateway`) is built, and the full chain is proven live: HTTPS/OIDC (operator) →
+mTLS WebSocket (agent, cert identity) → SSH (agent → AP230), including submit-while-offline → reconnect →
+redelivered → succeeded. Durable jobs, idempotent redelivery, and `Resume` are handled by the gateway's
+job DB (the `postgres` profile); `WebSocketLoopbackTest` still proves the agent in isolation against a stub
+gateway over a real socket. What remains is automated certificate enrollment — see the root README's
+[Roadmap](../README.md#roadmap) and [`docs/agent-protocol.md`](../docs/agent-protocol.md).

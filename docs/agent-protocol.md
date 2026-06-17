@@ -1,7 +1,8 @@
 # HiveKeeper agent ⇄ gateway protocol
 
-Status: **design + reference implementation** (`hive-protocol`). The WebSocket transport and the
-`hive-agent` / `hive-gateway` deployables are not built yet; everything below the channel is.
+Status: **built & proven live**. The `hive-protocol` reference channel, the WebSocket transport, and the
+`hive-agent` / `hive-gateway` deployables are all implemented — the full chain runs cloud → agent → AP230.
+See [Implemented](#implemented) for what landed and [Not yet implemented](#not-yet-implemented) for the gaps.
 
 ## Why it looks like this
 
@@ -38,7 +39,7 @@ channel — no socket.)
 | `Ack(jobId, ackedSeq)` | gw → agent | confirms receipt up to `seq` |
 | `Heartbeat(epochMillis)` | both | liveness |
 
-## Transport & resilience (target for `hive-agent` / `hive-gateway`)
+## Transport & resilience (implemented in `hive-agent` / `hive-gateway`)
 
 - **One persistent outbound WebSocket over TLS:443**, multiplexed by `jobId`. No inbound ports, proxy-friendly.
 - **Heartbeat** ~20–30s each way; miss N in a row ⇒ reconnect.
@@ -68,12 +69,29 @@ channel — no socket.)
   `mtls` Spring profile (`application-mtls.properties`, `client-auth=want`).
 - **Multi-tenancy** — `(tenantId, agentId)`-keyed registry; REST scoped by `X-Tenant-Key`; cross-tenant
   lookups 404 with no existence leakage.
+- **Postgres + RLS** — the `postgres` profile backs tenants/enrollments/fleet/jobs with PostgreSQL (Flyway);
+  the app connects as a restricted role (NOSUPERUSER, NOBYPASSRLS) so Row-Level Security on tenant-scoped
+  tables is enforced by the DB, not the app. The default no-DB mode still works (in-memory stores).
+- **Durable jobs + redelivery** — a `job` table (RLS) persists work; `JobGateway` dispatches if connected
+  and **redelivers non-terminal jobs on agent reconnect** (`Resume`); the agent caches recent terminal
+  results by idempotency key for at-least-once-but-idempotent execution. Endpoints: `POST
+  /api/agents/{id}/jobs`, `GET /api/jobs/{id}`.
+- **SSE through the gateway** — `POST /api/agents/{id}/inventory/stream` forwards the agent's progress events
+  to the browser, so gateway mode shows live progress like direct mode.
+- **OIDC operator auth** — under the `oidc` profile the gateway validates user JWTs (Keycloak in dev) and
+  authorizes via DB-backed org/site/group roles; the `X-Tenant-Key` service principal remains for automation.
 
-Proven live end-to-end: HTTPS (operator) → mTLS WebSocket (agent, cert identity) → SSH (agent → AP230).
+Proven live end-to-end: HTTPS/OIDC (operator) → mTLS WebSocket (agent, cert identity) → SSH (agent → AP230),
+including submit-while-agent-offline → reconnect → redelivered → succeeded.
 
 ## Not yet implemented
 
-`TenantStore` is in-memory (production = Postgres + shared-schema + `tenant_id` + RLS). Still to build:
-automated enrollment (one-time token → CSR → issued cert) instead of pre-provisioned dev certs; the
-gateway **job DB + redelivery/idempotency** and `Resume` handling; operator auth via OIDC instead of the
-`X-Tenant-Key` bootstrap; and SSE progress forwarded through the gateway.
+- **Automated certificate enrollment** — the one-time token exists (`POST /api/enrollments`), but the
+  token → CSR → issued/auto-renewed cert flow is not built; mTLS certs are still pre-provisioned via
+  `scripts/gen-dev-pki.ps1`.
+- **End-to-end secret encryption to the agent's public key** — secrets are encrypted at rest by the gateway
+  today; encrypting them target-agent-side is a planned hardening (see `SecretCipher`).
+- **Per-user authorization on every endpoint** — the bearer filter runs on `/api/me`; extending per-user
+  enforcement (vs the controller-level checks) across the rest of the API is the next phase.
+- **TLS / ingress hardening** for a real cloud deployment (the WSS:443 single-port story is by design;
+  productionizing the edge is not done).
