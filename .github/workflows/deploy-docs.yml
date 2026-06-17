@@ -13,6 +13,7 @@ on:
     paths:
       - 'docs/**'
       - 'website/**'
+      - 'hive-web/**' # the /demo build is hive-web in VITE_DEMO mode
       - '.github/workflows/deploy-docs.yml'
   workflow_dispatch:
 
