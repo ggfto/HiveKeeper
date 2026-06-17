@@ -1,0 +1,33 @@
+/*
+ * HiveKeeper brand for the docs site: the amber accent (#f5a623) and the console's dark, faintly-blue
+ * near-black, so the site matches hive-web (its --primary amber over the @mriqbox/ui-kit dark palette).
+ * Starlight derives most surfaces from its accent + gray scales, so we mainly retune those.
+ */
+
+/* Dark theme (Starlight's default) — mirrors the console, which runs dark-only. */
+:root {
+  --sl-color-accent-low: #4a3107;
+  --sl-color-accent: #f5a623; /* HiveKeeper amber */
+  --sl-color-accent-high: #ffd9a0;
+
+  --sl-color-white: #ffffff;
+  --sl-color-gray-1: #ececf0;
+  --sl-color-gray-2: #c2c2c9;
+  --sl-color-gray-3: #919199; /* muted text — matches the app's muted-foreground */
+  --sl-color-gray-4: #4a4a52;
+  --sl-color-gray-5: #242428; /* borders / dividers */
+  --sl-color-gray-6: #0e0e11; /* raised panels (cards, code blocks) */
+  --sl-color-black: #09090b; /* page background */
+}
+
+/* Light theme — keep Starlight's neutral grays, just swap in an amber accent dark enough to read on white. */
+:root[data-theme='light'] {
+  --sl-color-accent-low: #ffe7c2;
+  --sl-color-accent: #b56f0c;
+  --sl-color-accent-high: #4a2c00;
+}
+
+/* Echo the 🐝 brand: tint the site title amber in both themes. */
+.site-title {
+  color: var(--sl-color-accent);
+}

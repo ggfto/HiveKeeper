@@ -45,6 +45,7 @@ export default defineConfig({
     starlight({
       title: 'HiveKeeper',
       description: 'Cloud-free management for Aerohive / Extreme HiveOS access points, over SSH.',
+      customCss: ['./src/styles/theme.css'],
       sidebar: [
         { label: 'Introduction', link: '/' },
         { label: 'Getting started', link: '/getting-started/' },
