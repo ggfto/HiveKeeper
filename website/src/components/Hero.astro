@@ -1,0 +1,27 @@
+---
+// Starlight renders the hero `actions` links verbatim — its LinkButton does NOT apply the configured `base` —
+// so under a project-page base like /HiveKeeper the frontmatter links (`/demo/`, `/getting-started/`) would
+// 404. This override base-prefixes root-absolute internal action links, mirroring the rehypeBaseLinks rehype
+// plugin that already does this for links in the markdown body (see astro.config.mjs), then delegates to
+// Starlight's stock Hero. Locally (base `/`) it is a no-op, so `pnpm dev`/`build` are unaffected.
+import Default from '@astrojs/starlight/components/Hero.astro'
+
+const base = import.meta.env.BASE_URL.replace(/\/$/, '')
+const actions = Astro.props.entry?.data?.hero?.actions
+if (base && Array.isArray(actions)) {
+  for (const action of actions) {
+    const href = action.link
+    if (
+      typeof href === 'string' &&
+      href.startsWith('/') &&
+      !href.startsWith('//') &&
+      href !== base &&
+      !href.startsWith(base + '/')
+    ) {
+      action.link = base + href
+    }
+  }
+}
+---
+
+<Default {...Astro.props}><slot /></Default>

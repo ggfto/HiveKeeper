@@ -46,6 +46,8 @@ export default defineConfig({
       title: 'HiveKeeper',
       description: 'Cloud-free management for Aerohive / Extreme HiveOS access points, over SSH.',
       customCss: ['./src/styles/theme.css'],
+      // Base-prefix the hero `actions` links (Starlight leaves them verbatim); see src/components/Hero.astro.
+      components: { Hero: './src/components/Hero.astro' },
       sidebar: [
         { label: 'Live demo ↗', link: '/demo/', attrs: { target: '_blank', rel: 'noopener' } },
         { label: 'Introduction', link: '/' },
