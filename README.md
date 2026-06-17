@@ -11,6 +11,14 @@ HiveKeeper turns that CLI into a clean, scriptable, eventually-GUI tool.
 > Status: **early development (v0.1)**. The first milestone is a CLI that inventories and
 > git-backs-up a single AP over SSH, validated against a live AP230.
 
+![The HiveKeeper console](docs/screenshots/overview.png)
+
+> **[▶ Try the live demo](https://me.gf2.in/HiveKeeper/demo/)** — the full console with sample data, no backend or hardware needed.
+
+| The infrastructure map | A device's config page |
+| :---: | :---: |
+| [![Infrastructure map](docs/screenshots/map.png)](docs/screenshots/map.png) | [![Device configuration](docs/screenshots/device-detail.png)](docs/screenshots/device-detail.png) |
+
 ## Why
 
 Aerohive's legacy cloud/developer API is being retired and these (now end-of-life) APs are cheap and

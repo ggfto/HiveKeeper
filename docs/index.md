@@ -4,6 +4,9 @@ description: Open-source, cloud-free management for Aerohive / Extreme HiveOS ac
 hero:
   title: HiveKeeper
   tagline: Manage Aerohive / Extreme HiveOS access points standalone over SSH — no vendor cloud.
+  image:
+    file: ./screenshots/overview.png
+    alt: The HiveKeeper console
   actions:
     - text: Try the live demo
       link: /demo/
