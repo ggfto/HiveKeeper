@@ -97,6 +97,7 @@ export function AgentsPage() {
         icon={Server}
         count={Array.isArray(agents) ? agents.length : undefined}
         countLabel="connected"
+        className="flex-wrap gap-y-3"
       >
         <MriButton size="sm" variant="outline" disabled={busy} onClick={load}>
           Refresh

@@ -77,7 +77,7 @@ export function MapPage() {
 
   return (
     <div className="space-y-4">
-      <MriPageHeader title="Map" icon={Network} count={apCount} countLabel="APs">
+      <MriPageHeader title="Map" icon={Network} count={apCount} countLabel="APs" className="flex-wrap gap-y-3">
         {fleet.sites.length > 1 && (
           <div className="w-40">
             <MriSelect options={siteOptions} value={siteFilter} onChange={setSiteFilter} size="sm" />

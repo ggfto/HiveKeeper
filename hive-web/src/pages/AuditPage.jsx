@@ -28,7 +28,7 @@ export function AuditPage() {
 
   return (
     <div className="space-y-4">
-      <MriPageHeader title="Audit log" icon={ScrollText} count={operations.length}>
+      <MriPageHeader title="Audit log" icon={ScrollText} count={operations.length} className="flex-wrap gap-y-3">
         <MriButton size="sm" variant="outline" disabled={busy} onClick={load}>
           Refresh
         </MriButton>

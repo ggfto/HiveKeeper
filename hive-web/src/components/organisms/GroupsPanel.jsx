@@ -97,11 +97,11 @@ export function GroupsPanel({ groups, sites = [], onCreate, onUpdate, onDelete, 
       )}
 
       <div className="flex flex-wrap items-end gap-2">
-        <label className="flex w-48 flex-col gap-1">
+        <label className="flex w-full flex-col gap-1 sm:w-48">
           <span className="text-xs text-muted-foreground">Name</span>
           <MriInput value={name} onChange={(e) => setName(e.target.value)} placeholder="Floor 3" />
         </label>
-        <label className="flex w-48 flex-col gap-1">
+        <label className="flex w-full flex-col gap-1 sm:w-48">
           <span className="text-xs text-muted-foreground">Site</span>
           <MriSelect options={siteOptions} value={siteId} onChange={setSiteId} placeholder="Cross-site tag" />
         </label>

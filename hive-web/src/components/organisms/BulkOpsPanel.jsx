@@ -24,7 +24,7 @@ export function BulkOpsPanel({ sites = [], groups = [], onRun, result, busy }) {
   return (
     <div className="space-y-4">
       <div className="flex flex-wrap items-end gap-2">
-        <label className="flex w-64 flex-col gap-1">
+        <label className="flex w-full flex-col gap-1 sm:w-64">
           <span className="text-xs text-muted-foreground">Target</span>
           <MriSelect options={bulkTargetOptions(sites, groups)} value={target} onChange={setTarget} />
         </label>

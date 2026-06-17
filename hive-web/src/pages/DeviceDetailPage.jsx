@@ -219,7 +219,7 @@ export function DeviceDetailPage() {
       <MriButton size="sm" variant="ghost" onClick={() => navigate('/devices')}>
         <ArrowLeft className="h-4 w-4" /> Devices
       </MriButton>
-      <MriPageHeader title={device.label || device.serial} icon={Boxes} countLabel={device.model}>
+      <MriPageHeader title={device.label || device.serial} icon={Boxes} countLabel={device.model} className="flex-wrap gap-y-3">
         <MriStatusBadge
           label={online ? 'online' : 'offline'}
           variant={online ? 'success' : 'outline'}

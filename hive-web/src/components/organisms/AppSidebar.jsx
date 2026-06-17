@@ -24,11 +24,15 @@ const SOLO_ROUTES = ['/overview', '/map', '/agents', '/devices', '/help']
  * rather than inside it because MriSidebar has no header slot — its `className` leaks onto every nav button — so we
  * compose it in a wrapper and let the nav fill the remaining height (`flex-1 min-h-0` so MriSidebar's `h-full`
  * resolves against the space left under the brand). In `solo` mode the nav is trimmed to the single-AP essentials.
+ *
+ * `className` lets the shell control where this renders: the persistent desktop column passes `hidden lg:flex`
+ * (the sidebar is replaced by a hamburger-triggered drawer below the `lg` breakpoint), while the mobile drawer
+ * passes nothing so the same sidebar is always shown inside it.
  */
-export function AppSidebar({ activeRoute, onNavigate, footer, solo }) {
+export function AppSidebar({ activeRoute, onNavigate, footer, solo, className = '' }) {
   const items = solo ? NAV.filter((n) => SOLO_ROUTES.includes(n.route)) : NAV
   return (
-    <div className="flex h-full w-60 flex-col bg-card">
+    <div className={`h-full w-60 flex-col bg-card ${className}`}>
       <div className="flex items-center gap-2 border-b border-border px-4 py-4">
         <span className="text-xl" aria-hidden>
           🐝

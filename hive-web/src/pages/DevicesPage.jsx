@@ -50,7 +50,7 @@ export function DevicesPage() {
 
   return (
     <div className="space-y-4">
-      <MriPageHeader title="Devices" icon={Boxes} count={count} countLabel="registered">
+      <MriPageHeader title="Devices" icon={Boxes} count={count} countLabel="registered" className="flex-wrap gap-y-3">
         <MriButton size="sm" variant="outline" disabled={busy} onClick={load}>
           Refresh
         </MriButton>

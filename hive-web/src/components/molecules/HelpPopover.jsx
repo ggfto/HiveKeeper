@@ -19,7 +19,7 @@ export function HelpPopover({ title, body, docId, label = 'Help' }) {
           <HelpCircle className="h-4 w-4" />
         </button>
       </MriPopoverTrigger>
-      <MriPopoverContent align="start" className="w-80 text-sm">
+      <MriPopoverContent align="start" className="w-80 max-w-[calc(100vw-2rem)] text-sm">
         {title && <div className="mb-1 font-semibold">{title}</div>}
         {body && <Markdown>{body}</Markdown>}
         {docId && (

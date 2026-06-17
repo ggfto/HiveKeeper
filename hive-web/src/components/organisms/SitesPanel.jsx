@@ -68,8 +68,8 @@ export function SitesPanel({ sites = [], onCreate, onRename, onDelete, busy }) {
         </ul>
       )}
 
-      <div className="flex items-end gap-2">
-        <label className="flex w-48 flex-col gap-1">
+      <div className="flex flex-wrap items-end gap-2">
+        <label className="flex w-full flex-col gap-1 sm:w-48">
           <span className="text-xs text-muted-foreground">New site</span>
           <MriInput value={newSite} onChange={(e) => setNewSite(e.target.value)} placeholder="HQ" />
         </label>
