@@ -1,4 +1,7 @@
-# HiveKeeper agent ⇄ gateway protocol
+---
+title: Agent ⇄ gateway protocol
+description: How the on-prem agent and the cloud gateway talk — frames, transport, resilience, security.
+---
 
 Status: **built & proven live**. The `hive-protocol` reference channel, the WebSocket transport, and the
 `hive-agent` / `hive-gateway` deployables are all implemented — the full chain runs cloud → agent → AP230.

@@ -15,6 +15,7 @@ import { SitesGroupsPage } from './pages/SitesGroupsPage'
 import { MembersPage } from './pages/MembersPage'
 import { BulkPage } from './pages/BulkPage'
 import { AuditPage } from './pages/AuditPage'
+import { HelpPage } from './pages/HelpPage'
 
 function Console() {
   const auth = useAuth()
@@ -32,6 +33,8 @@ function Console() {
         <Route path="/members" element={<MembersPage />} />
         <Route path="/bulk" element={<BulkPage />} />
         <Route path="/audit" element={<AuditPage />} />
+        <Route path="/help" element={<HelpPage />} />
+        <Route path="/help/:docId" element={<HelpPage />} />
         {/* Solo lands on the device list (its single AP); the full console lands on the overview. */}
         <Route path="*" element={<Navigate to={auth.solo ? '/devices' : '/overview'} replace />} />
       </Routes>

@@ -5,6 +5,7 @@ import { Boxes, Wifi, Network, Radio, Globe, Terminal, Power, ArrowLeft, Router,
 import { useAuth } from '../context/AuthProvider'
 import { useToast } from '../context/ToastProvider'
 import { ConfigNav } from '../components/molecules/ConfigNav'
+import { HelpPopover } from '../components/molecules/HelpPopover'
 import { WifiSection } from '../components/organisms/WifiSection'
 import { MeshSection } from '../components/organisms/MeshSection'
 import { RadioForm } from '../components/organisms/RadioForm'
@@ -242,6 +243,15 @@ export function DeviceDetailPage() {
         >
           Backup
         </MriButton>
+        <HelpPopover
+          title="Configuring this AP"
+          docId="device-configuration"
+          body={
+            'Each section below maps to part of the AP config. Most apply by generating **HiveOS CLI** and ' +
+            'sending it through the agent (the **Advanced** section exposes that raw). Writes that `save ' +
+            'config` persist to flash; the live panels are read-only.'
+          }
+        />
       </MriPageHeader>
 
       <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">

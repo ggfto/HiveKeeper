@@ -1,5 +1,5 @@
 import { MriSidebar } from '@mriqbox/ui-kit'
-import { LayoutDashboard, Network, Server, Boxes, Layers, Users, ListChecks, ScrollText } from 'lucide-react'
+import { LayoutDashboard, Network, Server, Boxes, Layers, Users, ListChecks, ScrollText, BookOpen } from 'lucide-react'
 
 /** The console's primary navigation. Routes are the HashRouter paths the pages mount on. */
 export const NAV = [
@@ -11,11 +11,12 @@ export const NAV = [
   { label: 'Members', route: '/members', icon: Users },
   { label: 'Bulk ops', route: '/bulk', icon: ListChecks },
   { label: 'Audit log', route: '/audit', icon: ScrollText },
+  { label: 'Docs', route: '/help', icon: BookOpen },
 ]
 
 // Solo (single-user, single-AP local) mode hides everything that is about multiple users or orgs: the overview,
-// the map, the agent (to discover/adopt the AP), and the device itself.
-const SOLO_ROUTES = ['/overview', '/map', '/agents', '/devices']
+// the map, the agent (to discover/adopt the AP), the device itself, and the embedded docs.
+const SOLO_ROUTES = ['/overview', '/map', '/agents', '/devices', '/help']
 
 /**
  * The full sidebar: the brand pinned at the top, the navigation in the scrollable middle, and whatever `footer`

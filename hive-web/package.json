@@ -5,11 +5,12 @@
   "type": "module",
   "description": "HiveKeeper web UI (Vite + React) — multi-org control panel for the hive-gateway control plane.",
   "scripts": {
-    "dev": "vite",
-    "build": "vite build",
+    "sync-docs": "node scripts/sync-docs.mjs",
+    "dev": "node scripts/sync-docs.mjs && vite",
+    "build": "node scripts/sync-docs.mjs && vite build",
     "preview": "vite preview",
-    "test": "vitest run",
-    "test:watch": "vitest"
+    "test": "node scripts/sync-docs.mjs && vitest run",
+    "test:watch": "node scripts/sync-docs.mjs && vitest"
   },
   "dependencies": {
     "@mriqbox/ui-kit": "^4.9.0",
@@ -18,7 +19,9 @@
     "oidc-client-ts": "^3.5.0",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
-    "react-router-dom": "^7.17.0"
+    "react-markdown": "^9.0.1",
+    "react-router-dom": "^7.17.0",
+    "remark-gfm": "^4.0.0"
   },
   "devDependencies": {
     "@testing-library/jest-dom": "^6.9.1",

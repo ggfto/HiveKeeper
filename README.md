@@ -154,6 +154,19 @@ OIDC: `scripts/dev-keycloak.ps1` brings up a dev Keycloak + realm, then run with
 `SPRING_PROFILES_ACTIVE=postgres,oidc`. In that setup you can also set `HIVEKEEPER_TENANTKEY_ENABLED=false`
 so a leaked static key cannot bypass per-user authorization.
 
+## Documentation
+
+The canonical docs live in [`docs/`](docs) as plain markdown, and are rendered in two places from that
+**single source**:
+
+- **Public docs site** — Astro + Starlight under [`website/`](website) (`cd website && pnpm install && pnpm dev`).
+- **In-app Help** — the `hive-web` console bundles the same markdown (a **Docs** section in the sidebar), so
+  solo / self-hosted deployments have the manual offline. `hive-web/scripts/sync-docs.mjs` copies `docs/` in
+  at build time; device pages also surface contextual help inline.
+
+To add or edit a page, change the markdown in `docs/` — both surfaces pick it up. See
+[`website/README.md`](website/README.md) for the site workflow.
+
 ## Roadmap
 
 What's planned but not yet built (see [`docs/agent-protocol.md`](docs/agent-protocol.md) for the mode-C
