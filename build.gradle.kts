@@ -1,6 +1,8 @@
 allprojects {
     group = "io.hivekeeper"
-    version = "0.1.0-SNAPSHOT"
+    // The version is the single source of truth in gradle.properties; semantic-release rewrites it on each
+    // release (see .releaserc.json), and the Docker images embed whatever value is in the build context.
+    version = rootProject.version
 
     repositories {
         mavenCentral()

@@ -22,6 +22,12 @@ Thumbs.db
 # tooling caches
 .code-review-graph/
 
+# Node (release tooling at the root, hive-web/website have their own)
+node_modules/
+
+# Local compose env (the committed template is .env.example)
+.env
+
 # Local secrets, keystores, and captured device data — never commit
 *.pem
 *.key

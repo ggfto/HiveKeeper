@@ -18,3 +18,11 @@ application {
     mainClass.set("io.hivekeeper.cli.Main")
     applicationName = "hivekeeper"
 }
+
+// Stamp the version into the jar manifest so `hivekeeper --version` reflects the released version
+// (read at runtime via Main's IVersionProvider) instead of a hardcoded string.
+tasks.jar {
+    manifest {
+        attributes("Implementation-Version" to project.version)
+    }
+}

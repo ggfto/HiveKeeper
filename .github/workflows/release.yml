@@ -1,0 +1,63 @@
+name: Release
+
+# Versioning + container publishing, driven by Conventional Commits via semantic-release.
+#
+# On every push to main, semantic-release inspects the commits since the last release and, if any warrant a
+# release (feat/fix/perf/...), it: bumps the version in gradle.properties, updates CHANGELOG.md, commits and
+# tags it, builds + pushes the gateway/agent/server images to GHCR (tagged with the version and `latest`),
+# and creates the GitHub Release. No release-worthy commits => it does nothing.
+#
+# One-time setup:
+#   * The first release needs a baseline tag so it does not jump to 1.0.0. On the current 0.1.0 commit, run:
+#       git tag v0.1.0 && git push origin v0.1.0
+#   * Commit messages must follow Conventional Commits (feat:, fix:, etc.) — they already do here.
+#   * GITHUB_TOKEN (provided automatically) needs the contents + packages write permissions below.
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: write # create the release commit, tag, and GitHub Release
+  issues: write # semantic-release comments on released issues/PRs
+  pull-requests: write
+  packages: write # push images to GHCR
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # semantic-release needs the full history + tags
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Install release tooling
+        run: npm install
+
+      - name: Release
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # Lowercase owner (GHCR requires it); the script builds ghcr.io/<owner>/hivekeeper-<module>.
+          REGISTRY: ghcr.io/${{ github.repository_owner }}
+        run: npx semantic-release
