@@ -14,15 +14,19 @@ cloud cannot connect inward, so the **agent dials out** and the cloud only ever 
 connection. The wire payload is the **already-serializable in-process API** (`Command` / `Event` /
 `Result`, serialized by `hive-wire`), so the agent literally does `engine.execute(decode(frame))`.
 
-```
-   Browser / API            CLOUD GATEWAY                         ON-PREM AGENT (hive-core + connector)
-        │  HTTPS/SSE              │                                        │
-        │ ───────────────▶  RemoteEngine.execute(cmd, sink)               │
-        │                        │ ── Frame.Job(jobId, cmd) ───────────▶  │  (over outbound WSS:443)
-        │                        │                                        │  engine.execute(cmd, sink)
-        │   ◀── SSE events ──────│ ◀──── Frame.JobEvent(jobId, seq) ───── │   sink.emit(event)
-        │                        │ ───── Frame.Ack(jobId, seq) ────────▶  │
-        │   ◀── SSE result ──────│ ◀──── Frame.JobResult(jobId) ───────── │   (or Frame.JobFailed)
+```mermaid
+sequenceDiagram
+    participant B as Browser / API
+    participant G as Cloud gateway
+    participant A as On-prem agent
+    B->>G: HTTPS — RemoteEngine.execute(cmd, sink)
+    G->>A: Frame.Job(jobId, cmd) — over outbound WSS:443
+    Note over A: engine.execute(cmd, sink)
+    A-->>G: Frame.JobEvent(jobId, seq)
+    G-->>B: SSE event
+    G->>A: Frame.Ack(jobId, seq)
+    A-->>G: Frame.JobResult(jobId) — or Frame.JobFailed
+    G-->>B: SSE result
 ```
 
 `RemoteEngine` implements the same `Engine` interface as `LocalEngine`; the caller cannot tell whether

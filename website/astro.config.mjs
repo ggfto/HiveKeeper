@@ -1,6 +1,7 @@
 // @ts-check
 import { defineConfig } from 'astro/config'
 import starlight from '@astrojs/starlight'
+import mermaid from 'astro-mermaid'
 import { visit } from 'unist-util-visit'
 
 // Starlight base-prefixes its own nav/sidebar, but NOT root-absolute links written inside markdown
@@ -42,6 +43,10 @@ export default defineConfig({
     rehypePlugins: [rehypeBaseLinks],
   },
   integrations: [
+    // Must come BEFORE starlight: it intercepts ```mermaid fences (before Expressive Code styles them) and
+    // renders them client-side, following the light/dark theme. The in-app Help renders the same fences via
+    // src/components/molecules/MermaidDiagram.jsx, so diagrams stay a single source.
+    mermaid({ autoTheme: true }),
     starlight({
       title: 'HiveKeeper',
       description: 'Cloud-free management for Aerohive / Extreme HiveOS access points, over SSH.',

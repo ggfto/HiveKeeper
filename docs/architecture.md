@@ -15,6 +15,22 @@ The load-bearing invariant: **`hive-core` is tenant-unaware, stateless, and tran
 CLI, server, and agent all invoke it through the same serializable `Command` / `Result` / `Event`
 contract (`Engine.execute(Command) -> Publisher<Event>`). Local vs remote is wiring, not a fork.
 
+```mermaid
+flowchart TD
+    CLI["hive-cli — mode A"]
+    SRV["hive-server — mode B"]
+    GW["hive-gateway — control plane"]
+    AG["hive-agent — mode C"]
+    E["hive-core: Engine.execute(Command) → Event / Result"]
+    APs[("HiveOS APs")]
+
+    CLI --> E
+    SRV --> E
+    GW -->|"Frame over outbound WSS:443"| AG
+    AG --> E
+    E -->|SSH| APs
+```
+
 ## Modules
 
 | Module | What |

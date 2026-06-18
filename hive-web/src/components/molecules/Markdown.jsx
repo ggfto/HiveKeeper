@@ -1,5 +1,6 @@
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
+import { MermaidDiagram } from './MermaidDiagram'
 
 // Rewrite the docs' links for the in-app HashRouter: external links open in a new tab; site-absolute doc
 // links ('/getting-started/') become the in-app help hash route; everything else is left alone.
@@ -52,9 +53,14 @@ const COMPONENTS = {
         {children}
       </code>
     ),
-  pre: (p) => (
-    <pre className="my-4 overflow-x-auto rounded-lg border border-border bg-muted/50 p-3 text-xs" {...p} />
-  ),
+  // A ```mermaid fence renders as a diagram (matching the docs site); every other fence is a styled <pre>.
+  pre: ({ children, ...props }) => {
+    const child = Array.isArray(children) ? children[0] : children
+    if (/language-mermaid/.test(child?.props?.className || '')) {
+      return <MermaidDiagram code={String(child.props.children ?? '').replace(/\n+$/, '')} />
+    }
+    return <pre className="my-4 overflow-x-auto rounded-lg border border-border bg-muted/50 p-3 text-xs" {...props}>{children}</pre>
+  },
   table: (p) => (
     <div className="my-4 overflow-x-auto">
       <table className="w-full border-collapse text-sm" {...p} />

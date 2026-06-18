@@ -16,6 +16,7 @@
     "@mriqbox/ui-kit": "^4.9.0",
     "@xyflow/react": "^12.11.0",
     "lucide-react": "^1.18.0",
+    "mermaid": "^11.15.0",
     "oidc-client-ts": "^3.5.0",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
