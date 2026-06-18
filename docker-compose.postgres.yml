@@ -1,0 +1,44 @@
+# Persistence override: adds Postgres and switches the gateway to the 'postgres' profile (durable jobs,
+# org/users/fleet, the audit log, RLS-enforced multi-tenancy). Layer it on the base file:
+#
+#   docker compose -f docker-compose.yml -f docker-compose.postgres.yml up -d --build
+#
+# Flyway (running as the 'postgres' admin) creates the schema, RLS policies, and grants on first gateway
+# start; the app connects as the RESTRICTED hivekeeper_app role created by deploy/postgres/10-init-app-role.sql.
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_PASSWORD: ${HIVEKEEPER_DB_ADMIN_PASSWORD:-postgres}
+      POSTGRES_DB: hivekeeper
+    volumes:
+      - pg-data:/var/lib/postgresql/data
+      # Runs once on first init (before Flyway) to create the restricted application role.
+      - ./deploy/postgres/10-init-app-role.sql:/docker-entrypoint-initdb.d/10-init-app-role.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d hivekeeper"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+    restart: unless-stopped
+
+  gateway:
+    environment:
+      SPRING_PROFILES_ACTIVE: postgres
+      HIVEKEEPER_DB_URL: jdbc:postgresql://postgres:5432/hivekeeper
+      HIVEKEEPER_DB_USER: hivekeeper_app
+      HIVEKEEPER_DB_PASSWORD: ${HIVEKEEPER_DB_PASSWORD:-app}
+      HIVEKEEPER_DB_ADMIN_USER: postgres
+      HIVEKEEPER_DB_ADMIN_PASSWORD: ${HIVEKEEPER_DB_ADMIN_PASSWORD:-postgres}
+      # Job secrets are encrypted at rest; the gateway refuses to start without a key. Set a real one in prod:
+      #   HIVEKEEPER_CRYPTO_KEY=$(openssl rand -base64 32)
+      # For a local stack you may instead opt into the built-in INSECURE dev key (NEVER in prod).
+      HIVEKEEPER_CRYPTO_KEY: ${HIVEKEEPER_CRYPTO_KEY:-}
+      HIVEKEEPER_CRYPTO_ALLOW_INSECURE_DEV_KEY: ${HIVEKEEPER_CRYPTO_ALLOW_INSECURE_DEV_KEY:-true}
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+volumes:
+  pg-data:

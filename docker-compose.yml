@@ -1,0 +1,55 @@
+# HiveKeeper stack — the cloud control plane (gateway) plus one on-prem agent.
+#
+# Quick start (build from source on a fresh clone):
+#   docker compose up -d --build
+#
+# Run the published images from GHCR instead of building:
+#   HIVEKEEPER_TAG=latest docker compose pull && docker compose up -d
+#
+# This base file runs the gateway IN-MEMORY (no database) — the simplest way to bring HiveKeeper up.
+# Layer overrides on top for more:
+#   persistence:  docker compose -f docker-compose.yml -f docker-compose.postgres.yml up -d
+#   + OIDC/SSO:   docker compose -f docker-compose.yml -f docker-compose.postgres.yml -f docker-compose.keycloak.yml up -d
+#
+# The web console (hive-web) is served separately by design — run it with `pnpm --dir hive-web dev`
+# (it proxies /gw to the gateway on :8090). Copy .env.example to .env to tweak the defaults below.
+
+name: hivekeeper
+
+services:
+  gateway:
+    image: ${HIVEKEEPER_REGISTRY:-ghcr.io/ggfto}/hivekeeper-gateway:${HIVEKEEPER_TAG:-latest}
+    build:
+      context: .
+      dockerfile: hive-gateway/Dockerfile
+    environment:
+      SERVER_ADDRESS: 0.0.0.0
+      SERVER_PORT: "8090"
+      # The X-Tenant-Key service-principal path. Keep it on for the simple in-memory stack; turn it OFF for a
+      # hardened OIDC deployment (see the keycloak override) so a static key cannot bypass per-user authz.
+      HIVEKEEPER_TENANTKEY_ENABLED: ${HIVEKEEPER_TENANTKEY_ENABLED:-true}
+    ports:
+      - "${HIVEKEEPER_GATEWAY_PORT:-8090}:8090"
+    restart: unless-stopped
+
+  agent:
+    image: ${HIVEKEEPER_REGISTRY:-ghcr.io/ggfto}/hivekeeper-agent:${HIVEKEEPER_TAG:-latest}
+    build:
+      context: .
+      dockerfile: hive-agent/Dockerfile
+    environment:
+      # The agent dials OUT to the gateway over WebSocket — no inbound ports. `gateway` is the service name.
+      HIVEKEEPER_GATEWAY_URL: ${HIVEKEEPER_GATEWAY_URL:-ws://gateway:8090/agent}
+      HIVEKEEPER_AGENT_ID: ${HIVEKEEPER_AGENT_ID:-hive-agent}
+      # Fleet-wide fallback SSH credentials the agent resolves locally (the cloud never sees them).
+      HIVEKEEPER_DEFAULT_USER: ${HIVEKEEPER_DEFAULT_USER:-admin}
+      HIVEKEEPER_DEFAULT_PASSWORD: ${HIVEKEEPER_DEFAULT_PASSWORD:-}
+      HIVEKEEPER_BACKUP_DIR: /data/backups
+    volumes:
+      - agent-data:/data
+    depends_on:
+      - gateway
+    restart: unless-stopped
+
+volumes:
+  agent-data:

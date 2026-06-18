@@ -1,0 +1,40 @@
+# OIDC / SSO override: adds a dev Keycloak that imports the 'hivekeeper' realm (client `hive-gateway`,
+# users owner/op/view with password = username) and switches the gateway to the 'postgres,oidc' profile.
+# Requires the postgres override too — layer all three:
+#
+#   docker compose -f docker-compose.yml -f docker-compose.postgres.yml -f docker-compose.keycloak.yml up -d --build
+#
+# Sign in at the console with owner/owner (admin console: http://localhost:8081, admin/admin).
+#
+# Issuer note (the usual Keycloak-in-Docker gotcha): tokens are minted for the BROWSER-facing URL
+# (http://localhost:8081), so the gateway validates the `iss` claim against that — while it fetches JWKs and
+# calls the Keycloak admin API over the CONTAINER network (http://keycloak:8080). If you reach the console
+# from another host/port, change HIVEKEEPER_OIDC_ISSUER to match where the browser logs in.
+
+services:
+  keycloak:
+    image: quay.io/keycloak/keycloak:26.0
+    command: ["start-dev", "--import-realm"]
+    environment:
+      KEYCLOAK_ADMIN: admin
+      KEYCLOAK_ADMIN_PASSWORD: admin
+    ports:
+      - "${HIVEKEEPER_KEYCLOAK_PORT:-8081}:8080"
+    volumes:
+      - ./scripts/hivekeeper-realm.json:/opt/keycloak/data/import/hivekeeper-realm.json:ro
+    restart: unless-stopped
+
+  gateway:
+    environment:
+      SPRING_PROFILES_ACTIVE: postgres,oidc
+      # Browser-facing issuer — must match where users actually log in.
+      HIVEKEEPER_OIDC_ISSUER: ${HIVEKEEPER_OIDC_ISSUER:-http://localhost:8081/realms/hivekeeper}
+      # Container-facing JWKs + admin API (the gateway reaches Keycloak by its service name).
+      HIVEKEEPER_OIDC_JWK_SET_URI: http://keycloak:8080/realms/hivekeeper/protocol/openid-connect/certs
+      HIVEKEEPER_OIDC_AUDIENCE: hive-gateway
+      HIVEKEEPER_KEYCLOAK_BASE_URL: http://keycloak:8080
+      HIVEKEEPER_KEYCLOAK_REALM: hivekeeper
+      # Hardened: accept ONLY user JWTs, so a static tenant key cannot bypass per-user authorization.
+      HIVEKEEPER_TENANTKEY_ENABLED: "false"
+    depends_on:
+      - keycloak
