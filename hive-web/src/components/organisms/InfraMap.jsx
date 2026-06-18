@@ -2,14 +2,14 @@ import { useMemo } from 'react'
 import { ReactFlow, Background, Panel, Handle, Position, useReactFlow } from '@xyflow/react'
 import '@xyflow/react/dist/style.css'
 import { MriButton } from '@mriqbox/ui-kit'
-import { Wifi, Boxes, Smartphone, ZoomIn, ZoomOut, Maximize } from 'lucide-react'
+import { Boxes, Layers, Smartphone, ZoomIn, ZoomOut, Maximize } from 'lucide-react'
 
 /** A site: the left-column anchor that its APs hang off. */
 function SiteNode({ data }) {
   return (
     <div className="rounded-lg border border-border bg-card px-3 py-2 shadow-sm">
       <div className="flex items-center gap-2">
-        <Boxes className="h-4 w-4 text-primary" />
+        <Layers className="h-4 w-4 text-primary" />
         <span className="text-sm font-semibold">{data.label}</span>
       </div>
       <div className="text-xs text-muted-foreground">
@@ -30,7 +30,7 @@ function ApNode({ data }) {
     >
       <Handle type="target" position={Position.Left} />
       <div className="flex items-center gap-2">
-        <Wifi className={`h-4 w-4 ${data.online ? 'text-primary' : 'text-muted-foreground'}`} />
+        <Boxes className={`h-4 w-4 ${data.online ? 'text-primary' : 'text-muted-foreground'}`} />
         <span className="truncate text-sm font-medium">{data.label}</span>
         <span
           className={`ml-auto h-2 w-2 shrink-0 rounded-full ${data.online ? 'bg-green-500' : 'bg-muted-foreground'}`}

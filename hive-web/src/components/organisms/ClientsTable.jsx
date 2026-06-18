@@ -10,7 +10,7 @@ import {
   MriButton,
   MriStatusBadge,
 } from '@mriqbox/ui-kit'
-import { Wifi, ArrowUpDown } from 'lucide-react'
+import { Smartphone, ArrowUpDown } from 'lucide-react'
 import { filterStations, sortBySignal, countBySsid } from '../../lib/stations'
 
 /**
@@ -33,7 +33,7 @@ export function ClientsTable({ stations = [] }) {
   return (
     <div className="space-y-2">
       <div className="flex flex-wrap items-center gap-2">
-        <Wifi className="h-4 w-4 text-muted-foreground" />
+        <Smartphone className="h-4 w-4 text-muted-foreground" />
         <span className="text-sm font-medium">Connected clients</span>
         <MriStatusBadge label={String(total)} variant="outline" size="xs" />
         {perSsid.length > 1 &&
