@@ -69,6 +69,30 @@ describe('DeviceDetailPage', () => {
     expect(screen.getByRole('button', { name: /backup/i })).toBeDisabled()
   })
 
+  it('exposes restore + firmware upgrade in the Power section, gated on the agent being online', async () => {
+    const gateway = fakeGateway({
+      devices: () => Promise.resolve([device]),
+      agents: () => Promise.resolve(['lab-agent']), // online
+    })
+    renderDevice(gateway)
+    await screen.findByText('SER123')
+    fireEvent.click(screen.getByText('Power'))
+    expect(screen.getByRole('button', { name: /restore config/i })).toBeEnabled()
+    expect(screen.getByRole('button', { name: /firmware upgrade/i })).toBeEnabled()
+  })
+
+  it('disables restore + firmware upgrade when the agent is offline', async () => {
+    const gateway = fakeGateway({
+      devices: () => Promise.resolve([device]),
+      agents: () => Promise.resolve([]), // offline
+    })
+    renderDevice(gateway)
+    await screen.findByText('SER123')
+    fireEvent.click(screen.getByText('Power'))
+    expect(screen.getByRole('button', { name: /restore config/i })).toBeDisabled()
+    expect(screen.getByRole('button', { name: /firmware upgrade/i })).toBeDisabled()
+  })
+
   it('shows a not-found state for an unknown device', async () => {
     const gateway = fakeGateway({ devices: () => Promise.resolve([]) })
     renderDevice(gateway)

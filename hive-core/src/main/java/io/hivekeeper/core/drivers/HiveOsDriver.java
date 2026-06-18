@@ -28,6 +28,14 @@ public final class HiveOsDriver implements Driver {
     private static final String RUNNING_CONFIG_SECRETS = "show running-config password";
     private static final String RUNNING_CONFIG_USERS = "show running-config users password";
 
+    // ── Firmware upgrade ────────────────────────────────────────────────────────────────────────────
+    // LAB / UNTESTED (v0.1): this is the ONE place that holds the HiveOS firmware-upgrade vocabulary.
+    // On IQ Engine / HiveOS, `save image <url>` downloads an image from a reachable TFTP/FTP/HTTP server
+    // and writes it to the alternate boot partition; a subsequent `reboot` activates it. This flow has
+    // NOT been validated against a live AP — confirm the exact command, the URL forms your firmware
+    // accepts, and the download/activation semantics for your HiveOS version before any production use.
+    private static final String SAVE_IMAGE = "save image ";
+
     @Override
     public String id() {
         return "hiveos";
@@ -107,6 +115,26 @@ public final class HiveOsDriver implements Driver {
             outputs.add(exec.run("save config"));
         }
         return outputs;
+    }
+
+    @Override
+    public String upgradeFirmware(DeviceId id, CliExecutor exec, String imageUrl, boolean reboot,
+                                  ProgressReporter progress) throws IOException {
+        progress.report(20, "Downloading and writing image: " + imageUrl);
+        String output = exec.run(SAVE_IMAGE + imageUrl);
+        if (!reboot) {
+            progress.report(100, "Image saved; a reboot is required to activate it");
+            return output;
+        }
+        progress.report(80, "Rebooting to activate the new image");
+        try {
+            output = output + System.lineSeparator() + exec.run("reboot");
+        } catch (IOException e) {
+            // The AP tore the SSH channel down as it restarted — that is the reboot succeeding, not a fault.
+            output = output + System.lineSeparator() + "reboot initiated (session closed by device)";
+        }
+        progress.report(100, "Firmware upgrade initiated; verify the version once the AP is back online");
+        return output;
     }
 
     @Override

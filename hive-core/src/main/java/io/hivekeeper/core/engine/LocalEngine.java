@@ -166,6 +166,10 @@ public final class LocalEngine implements Engine {
                 List<String> outputs = driver.applyConfig(deviceId, exec, lines, c.save(), progress);
                 yield new Result.ConfigApplied(id, deviceId, lines, outputs, c.save());
             }
+            case Command.FirmwareUpgrade c -> {
+                String output = driver.upgradeFirmware(deviceId, exec, c.imageUrl(), c.reboot(), progress);
+                yield new Result.FirmwareUpgraded(id, deviceId, c.imageUrl(), output, c.reboot());
+            }
             case Command.Discover ignored -> throw new IllegalStateException("discover is handled without a session");
         };
     }
@@ -180,6 +184,7 @@ public final class LocalEngine implements Engine {
             case Command.ConfigureHive c -> c.device();
             case Command.Reboot c -> c.device();
             case Command.RestoreConfig c -> c.device();
+            case Command.FirmwareUpgrade c -> c.device();
             case Command.Discover ignored -> throw new IllegalStateException("discover is network-scoped");
         };
     }

@@ -11,7 +11,8 @@ import java.util.UUID;
 /** The terminal outcome of a {@link Command}. Echoes commandId + deviceId for correlation (for a
  *  network-scoped result the deviceId is the scan scope, e.g. the CIDR). */
 public sealed interface Result
-        permits Result.Inventory, Result.Backup, Result.RawCapture, Result.Discovered, Result.ConfigApplied {
+        permits Result.Inventory, Result.Backup, Result.RawCapture, Result.Discovered, Result.ConfigApplied,
+                Result.FirmwareUpgraded {
 
     UUID commandId();
 
@@ -43,5 +44,12 @@ public sealed interface Result
             commands = List.copyOf(commands);
             outputs = List.copyOf(outputs);
         }
+    }
+
+    /** Outcome of a firmware upgrade: the image requested, the device's verbatim output, and whether a
+     *  reboot was issued to activate it. {@code rebooting} true means the AP dropped the session to
+     *  restart — verify the running version once it is back online. */
+    record FirmwareUpgraded(UUID commandId, DeviceId deviceId, String imageUrl, String output, boolean rebooting)
+            implements Result {
     }
 }

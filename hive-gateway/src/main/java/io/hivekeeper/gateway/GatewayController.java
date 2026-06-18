@@ -71,6 +71,16 @@ public class GatewayController {
     public record ApplyConfigRequest(String host, Integer port, List<String> commands, boolean save) {
     }
 
+    /** Re-apply a previously captured running-config to a device by replaying its lines (additive),
+     *  optionally persisting with {@code save config}. The cloud sends the config text; the agent applies it. */
+    public record RestoreRequest(String host, Integer port, String runningConfig, boolean save) {
+    }
+
+    /** Upgrade a device's firmware from an image URL the AP can reach (TFTP/FTP/HTTP), optionally rebooting
+     *  to activate it. LAB/UNTESTED in v0.1 — see HiveOsDriver. */
+    public record FirmwareUpgradeRequest(String host, Integer port, String imageUrl, boolean reboot) {
+    }
+
     /** Submit a durable job. {@code type} is inventory|backup|discover|configure-ssid|configure-hive;
      *  the write types carry the secret fields, which are encrypted at rest by the {@link JobGateway}. */
     public record JobRequest(String type, String host, String cidr, Integer port,
@@ -350,6 +360,37 @@ public class GatewayController {
             }
             return dispatch(p, agentId, "apply-config", new DeviceRequest(req.host(), req.port()),
                     ref -> Command.ApplyConfig.of(ref, commands, req.save()));
+        };
+    }
+
+    /** Re-apply a captured running-config to a device (additive replay), optionally persisting it. The cloud
+     *  sends the config text; the agent applies it with its local credentials. Operator-level; secret-redacted. */
+    @PostMapping("/api/agents/{agentId}/restore")
+    public Callable<ResponseEntity<String>> restore(@PathVariable String agentId, @RequestBody RestoreRequest req) {
+        Principal p = guard.authenticate();
+        guard.require(p, Role.OPERATOR, agentScope(p, agentId));
+        return () -> {
+            if (req == null || req.runningConfig() == null || req.runningConfig().isBlank()) {
+                return status(400, new ApiError("bad_request", "runningConfig is required"));
+            }
+            return dispatch(p, agentId, "restore", new DeviceRequest(req.host(), req.port()),
+                    ref -> Command.RestoreConfig.of(ref, req.runningConfig(), req.save()));
+        };
+    }
+
+    /** Upgrade a device's firmware from a reachable image URL, optionally rebooting to activate it. Operator-level.
+     *  LAB/UNTESTED in v0.1 — the HiveOS upgrade path has not been validated against a live AP. */
+    @PostMapping("/api/agents/{agentId}/firmware-upgrade")
+    public Callable<ResponseEntity<String>> firmwareUpgrade(@PathVariable String agentId,
+                                                            @RequestBody FirmwareUpgradeRequest req) {
+        Principal p = guard.authenticate();
+        guard.require(p, Role.OPERATOR, agentScope(p, agentId));
+        return () -> {
+            if (req == null || req.imageUrl() == null || req.imageUrl().isBlank()) {
+                return status(400, new ApiError("bad_request", "imageUrl is required"));
+            }
+            return dispatch(p, agentId, "firmware-upgrade", new DeviceRequest(req.host(), req.port()),
+                    ref -> Command.FirmwareUpgrade.of(ref, req.imageUrl().trim(), req.reboot()));
         };
     }
 

@@ -101,6 +101,31 @@ describe('createGateway', () => {
     expect(opts.method).toBe('DELETE')
   })
 
+  it('restores a running-config through an agent (POST with the config text)', async () => {
+    const fetchImpl = okFetch({ commands: ['ssid Corp'], outputs: [''], saved: true })
+    const gw = createGateway({ getAuth: () => ({ tenantKey: 'k' }), fetchImpl })
+    await gw.restore('lab-agent', '10.0.0.1', 'ssid Corp\n')
+    const [url, opts] = fetchImpl.mock.calls[0]
+    expect(url).toBe('/gw/api/agents/lab-agent/restore')
+    expect(opts.method).toBe('POST')
+    expect(JSON.parse(opts.body)).toEqual({ host: '10.0.0.1', port: 22, runningConfig: 'ssid Corp\n', save: true })
+  })
+
+  it('upgrades firmware through an agent (POST with the image url and reboot flag)', async () => {
+    const fetchImpl = okFetch({ imageUrl: 'tftp://10.0.0.5/AP230.img', output: 'ok', rebooting: true })
+    const gw = createGateway({ getAuth: () => ({ tenantKey: 'k' }), fetchImpl })
+    await gw.firmwareUpgrade('lab-agent', '10.0.0.1', 'tftp://10.0.0.5/AP230.img', { reboot: false })
+    const [url, opts] = fetchImpl.mock.calls[0]
+    expect(url).toBe('/gw/api/agents/lab-agent/firmware-upgrade')
+    expect(opts.method).toBe('POST')
+    expect(JSON.parse(opts.body)).toEqual({
+      host: '10.0.0.1',
+      port: 22,
+      imageUrl: 'tftp://10.0.0.5/AP230.img',
+      reboot: false,
+    })
+  })
+
   it('adopts a discovered host through an agent', async () => {
     const fetchImpl = okFetch({ deviceId: 'dev-9', serial: 'SER', model: 'AP230' })
     const gw = createGateway({ getAuth: () => ({ tenantKey: 'k' }), fetchImpl })

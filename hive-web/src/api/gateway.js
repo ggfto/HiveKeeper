@@ -83,6 +83,12 @@ export function createGateway({ getAuth = () => ({}), fetchImpl = fetch, baseUrl
     agentOp: (agentId, op, body = {}) => req(`/api/agents/${agentId}/${op}`, { method: 'POST', body }),
     inventory: (agentId, host, port = 22) => req(`/api/agents/${agentId}/inventory`, { method: 'POST', body: { host, port } }),
     backup: (agentId, host, port = 22) => req(`/api/agents/${agentId}/backup`, { method: 'POST', body: { host, port } }),
+    // re-apply a saved running-config (additive replay); `save` persists it with `save config`.
+    restore: (agentId, host, runningConfig, { save = true, port = 22 } = {}) =>
+      req(`/api/agents/${agentId}/restore`, { method: 'POST', body: { host, port, runningConfig, save } }),
+    // upgrade firmware from a URL the AP can reach; `reboot` activates it. LAB/UNTESTED — see HiveOsDriver.
+    firmwareUpgrade: (agentId, host, imageUrl, { reboot = true, port = 22 } = {}) =>
+      req(`/api/agents/${agentId}/firmware-upgrade`, { method: 'POST', body: { host, port, imageUrl, reboot } }),
     discover: (agentId, cidr, port = 22) =>
       req(`/api/agents/${agentId}/discover`, { method: 'POST', body: { cidr, port, timeoutMillis: 600 } }),
     adopt: (agentId, body) => req(`/api/agents/${agentId}/adopt`, { method: 'POST', body }),

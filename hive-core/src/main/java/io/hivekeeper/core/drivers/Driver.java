@@ -57,4 +57,16 @@ public interface Driver {
             return "reboot initiated (session closed by device)";
         }
     }
+
+    /**
+     * Upgrades the device firmware from an image at {@code imageUrl} (a TFTP/FTP/HTTP location the device
+     * can reach), optionally rebooting to activate it. Returns the device's verbatim output. The default
+     * refuses — firmware vocabulary is too vendor-specific to guess — so a driver must opt in by
+     * overriding. When {@code reboot} is true the session is expected to drop as the device restarts,
+     * which (as with {@link #reboot}) is treated as success rather than a fault.
+     */
+    default String upgradeFirmware(DeviceId id, CliExecutor exec, String imageUrl, boolean reboot,
+                                   ProgressReporter progress) throws IOException {
+        throw new UnsupportedOperationException("firmware upgrade not supported by driver");
+    }
 }

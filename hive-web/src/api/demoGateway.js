@@ -327,6 +327,17 @@ export function createDemoGateway() {
       logOp('backup', host, '4096 bytes · users', agentId)
       return ok({ ref: { commitId: 'demo' + uid('c').padEnd(12, '0') }, configBytes: 4096, usersIncluded: true })
     },
+    restore: (agentId, host, runningConfig, { save = true } = {}) => {
+      if (!connected(agentId)) return fail('the device agent is offline', 503)
+      const commands = String(runningConfig || '').split('\n').map((l) => l.trim()).filter(Boolean)
+      logOp('restore', host, `${commands.length} line(s)${save ? ' · saved' : ''}`, agentId)
+      return ok({ commands, outputs: commands.map(() => ''), saved: !!save })
+    },
+    firmwareUpgrade: (agentId, host, imageUrl, { reboot = true } = {}) => {
+      if (!connected(agentId)) return fail('the device agent is offline', 503)
+      logOp('firmware-upgrade', host, `${imageUrl}${reboot ? ' · reboot' : ''}`, agentId)
+      return ok({ imageUrl, output: `% (demo) save image ${imageUrl}`, rebooting: !!reboot })
+    },
     discover: (agentId) => {
       if (!connected(agentId)) return fail('the device agent is offline', 503)
       return ok({ hosts: [{ host: '192.168.10.31' }, { host: '192.168.10.42' }] })

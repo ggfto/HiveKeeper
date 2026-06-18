@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { MriPageHeader, MriButton, MriStatusBadge } from '@mriqbox/ui-kit'
 import { Boxes, Wifi, Network, Radio, Globe, Terminal, Power, ArrowLeft, Router, Activity, DoorOpen } from 'lucide-react'
@@ -59,6 +59,7 @@ export function DeviceDetailPage() {
   const [section, setSection] = useState('overview')
   const [busy, setBusy] = useState(false)
   const [configResult, setConfigResult] = useState(null)
+  const restoreInputRef = useRef(null)
 
   const load = useCallback(async () => {
     const [list, g, s, a] = await Promise.all([
@@ -175,6 +176,29 @@ export function DeviceDetailPage() {
   const onReboot = (d) => {
     if (!window.confirm(`Reboot ${d.mgmtIp}? It will be offline for ~1-2 minutes.`)) return
     run('Reboot', () => apply(d, 'reboot', {}))
+  }
+  // Restore re-applies a saved running-config (additive replay). The operator picks a backup .txt; we read it
+  // client-side and send the text — the agent applies it with the device's local credentials.
+  const onRestoreFile = async (d, file) => {
+    if (!file) return
+    const text = await file.text()
+    const lines = text.split('\n').filter((l) => l.trim()).length
+    if (!window.confirm(`Restore ${file.name} (${lines} line(s)) to ${d.mgmtIp}? Lines are replayed additively and saved.`)) return
+    run('Restore', async () => {
+      const r = await gateway.restore(d.agentId, d.mgmtIp, text, { save: true })
+      setConfigResult(r)
+      return `Restore: applied ${r?.commands?.length ?? '?'} line(s), saved=${r?.saved}`
+    })
+  }
+  // Firmware upgrade pulls an image from a URL the AP can reach, then reboots to activate it. LAB/UNTESTED.
+  const onFirmwareUpgrade = (d) => {
+    const url = window.prompt('Firmware image URL the AP can reach (e.g. tftp://10.0.0.5/AP230.img):')
+    if (!url) return
+    if (!window.confirm(`Upgrade firmware on ${d.mgmtIp} from ${url} and reboot to activate?\n\nThis path is LAB/UNTESTED in v0.1 — the AP will be offline for several minutes.`)) return
+    run('Firmware upgrade', async () => {
+      const r = await gateway.firmwareUpgrade(d.agentId, d.mgmtIp, url, { reboot: true })
+      return `Firmware upgrade requested${r?.rebooting ? ' · rebooting' : ''} — re-run inventory once the AP is back to confirm the version`
+    })
   }
   const onApplyConfig = (d, { commands, save }) =>
     run(`Apply ${commands.length} CLI line(s)`, async () => {
@@ -315,6 +339,44 @@ export function DeviceDetailPage() {
             <div className="space-y-8">
               <PowerForm device={device} onApply={onApplyConfig} onReboot={onReboot} busy={busy} />
               <LedForm device={device} onApply={onApplyConfig} busy={busy} />
+              <div className="space-y-3 rounded-lg border border-border bg-card p-4">
+                <div className="text-sm font-medium">Maintenance</div>
+                <p className="text-xs text-muted-foreground">
+                  Restore re-applies a saved running-config (additive replay, then <code>save config</code>). Firmware
+                  upgrade pulls an image from a URL the AP can reach, then reboots to activate it — this path is
+                  lab/untested in v0.1, so validate it against your hardware before relying on it.
+                </p>
+                <div className="flex flex-wrap gap-2">
+                  <MriButton
+                    size="sm"
+                    variant="outline"
+                    disabled={busy || !online}
+                    title={online ? undefined : 'The device agent is offline'}
+                    onClick={() => restoreInputRef.current?.click()}
+                  >
+                    Restore config…
+                  </MriButton>
+                  <MriButton
+                    size="sm"
+                    variant="outline"
+                    disabled={busy || !online}
+                    title={online ? undefined : 'The device agent is offline'}
+                    onClick={() => onFirmwareUpgrade(device)}
+                  >
+                    Firmware upgrade…
+                  </MriButton>
+                  <input
+                    ref={restoreInputRef}
+                    type="file"
+                    accept=".txt,.cfg,.conf,text/plain"
+                    className="hidden"
+                    onChange={(e) => {
+                      onRestoreFile(device, e.target.files?.[0])
+                      e.target.value = ''
+                    }}
+                  />
+                </div>
+              </div>
             </div>
           )}
         </div>

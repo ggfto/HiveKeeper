@@ -15,7 +15,7 @@ import java.util.UUID;
 public sealed interface Command
         permits Command.Inventory, Command.BackupConfig, Command.RunRaw, Command.Discover,
                 Command.ApplyConfig, Command.ConfigureSsid, Command.ConfigureHive, Command.Reboot,
-                Command.RestoreConfig {
+                Command.RestoreConfig, Command.FirmwareUpgrade {
 
     UUID commandId();
 
@@ -91,6 +91,17 @@ public sealed interface Command
     record RestoreConfig(UUID commandId, DeviceRef device, String runningConfig, boolean save) implements Command {
         public static RestoreConfig of(DeviceRef device, String runningConfig, boolean save) {
             return new RestoreConfig(UUID.randomUUID(), device, runningConfig, save);
+        }
+    }
+
+    /**
+     * Upgrade the device firmware from an image hosted at {@code imageUrl} (a TFTP/FTP/HTTP location the
+     * AP can reach), optionally rebooting afterwards to activate it. The driver owns the actual CLI
+     * vocabulary. NOTE: this path is unverified against a live AP in v0.1 — see {@code HiveOsDriver}.
+     */
+    record FirmwareUpgrade(UUID commandId, DeviceRef device, String imageUrl, boolean reboot) implements Command {
+        public static FirmwareUpgrade of(DeviceRef device, String imageUrl, boolean reboot) {
+            return new FirmwareUpgrade(UUID.randomUUID(), device, imageUrl, reboot);
         }
     }
 }
