@@ -60,5 +60,9 @@ The `hive-cli` front-end talks to the engine directly (no server needed):
 | `configure-hive -h HOST -n HIVE -w PWD` | Join a Hive/mesh. |
 | `reboot -h HOST --yes` | Reboot the device. |
 | `restore -h HOST -f PATH` | Replay a saved config. |
+| `firmware-upgrade -h HOST -f URL` | Pull a firmware image from a URL and reboot to activate it (`--no-reboot` to stage only). ⚠️ lab/untested. |
 
 Common SSH options: `-u USER`, `-p PASSWORD`, `-P PORT`.
+
+To run HiveKeeper as a deployed stack (gateway + agent, optionally Postgres + OIDC) with containers, see
+[Deployment](/deployment/).

@@ -12,6 +12,7 @@ const ORDER = [
   'capabilities',
   'authentication',
   'device-configuration',
+  'deployment',
   'architecture',
   'agent-protocol',
 ]

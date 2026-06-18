@@ -55,6 +55,7 @@ export default defineConfig({
         { label: 'Capabilities', link: '/capabilities/' },
         { label: 'Authentication', link: '/authentication/' },
         { label: 'Device configuration', link: '/device-configuration/' },
+        { label: 'Deployment', link: '/deployment/' },
         { label: 'Architecture', link: '/architecture/' },
         { label: 'Agent ⇄ gateway protocol', link: '/agent-protocol/' },
       ],

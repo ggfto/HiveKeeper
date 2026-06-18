@@ -24,7 +24,16 @@ panels) are strictly read-only. The agent holds the device credential — the ga
 | **Network** | IP address / netmask / default gateway, management & native VLAN, DNS. |
 | **Monitoring** | SNMP and syslog, plus a live panel: connected clients, per-radio status, recent on-AP log. |
 | **Advanced** | A raw HiveOS CLI escape hatch — type commands, optionally `save config`; rejected lines are highlighted. |
-| **Power** | Power settings, the **Reboot** button, and LED behavior. |
+| **Power** | Power settings, the **Reboot** button, LED behavior, and a **Maintenance** block (see below). |
+
+The **Power → Maintenance** block holds two device-lifecycle actions (both operator-level, gated on the
+agent being online):
+
+- **Restore config** — pick a saved running-config (e.g. a backup `.txt`); its lines are replayed additively
+  and persisted with `save config`.
+- **Firmware upgrade** — give a URL the AP can reach (TFTP/FTP/HTTP); HiveKeeper runs `save image` and reboots
+  to activate it. ⚠️ **Lab / untested in v0.1** — validate against your hardware first; the AP is offline for
+  several minutes, so re-run **Inventory** afterwards to confirm the new version.
 
 For the exact engine commands behind these (and the CLI equivalents), see [Capabilities](/capabilities/)
 and [Getting started → CLI](/getting-started/#cli).

@@ -25,6 +25,10 @@ Per device, via the web UI ([device configuration](/device-configuration/) expla
   **Network** (IP / routing / DHCP / DNS), **Monitoring** (SNMP, syslog), **Power & LED**, **Reboot**.
 - **Advanced** — a raw HiveOS CLI escape hatch (send arbitrary commands, optionally `save config`).
 - **Backup** — capture the running-config to a git-versioned store, with optional secrets and PPSK users.
+- **Restore** — re-apply a saved running-config (additive replay, then `save config`). In the web UI it lives
+  under **Power → Maintenance**; on the CLI it is `restore`.
+- **Firmware upgrade** — pull an image from a URL the AP can reach (TFTP/FTP/HTTP) and reboot to activate it
+  (`save image`). ⚠️ **Lab / untested in v0.1** — validate it against your hardware before relying on it.
 
 ## Fleet & multi-org
 
@@ -37,6 +41,6 @@ The gateway:
 
 ## Not yet
 
-Firmware upgrades, restore-from-backup via the API/UI (the CLI `restore` exists), alerting / thresholds,
-config templates, scheduling, and any non-HiveOS vendor (the driver SPI is ready for them). The project
-README's Roadmap tracks the current plan.
+Alerting / thresholds, config templates, scheduling, and any non-HiveOS vendor (the driver SPI is ready for
+them). Firmware upgrade ships but is **lab/untested** until validated on real hardware. The project README's
+Roadmap tracks the current plan.
