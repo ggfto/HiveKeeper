@@ -13,10 +13,11 @@ import {
   MriSelect,
   MriSwitch,
 } from '@mriqbox/ui-kit'
-import { Activity, Radio as RadioIcon, Send, History } from 'lucide-react'
+import { Activity, Radio as RadioIcon, Send, History, TriangleAlert } from 'lucide-react'
 import { SchemaConfigForm } from './SchemaConfigForm'
 import { ClientsTable } from './ClientsTable'
 import { filterLog } from '../../lib/hiveosParse'
+import { radioAdvisories } from '../../lib/radioAdvisories'
 
 const LOG_FILTERS = [
   { label: 'All levels', value: 'all' },
@@ -184,16 +185,35 @@ export function MonitoringSection({ device, online, loadStatus, loadLog, snmpSec
                     </MriTableRow>
                   </MriTableHeader>
                   <MriTableBody>
-                    {radios.map((r, i) => (
-                      <MriTableRow key={r.name || i}>
-                        <MriTableCell className="font-mono text-xs">{r.name || '—'}</MriTableCell>
-                        <MriTableCell>{r.mode || '—'}</MriTableCell>
-                        <MriTableCell>{r.channel ?? '—'}</MriTableCell>
-                        <MriTableCell>{r.width != null ? `${r.width} MHz` : '—'}</MriTableCell>
-                        <MriTableCell>{r.txPower ?? r.power ?? '—'}</MriTableCell>
-                        <MriTableCell>{r.auto || '—'}</MriTableCell>
-                      </MriTableRow>
-                    ))}
+                    {radios.map((r, i) => {
+                      const advisories = radioAdvisories({
+                        iface: (r.name || '').toLowerCase(),
+                        channel: r.channel,
+                        power: r.txPower ?? r.power,
+                        width: r.width,
+                      })
+                      return (
+                        <MriTableRow key={r.name || i}>
+                          <MriTableCell className="font-mono text-xs">
+                            <span className="flex items-center gap-1.5">
+                              {r.name || '—'}
+                              {advisories.length > 0 && (
+                                <TriangleAlert
+                                  className="h-3.5 w-3.5 text-amber-600 dark:text-amber-400"
+                                  aria-label="radio advisory"
+                                  title={advisories.map((a) => a.message).join('\n\n')}
+                                />
+                              )}
+                            </span>
+                          </MriTableCell>
+                          <MriTableCell>{r.mode || '—'}</MriTableCell>
+                          <MriTableCell>{r.channel ?? '—'}</MriTableCell>
+                          <MriTableCell>{r.width != null ? `${r.width} MHz` : '—'}</MriTableCell>
+                          <MriTableCell>{r.txPower ?? r.power ?? '—'}</MriTableCell>
+                          <MriTableCell>{r.auto || '—'}</MriTableCell>
+                        </MriTableRow>
+                      )
+                    })}
                   </MriTableBody>
                 </MriTable>
               )}

@@ -1,7 +1,8 @@
 import { useState } from 'react'
 import { MriSelect, MriInput, MriButton, MriSectionHeader } from '@mriqbox/ui-kit'
-import { Radio } from 'lucide-react'
+import { Radio, TriangleAlert } from 'lucide-react'
 import { radioCommands } from '../../lib/hiveosCli'
+import { radioAdvisories } from '../../lib/radioAdvisories'
 
 const RADIOS = [
   { label: 'wifi0 (2.4 GHz)', value: 'wifi0' },
@@ -30,6 +31,10 @@ export function RadioForm({ device, onApply, busy }) {
     onApply(device, { commands, save: true })
   }
 
+  // Best-practice advisories for what's typed (channel/power on the selected band). Non-blocking: they explain
+  // the trade-off but never stop an apply.
+  const advisories = radioAdvisories({ iface, channel: channel.trim(), power: power.trim() })
+
   return (
     <div className="space-y-3">
       <MriSectionHeader icon={Radio} title="Radio" />
@@ -55,6 +60,19 @@ export function RadioForm({ device, onApply, busy }) {
           <MriInput value={power} onChange={(e) => setPower(e.target.value)} placeholder="auto or 12" />
         </label>
       </div>
+      {advisories.length > 0 && (
+        <ul className="space-y-2" data-testid="radio-advisories">
+          {advisories.map((a) => (
+            <li
+              key={a.code}
+              className="flex items-start gap-2 rounded-md border border-amber-500/40 bg-amber-500/10 p-2 text-xs text-amber-700 dark:text-amber-400"
+            >
+              <TriangleAlert className="mt-0.5 h-4 w-4 shrink-0" />
+              <span>{a.message}</span>
+            </li>
+          ))}
+        </ul>
+      )}
       <MriButton size="sm" disabled={busy} onClick={apply}>
         Apply radio
       </MriButton>
