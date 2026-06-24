@@ -196,11 +196,23 @@ To add or edit a page, change the markdown in `docs/` — both surfaces pick it 
 
 ## Roadmap
 
-What's planned but not yet built (see [`docs/agent-protocol.md`](docs/agent-protocol.md) for the mode-C
-transport details):
+The full, phased plan — every item's HiveOS CLI grammar confirmed live on an AP230 — lives in
+[`docs/roadmap.md`](docs/roadmap.md). In short:
 
-- **AP features** — firmware upgrade is wired end-to-end but **lab/untested** (validate the HiveOS `save image`
-  path on real hardware); alerting/thresholds, config templates, and scheduling are still open.
+- **Phase 0 — Foundation** — credential management (set/rotate per device or site, end-to-end encrypted to the
+  agent's key, **never stored in the cloud**) and trustworthy adoption (identify HiveOS APs during discovery,
+  flag tested vs untested models, prompt for credentials at adopt time).
+- **Phase 1 — Radio completeness** — channel width, client Tx-power control, band-steering, client
+  load-balancing, and slow-rate pruning, making the built-in radio best-practice advisories actionable.
+- **Phase 2 — Wi-Fi & security** — WPA3-SAE, 802.1X / RADIUS, PPSK, and per-SSID hardening (schedules, client
+  isolation, 802.11k/v).
+- **Phase 3 — Network policy** — user-profiles, VLAN / QoS / rate-limit / firewall, IGMP snooping, LLDP.
+- **Phase 4 — RF tuning** — DFS, short guard interval, A-MPDU / A-MSDU, beamforming, high-density knobs.
+- **Phase 5 — Operations** — firmware-upgrade GA, scheduling, alerting / thresholds, config templates.
+
+Cross-cutting, not phase-bound (see [`docs/agent-protocol.md`](docs/agent-protocol.md) for the mode-C transport
+details):
+
 - **Production security** — SSH host-key verification (today `ACCEPT_ALL`; switch to known-hosts / TOFU before
   any non-lab use), automated agent enrollment (one-time token → CSR → issued/auto-renewed cert, vs today's
   pre-provisioned dev certs), end-to-end secret encryption to the agent's public key, per-user authorization
