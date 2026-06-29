@@ -1,3 +1,12 @@
+# [0.4.0](https://github.com/ggfto/HiveKeeper/compare/v0.3.0...v0.4.0) (2026-06-29)
+
+
+### Features
+
+* manage device credentials end-to-end, sealed to the agent ([c85a0a7](https://github.com/ggfto/HiveKeeper/commit/c85a0a71628746058e81526043aae04a87442ad1))
+* **web:** classify device support level; document Phase 0a as shipped ([ff6bc2f](https://github.com/ggfto/HiveKeeper/commit/ff6bc2ff0cd570d34c17c91921ba01e0e5bb89fc))
+* **web:** identify discovered hosts and set a credential at adopt ([62fedc8](https://github.com/ggfto/HiveKeeper/commit/62fedc878df9d4a4b6d316a08ccbaf22605b8723))
+
 # [0.3.0](https://github.com/ggfto/HiveKeeper/compare/v0.2.0...v0.3.0) (2026-06-24)
 
 
