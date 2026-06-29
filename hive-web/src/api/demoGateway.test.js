@@ -1,8 +1,32 @@
 import { describe, it, expect } from 'vitest'
 import { createDemoGateway } from './demoGateway'
+import { createGateway } from './gateway'
 import { parseSsids, parseAcsp, parseCapwap } from '../lib/hiveosParse'
 
 describe('demoGateway', () => {
+  it('mirrors the real gateway method surface (no missing methods)', () => {
+    const real = createGateway()
+    const demo = createDemoGateway()
+    const realMethods = Object.keys(real).filter((k) => typeof real[k] === 'function')
+    const missing = realMethods.filter((m) => typeof demo[m] !== 'function')
+    expect(missing).toEqual([])
+  })
+
+  it('sets a credential and identifies/adopts a discovered host', async () => {
+    const gw = createDemoGateway()
+    // setCredential returns a credential result, never a secret
+    const cred = await gw.setCredential('hq-agent', { host: '192.168.10.11', deviceId: 'd-rcp', username: 'admin', password: 'Aerohive1' })
+    expect(cred).toMatchObject({ vaultUpdated: true })
+
+    // a discovered host can be identified (model -> support badge) and then adopted
+    const { hosts } = await gw.discover('hq-agent')
+    expect(hosts[0].looksLikeSsh).toBe(true)
+    const inv = await gw.inventory('hq-agent', hosts[0].host)
+    expect(inv.device.model).toBe('AP230')
+    const adopted = await gw.adopt('hq-agent', { host: hosts[1].host })
+    expect(adopted.model).toBe('AP1130')
+  })
+
   it('serves a seeded fleet', async () => {
     const gw = createDemoGateway()
     expect((await gw.sites()).length).toBeGreaterThan(0)

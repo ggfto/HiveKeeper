@@ -184,6 +184,12 @@ export function createDemoGateway() {
   const byIp = (host) => db.devices.find((d) => d.mgmtIp === host)
   const byId = (id) => db.devices.find((d) => d.deviceId === id)
   const connected = (agentId) => db.agents.includes(agentId)
+  // Unadopted hosts a discover sweep turns up — one tested model, one HiveOS-but-untested, so Identify and the
+  // support badge have something believable to show in the demo.
+  const discoverable = {
+    '192.168.10.31': { serial: 'AH01-NEW-0031', model: 'AP230' },
+    '192.168.10.42': { serial: 'AH01-NEW-0042', model: 'AP1130' },
+  }
   const logOp = (opType, host, summary, agentId) =>
     db.operations.unshift({ id: `op-${++opSeq}`, createdAt: new Date().toISOString(), agentId, opType, host, summary })
 
@@ -318,9 +324,29 @@ export function createDemoGateway() {
     inventory: (agentId, host) => {
       if (!connected(agentId)) return fail('the device agent is offline', 503)
       const d = byIp(host)
-      if (!d) return fail(`unknown host ${host}`, 404)
-      logOp('inventory', host, `${d.model} · ${(d.stations || []).length} station(s)`, agentId)
-      return ok({ device: invView(d) })
+      if (d) {
+        logOp('inventory', host, `${d.model} · ${(d.stations || []).length} station(s)`, agentId)
+        return ok({ device: invView(d) })
+      }
+      // An unadopted but discoverable host (the Identify flow): return believable inventory so the model + a
+      // support badge show before adopting.
+      const probe = discoverable[host]
+      if (probe) {
+        logOp('inventory', host, `${probe.model} · identify`, agentId)
+        return ok({
+          device: {
+            serial: probe.serial,
+            model: probe.model,
+            firmwareVersion: 'HiveOS 10.6r1a',
+            hostname: null,
+            hiveName: null,
+            uptime: '0d 0h',
+            stations: [],
+            radios: radios(6, 149),
+          },
+        })
+      }
+      return fail(`unknown host ${host}`, 404)
     },
     backup: (agentId, host) => {
       if (!connected(agentId)) return fail('the device agent is offline', 503)
@@ -340,14 +366,29 @@ export function createDemoGateway() {
     },
     discover: (agentId) => {
       if (!connected(agentId)) return fail('the device agent is offline', 503)
-      return ok({ hosts: [{ host: '192.168.10.31' }, { host: '192.168.10.42' }] })
+      return ok({
+        hosts: [
+          { host: '192.168.10.31', sshBanner: 'SSH-2.0-OpenSSH_8.0', looksLikeSsh: true },
+          { host: '192.168.10.42', sshBanner: 'SSH-2.0-dropbear_2020', looksLikeSsh: true },
+        ],
+      })
     },
     adopt: (agentId, body) => {
-      const serial = `AH01-DEMO-${String(++idSeq).padStart(4, '0')}`
-      const d = ap(uid('d'), serial, 'AP230', body.host, agentId, `Adopted ${body.host}`, db.sites[0].siteId, [])
+      const probe = discoverable[body.host]
+      const model = probe?.model || 'AP230'
+      const serial = probe?.serial || `AH01-DEMO-${String(++idSeq).padStart(4, '0')}`
+      const d = ap(uid('d'), serial, model, body.host, agentId, `Adopted ${body.host}`, db.sites[0].siteId, [])
       db.devices.push(d)
-      logOp('adopt', body.host, 'adopted AP230', agentId)
-      return ok({ deviceId: d.deviceId, serial, model: 'AP230' })
+      logOp('adopt', body.host, `adopted ${model}`, agentId)
+      return ok({ deviceId: d.deviceId, serial, model })
+    },
+    setCredential: (agentId, body = {}) => {
+      if (!connected(agentId)) return fail('the device agent is offline', 503)
+      const credRef = body.deviceId || body.credRef || `cred-${body.host}`
+      const d = byId(body.deviceId) || byIp(body.host)
+      if (d) d.credRef = credRef
+      logOp('set-credential', body.host, `credential set${body.alsoSetOnDevice ? ' · AP password changed' : ''}`, agentId)
+      return ok({ credRef, vaultUpdated: true, deviceUpdated: !!body.alsoSetOnDevice })
     },
     bulk: (op, target) => {
       let pool = db.devices
