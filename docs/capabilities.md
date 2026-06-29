@@ -20,6 +20,10 @@ agent (the same `apply-config` path the **Advanced** escape hatch exposes raw).
 
 Per device, via the web UI ([device configuration](/device-configuration/) explains each section):
 
+- **Credentials** — set or rotate the SSH credential HiveKeeper uses for a device, from the UI. The secret is
+  sealed to the on-prem agent's public key at the gateway (it never persists in the cloud) and stored in the
+  agent's local vault, encrypted at rest. Optionally also changing the admin password on the AP itself is
+  built behind the same flow but stays disabled until the HiveOS grammar is confirmed on real hardware.
 - **Wi-Fi** — create / edit / remove WPA2-PSK SSIDs, with optional VLAN.
 - **Captive portal**, **Mesh/Hive** join, **Radio** (band, channel, width, Tx power), **Client mode**,
   **Network** (IP / routing / DHCP / DNS), **Monitoring** (SNMP, syslog), **Power & LED**, **Reboot**.

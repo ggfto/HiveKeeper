@@ -39,20 +39,25 @@ audit log. Adoption: SSH-banner discovery → adopt (probes `show version`, requ
 The two gaps that block everything else: there is no place to manage AP credentials, and discovery cannot
 tell an AP from any other SSH host.
 
-### 0a. Credential management (per device / per site)
+### 0a. Credential management (per device / per site) — **SHIPPED**
 
-- **Today:** credentials resolve on-prem (`CredentialProvider` → `DefaultCredentialProvider` global, or
-  `VaultCredentialProvider` properties file). The cloud only carries an opaque `credRef`; the vault is
-  hand-edited on the agent host and `credRef` is manually synced. No UI/API.
-- **Build:** make `credRef` a managed entity with a UI form to set/rotate a device's (or site's) credentials.
-  - **Mode B (`hive-server`, no split):** local encrypted credential store + form — straightforward.
-  - **Mode C (gateway + agent):** **passthrough, never persisted in the cloud.** The operator types the secret
-    in the UI; the gateway encrypts it to the **agent's public key** (the README's planned "end-to-end secret
-    encryption to the agent's public key") and forwards it over the existing WebSocket; the agent decrypts and
-    writes its local vault (encrypted at rest). The gateway never stores or logs the secret.
-  - Touch points: `CredentialProvider` SPI (add a writable variant), agent vault write path, a new
-    protocol message `SetCredential`, `GatewayController`, and a `CredentialForm` organism in `hive-web`.
-- **Acceptance:** rotate a device password entirely from the UI; gateway DB/logs contain no plaintext secret.
+Set or rotate a device's SSH credential from the UI; the secret is **sealed to the on-prem agent's public
+key** at the gateway (end-to-end, so the cloud never holds a usable plaintext) and written to the agent's
+local vault, **encrypted at rest**. As built:
+
+- `CredentialProvider` gained a writable variant (`WritableCredentialProvider`) + a `SecretUnsealer` SPI;
+  the agent's `WritableVaultCredentialProvider` encrypts passwords at rest (`HIVEKEEPER_VAULT_KEY`) and still
+  reads legacy plaintext.
+- New `Command.SetCredential` / `Result.CredentialSet` flow through the existing engine/agent pipeline.
+  `EnvelopeCipher` (RSA-OAEP + AES-GCM, `env1:` token; `plain1:` dev fallback) lives in `hive-core.crypto`
+  alongside the promoted `SecretCipher`. The gateway caches each agent's public key from its mTLS cert and
+  seals on `POST /api/agents/{id}/set-credential` (admin) — **synchronous, never a durable job, never
+  persisted, never logged**. A `CredentialForm` section drives it.
+- **Also changing the admin password ON the AP** is built behind a driver seam
+  (`Driver.adminPasswordCommands`) but stays **disabled** until the HiveOS grammar is confirmed live (project
+  rule: never guess CLI). The UI toggle is gated accordingly.
+- **Acceptance met** offline (unit-tested: vault written, no plaintext on the wire, gateway leaks nothing);
+  live rotation against the AP230 + enabling the on-AP change remain to validate when the AP is reachable.
 
 ### 0b. Adoption with identification
 

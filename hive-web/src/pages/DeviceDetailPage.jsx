@@ -22,6 +22,7 @@ import { MONITORING_SECTIONS } from '../lib/configSchema'
 import { parseSsids, parseHives, parseCapwap, parseAcsp, parseLog } from '../lib/hiveosParse'
 import { meshCommands } from '../lib/hiveosCli'
 import { groupNamesFor, siteName } from '../lib/fleet'
+import { supportLevel, supportBadge } from '../lib/deviceSupport'
 
 const SECTIONS = [
   { id: 'overview', label: 'Overview', icon: Boxes },
@@ -258,6 +259,10 @@ export function DeviceDetailPage() {
           variant={online ? 'success' : 'outline'}
           size="sm"
         />
+        {(() => {
+          const badge = supportBadge(supportLevel(device.model))
+          return <MriStatusBadge label={badge.label} variant={badge.variant} size="sm" />
+        })()}
         <MriButton
           size="sm"
           variant="outline"
