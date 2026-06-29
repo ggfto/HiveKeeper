@@ -35,14 +35,14 @@ flowchart TD
 
 | Module | What |
 | --- | --- |
-| `hive-core` | Framework-free engine: `api` (Engine + DTOs), `engine` (LocalEngine), `transport` (sshj), `session` (CLI scraping), `model`, `drivers` (SPI), `spi` (EventSink/CredentialProvider/BackupStore), `tasks`. No Spring/UI/Jackson. |
+| `hive-core` | Framework-free engine: `api` (Engine + DTOs), `engine` (LocalEngine), `transport` (sshj), `session` (CLI scraping), `model`, `drivers` (SPI), `spi` (EventSink / `CredentialProvider` + writable variant / `SecretUnsealer` / BackupStore), `crypto` (AES-GCM `SecretCipher` for at-rest, `EnvelopeCipher` for sealing a secret to an agent's public key), `tasks`. No Spring/UI/Jackson. |
 | `hive-wire` | JSON (de)serialization of the core DTOs. The only module that depends on Jackson. |
 | `hive-protocol` | The serializable gateway↔agent protocol; carries the core `Command` / `Result` / `Event` DTOs verbatim so local and remote are the same contract. |
 | `hive-cli` | picocli front-end: `inventory`, `backup`, and the config commands. Talks to `Engine` + DTOs only. |
 | `hive-server` | Spring Boot REST server (**mode B**): runs the engine in-process and SSHes APs directly. Localhost `:8080`. |
 | `hive-agent` | On-prem agent (**mode C**): dials out to the gateway over WebSocket, runs the **same engine**, and holds the SSH reach to the LAN. Device credentials never leave it. |
 | `hive-gateway` | Multi-tenant control plane (**mode C**): dispatches *intent* to enrolled agents, REST API on `:8090`. Optional `postgres` (RLS) and `oidc` profiles — see [Authentication](/authentication/). |
-| `hive-web` | The web UI (Vite + React). **Not** a Gradle module — a standalone pnpm project. Direct mode → `hive-server`, gateway mode → `hive-gateway`. |
+| `hive-web` | The web UI (Vite + React). **Not** a Gradle module — a standalone pnpm project. **Gateway-only**: every page talks to `hive-gateway` through the `/gw` proxy (solo single-AP and multi-org are gateway run-modes, not separate UIs). |
 
 ## How a request flows in mode C
 
