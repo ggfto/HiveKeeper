@@ -174,4 +174,36 @@ public final class HiveOsDriver implements Driver {
         commands.add("interface " + spec.boundInterface() + " hive " + spec.name());
         return commands;
     }
+
+    @Override
+    public List<String> adminPasswordCommands(String username, String newPassword) {
+        // Grammar AND password policy confirmed live on an AP230 (HiveOS 10.6 / IQ Engine) via `?` help,
+        // `show admin`, and an end-to-end change test:
+        //   admin root-admin <name> password <string>
+        // The device REJECTS a non-compliant password ("password is not valid"), so validate up front to give
+        // a clear error instead of a device round-trip. The default 'admin' user is a root-admin; this targets
+        // that role. A read-write admin would use `admin read-write <name> ...` — use the Advanced CLI for that.
+        if (username == null || username.isBlank()) {
+            throw new IllegalArgumentException("username is required to change the admin password");
+        }
+        validateAdminPassword(username, newPassword);
+        return List.of("admin root-admin " + username + " password " + newPassword);
+    }
+
+    /** The live-confirmed HiveOS admin-password policy: 8-32 chars, ≥1 digit, ≥1 uppercase, and not equal to
+     *  the username or the literal "password". */
+    private static void validateAdminPassword(String username, String password) {
+        if (password == null || password.length() < 8 || password.length() > 32) {
+            throw new IllegalArgumentException("HiveOS admin password must be 8-32 characters");
+        }
+        if (password.chars().noneMatch(Character::isDigit)) {
+            throw new IllegalArgumentException("HiveOS admin password must contain at least one number");
+        }
+        if (password.chars().noneMatch(Character::isUpperCase)) {
+            throw new IllegalArgumentException("HiveOS admin password must contain at least one uppercase letter");
+        }
+        if (password.equalsIgnoreCase(username) || password.equalsIgnoreCase("password")) {
+            throw new IllegalArgumentException("HiveOS admin password must differ from the username and 'password'");
+        }
+    }
 }

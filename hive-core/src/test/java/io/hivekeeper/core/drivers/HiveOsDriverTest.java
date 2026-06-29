@@ -13,6 +13,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class HiveOsDriverTest {
@@ -112,6 +113,25 @@ class HiveOsDriverTest {
         assertTrue(commands.contains("hive hk-hive"));
         assertTrue(commands.contains("hive hk-hive password meshsecret123"));
         assertTrue(commands.contains("interface mgt0 hive hk-hive"));
+    }
+
+    @Test
+    void buildsAdminPasswordCommandForARootAdmin() {
+        // Grammar confirmed live on the AP230: admin root-admin <name> password <string>.
+        assertEquals(List.of("admin root-admin admin password Aerohive1"),
+                driver.adminPasswordCommands("admin", "Aerohive1"));
+    }
+
+    @Test
+    void enforcesTheLiveConfirmedHiveOsPasswordPolicy() {
+        // Policy observed live: 8-32 chars, >=1 digit, >=1 uppercase, != username/'password'.
+        assertThrows(IllegalArgumentException.class, () -> driver.adminPasswordCommands("admin", "Short1"));        // too short
+        assertThrows(IllegalArgumentException.class, () -> driver.adminPasswordCommands("admin", "A" + "a1".repeat(20))); // too long (>32)
+        assertThrows(IllegalArgumentException.class, () -> driver.adminPasswordCommands("admin", "aerohive"));     // no digit/uppercase
+        assertThrows(IllegalArgumentException.class, () -> driver.adminPasswordCommands("admin", "Aerohivex"));    // no digit
+        assertThrows(IllegalArgumentException.class, () -> driver.adminPasswordCommands("admin", "aerohive1"));    // no uppercase
+        assertThrows(IllegalArgumentException.class, () -> driver.adminPasswordCommands("Aerohive1", "Aerohive1")); // == username
+        assertThrows(IllegalArgumentException.class, () -> driver.adminPasswordCommands("", "Aerohive1"));         // no username
     }
 
     @Test

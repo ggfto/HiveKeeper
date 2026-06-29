@@ -202,8 +202,8 @@ The full, phased plan — every item's HiveOS CLI grammar confirmed live on an A
 - **Phase 0 — Foundation** ✅ **shipped** — credential management (set/rotate a device's SSH credential from the
   UI, **sealed to the agent's public key** so it is **never stored in the cloud**, written to the agent's vault
   encrypted at rest) and trustworthy adoption (identify HiveOS APs during discovery, flag tested vs untested
-  models, supply a credential at adopt time). Changing the admin password *on the AP* is built behind a driver
-  seam, disabled until its HiveOS grammar is confirmed live.
+  models, supply a credential at adopt time). Optionally it also changes the admin password *on the AP* itself
+  (grammar + policy confirmed live on an AP230), confirm-gated since a wrong value can lock you out.
 - **Phase 1 — Radio completeness** — channel width, client Tx-power control, band-steering, client
   load-balancing, and slow-rate pruning, making the built-in radio best-practice advisories actionable.
 - **Phase 2 — Wi-Fi & security** — WPA3-SAE, 802.1X / RADIUS, PPSK, and per-SSID hardening (schedules, client

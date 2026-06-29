@@ -53,11 +53,12 @@ local vault, **encrypted at rest**. As built:
   alongside the promoted `SecretCipher`. The gateway caches each agent's public key from its mTLS cert and
   seals on `POST /api/agents/{id}/set-credential` (admin) — **synchronous, never a durable job, never
   persisted, never logged**. A `CredentialForm` section drives it.
-- **Also changing the admin password ON the AP** is built behind a driver seam
-  (`Driver.adminPasswordCommands`) but stays **disabled** until the HiveOS grammar is confirmed live (project
-  rule: never guess CLI). The UI toggle is gated accordingly.
-- **Acceptance met** offline (unit-tested: vault written, no plaintext on the wire, gateway leaks nothing);
-  live rotation against the AP230 + enabling the on-AP change remain to validate when the AP is reachable.
+- **Also changing the admin password ON the AP** is implemented in `HiveOsDriver.adminPasswordCommands`
+  (`admin root-admin <user> password …`) and **enabled** — the grammar AND the password policy (8–32 chars,
+  ≥1 digit, ≥1 uppercase, ≠ username/'password') were **confirmed live on an AP230** with an end-to-end change
+  test. The UI toggle is confirm-gated (a wrong value can lock out the AP, recoverable by reset).
+- **Acceptance met**: unit-tested offline (vault written, no plaintext on the wire, gateway leaks nothing) and
+  the on-AP admin-password change validated end-to-end against the live AP230.
 
 ### 0b. Adoption with identification — **SHIPPED**
 

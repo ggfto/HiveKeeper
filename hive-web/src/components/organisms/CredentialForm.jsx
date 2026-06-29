@@ -71,7 +71,10 @@ export function CredentialForm({ device, onSetCredential, busy, allowOnDevice = 
       {v.alsoSetOnDevice && (
         <div className="flex items-start gap-2 rounded-md border border-destructive/40 bg-destructive/10 p-2 text-xs text-destructive">
           <TriangleAlert className="mt-0.5 h-4 w-4 shrink-0" />
-          <span>A wrong value can lock you out of the AP — recoverable only by resetting it.</span>
+          <span>
+            A wrong value can lock you out of the AP — recoverable only by resetting it. HiveOS requires 8–32
+            characters with at least one number and one uppercase letter, and not equal to the username.
+          </span>
         </div>
       )}
       <MriButton size="sm" disabled={busy} onClick={submit}>

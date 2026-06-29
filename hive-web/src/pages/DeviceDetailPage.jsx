@@ -317,7 +317,7 @@ export function DeviceDetailPage() {
             />
           )}
           {section === 'credentials' && (
-            <CredentialForm device={device} onSetCredential={onSetCredential} busy={busy} />
+            <CredentialForm device={device} onSetCredential={onSetCredential} busy={busy} allowOnDevice />
           )}
           {section === 'wifi' && (
             <WifiSection device={device} loadSsids={loadSsids} configureSsid={onConfigureSsid} busy={busy} />
