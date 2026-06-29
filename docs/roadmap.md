@@ -59,21 +59,17 @@ local vault, **encrypted at rest**. As built:
 - **Acceptance met** offline (unit-tested: vault written, no plaintext on the wire, gateway leaks nothing);
   live rotation against the AP230 + enabling the on-AP change remain to validate when the AP is reachable.
 
-### 0b. Adoption with identification
+### 0b. Adoption with identification — **SHIPPED**
 
-- **Today:** `TcpBannerScanner` only reads the generic SSH banner — it cannot distinguish a HiveOS AP.
-  `HiveOsDriver.recognizes()` (matches `hiveos` / `iq engine` / `aerohive` in `show version`) is the real
-  check, but only runs at adopt. No model allowlist.
-- **Build:**
-  1. **Identity probe in discovery** — after the TCP banner, optionally run an authenticated `show version`
-     (agent default cred) and tag each host as "HiveOS AP (model X)" vs "other SSH host".
-  2. **Support classification** — surface model + a badge: **tested** (AP230 / AP250 / AP630) / **HiveOS,
-     untested** / **unsupported**, in both the adopt result and the device detail. A soft allowlist, not a
-     hard block.
-  3. **Credential prompt at adopt** — let the operator supply a credential during adoption (feeds 0a) instead
-     of silently using the agent default and failing later.
-- **Acceptance:** the discovered-hosts list shows which hosts are adoptable APs *before* adopting; adopting a
-  non-default-credential AP works in one flow.
+- **Identity probe in discovery** — an **Identify** action per discovered host runs an inventory through the
+  agent; a success means a reachable HiveOS AP (and its model), a failure means it did not identify as one.
+- **Support classification** — `supportLevel` (a pure lib) maps a model to a badge: **tested** (AP230 / AP250
+  / AP630) / **HiveOS · untested** / **unsupported**, shown on the discovered host (after Identify) and on the
+  device detail header. A soft signal, not a hard block.
+- **Credential prompt at adopt** — the discovered-hosts panel takes an optional username/password; on adopt the
+  gateway registers the device and then sets its credential through the 0a sealed path, in one flow.
+- **Acceptance met** offline (Identify + adopt-with-credential are unit-tested; the badge reflects the model).
+  Live identify/adopt against the AP230 remains to validate when it is reachable.
 
 ---
 
