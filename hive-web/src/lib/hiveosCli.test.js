@@ -1,6 +1,8 @@
 import { describe, it, expect } from 'vitest'
 import {
   radioCommands,
+  radioProfileCommands,
+  minRateCommands,
   hostnameCommands,
   meshCommands,
   hiveTuningCommands,
@@ -29,6 +31,72 @@ describe('radioCommands', () => {
   it('returns nothing when no field is set', () => {
     expect(radioCommands('wifi0', {})).toEqual([])
     expect(radioCommands('wifi0')).toEqual([])
+  })
+  // Confirmed via `?`: interface wifiN radio tx-power-control <1-20|auto> (client target power).
+  it('builds a tx-power-control line', () => {
+    expect(radioCommands('wifi1', { txPowerControl: '15' })).toEqual([
+      'interface wifi1 radio tx-power-control 15',
+    ])
+    expect(radioCommands('wifi1', { txPowerControl: 'auto' })).toEqual([
+      'interface wifi1 radio tx-power-control auto',
+    ])
+  })
+})
+
+// Confirmed via `?`: radio profile <name> channel-width 20|40|80 ; band-steering ; client-load-balance ;
+//   max-client <n>. Channel width and the density knobs live on the named profile, not the wifiN interface.
+describe('radioProfileCommands', () => {
+  it('sets channel width, band-steering, load-balance and max-client on the profile', () => {
+    expect(
+      radioProfileCommands('radio_ac0', {
+        channelWidth: '40',
+        bandSteering: 'enable',
+        clientLoadBalance: 'enable',
+        maxClient: '60',
+      }),
+    ).toEqual([
+      'radio profile radio_ac0 channel-width 40',
+      'radio profile radio_ac0 band-steering',
+      'radio profile radio_ac0 client-load-balance',
+      'radio profile radio_ac0 max-client 60',
+    ])
+  })
+  it('emits the negation form to disable band-steering and load-balance', () => {
+    expect(radioProfileCommands('radio_ng0', { bandSteering: 'disable', clientLoadBalance: 'disable' })).toEqual([
+      'no radio profile radio_ng0 band-steering',
+      'no radio profile radio_ng0 client-load-balance',
+    ])
+  })
+  it('leaves unchanged fields out and returns nothing without a profile', () => {
+    expect(radioProfileCommands('radio_ac0', {})).toEqual([])
+    expect(radioProfileCommands('', { channelWidth: '80' })).toEqual([])
+    expect(radioProfileCommands('  ', { channelWidth: '80' })).toEqual([])
+  })
+})
+
+// Confirmed live on the AP230 via `?`: ssid <name> 11g-rate-set <rate>[-basic] [<rate>[-basic] ...] (one line,
+// ascending Mbps, the lowest token as -basic). Rates below the lowest token are dropped from the air entirely —
+// that is how slow 802.11b basic rates (1/2/5.5/11) are pruned to save airtime. 11a (5 GHz) has no <11 rates.
+describe('minRateCommands', () => {
+  it('builds a 2.4 GHz (11g) rate set that drops everything below the chosen minimum', () => {
+    expect(minRateCommands('HK-JOB', { band: '2.4', minRate: '12' })).toEqual([
+      'ssid HK-JOB 11g-rate-set 12-basic 18 24 36 48 54',
+    ])
+  })
+  it('keeps a fractional rate like 5.5 when the minimum allows it', () => {
+    expect(minRateCommands('HK-JOB', { band: '2.4', minRate: '5.5' })).toEqual([
+      'ssid HK-JOB 11g-rate-set 5.5-basic 6 9 11 12 18 24 36 48 54',
+    ])
+  })
+  it('uses the 11a ladder for 5 GHz', () => {
+    expect(minRateCommands('HK-JOB', { band: '5', minRate: '24' })).toEqual([
+      'ssid HK-JOB 11a-rate-set 24-basic 36 48 54',
+    ])
+  })
+  it('returns nothing without an ssid, band, or minimum rate', () => {
+    expect(minRateCommands('', { band: '2.4', minRate: '12' })).toEqual([])
+    expect(minRateCommands('HK-JOB', { minRate: '12' })).toEqual([])
+    expect(minRateCommands('HK-JOB', { band: '2.4' })).toEqual([])
   })
 })
 

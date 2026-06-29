@@ -204,8 +204,10 @@ The full, phased plan — every item's HiveOS CLI grammar confirmed live on an A
   encrypted at rest) and trustworthy adoption (identify HiveOS APs during discovery, flag tested vs untested
   models, supply a credential at adopt time). Optionally it also changes the admin password *on the AP* itself
   (grammar + policy confirmed live on an AP230), confirm-gated since a wrong value can lock you out.
-- **Phase 1 — Radio completeness** — channel width, client Tx-power control, band-steering, client
-  load-balancing, and slow-rate pruning, making the built-in radio best-practice advisories actionable.
+- **Phase 1 — Radio completeness** ✅ **shipped** — channel width, band-steering and client load-balancing on the
+  named radio profile, client Tx-power control (`tx-power-control`) on the radio, a per-profile/per-SSID client
+  cap, and a per-SSID minimum data rate that prunes slow 802.11b basic rates — all making the built-in radio
+  best-practice advisories actionable. Every line's grammar was confirmed live on the AP230.
 - **Phase 2 — Wi-Fi & security** — WPA3-SAE, 802.1X / RADIUS, PPSK, and per-SSID hardening (schedules, client
   isolation, 802.11k/v).
 - **Phase 3 — Network policy** — user-profiles, VLAN / QoS / rate-limit / firewall, IGMP snooping, LLDP.

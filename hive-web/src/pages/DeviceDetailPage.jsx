@@ -9,6 +9,7 @@ import { HelpPopover } from '../components/molecules/HelpPopover'
 import { WifiSection } from '../components/organisms/WifiSection'
 import { MeshSection } from '../components/organisms/MeshSection'
 import { RadioForm } from '../components/organisms/RadioForm'
+import { RadioProfileForm } from '../components/organisms/RadioProfileForm'
 import { NetworkSection } from '../components/organisms/NetworkSection'
 import { ClientModeForm } from '../components/organisms/ClientModeForm'
 import { AdvancedConfigForm } from '../components/organisms/AdvancedConfigForm'
@@ -320,7 +321,13 @@ export function DeviceDetailPage() {
             <CredentialForm device={device} onSetCredential={onSetCredential} busy={busy} allowOnDevice />
           )}
           {section === 'wifi' && (
-            <WifiSection device={device} loadSsids={loadSsids} configureSsid={onConfigureSsid} busy={busy} />
+            <WifiSection
+              device={device}
+              loadSsids={loadSsids}
+              configureSsid={onConfigureSsid}
+              onApply={onApplyConfig}
+              busy={busy}
+            />
           )}
           {section === 'captiveportal' && (
             <CaptivePortalForm device={device} onApply={onApplyConfig} busy={busy} />
@@ -334,7 +341,12 @@ export function DeviceDetailPage() {
               busy={busy}
             />
           )}
-          {section === 'radio' && <RadioForm device={device} onApply={onApplyConfig} busy={busy} />}
+          {section === 'radio' && (
+            <div className="space-y-8">
+              <RadioForm device={device} onApply={onApplyConfig} busy={busy} />
+              <RadioProfileForm device={device} onApply={onApplyConfig} busy={busy} />
+            </div>
+          )}
           {section === 'clientmode' && <ClientModeForm device={device} onApply={onApplyConfig} busy={busy} />}
           {section === 'network' && <NetworkSection device={device} onApply={onApplyConfig} busy={busy} />}
           {section === 'monitoring' && (

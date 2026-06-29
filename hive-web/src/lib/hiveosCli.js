@@ -5,13 +5,66 @@
  * vendor-agnostic; this UI-side knowledge can later move into a driver generator for multi-vendor support.
  */
 
-/** Radio settings for one radio interface (wifi0 = 2.4 GHz, wifi1 = 5 GHz). Blank fields are left unchanged. */
-export function radioCommands(iface, { channel, power, mode } = {}) {
+/**
+ * Radio settings for one radio interface (wifi0 = 2.4 GHz, wifi1 = 5 GHz). Blank fields are left unchanged.
+ * `tx-power-control` is the client target power (1-20|auto) — distinct from `power` (the AP's own TX power); it
+ * addresses AP<->client asymmetry / sticky clients. Channel width and the density knobs are NOT here — they live
+ * on the named radio profile (see radioProfileCommands).
+ */
+export function radioCommands(iface, { channel, power, mode, txPowerControl } = {}) {
   const cmds = []
   if (channel) cmds.push(`interface ${iface} radio channel ${channel}`)
   if (power) cmds.push(`interface ${iface} radio power ${power}`)
+  if (txPowerControl) cmds.push(`interface ${iface} radio tx-power-control ${txPowerControl}`)
   if (mode) cmds.push(`interface ${iface} mode ${mode}`)
   return cmds
+}
+
+/**
+ * Named radio-profile tuning (HiveOS keeps channel width and the density knobs on the profile a wifiN interface
+ * references, not on the interface itself — defaults `radio_ng0` for 2.4 GHz, `radio_ac0` for 5 GHz). Confirmed
+ * grammar: `radio profile <name> channel-width 20|40|80`, `radio profile <name> band-steering`,
+ * `radio profile <name> client-load-balance`, `radio profile <name> max-client <n>`. band-steering and
+ * client-load-balance are toggles ('enable'|'disable'|'' unchanged), the latter emitting the `no ...` negation.
+ * BLAST RADIUS: a profile may be shared across interfaces/APs, so a change here is wider than a per-interface
+ * channel/power tweak — the caller should surface which profile a radio uses.
+ */
+export function radioProfileCommands(profile, { channelWidth, bandSteering, clientLoadBalance, maxClient } = {}) {
+  const p = (profile || '').trim()
+  if (!p) return []
+  const cmds = []
+  if (channelWidth) cmds.push(`radio profile ${p} channel-width ${channelWidth}`)
+  if (bandSteering === 'enable') cmds.push(`radio profile ${p} band-steering`)
+  if (bandSteering === 'disable') cmds.push(`no radio profile ${p} band-steering`)
+  if (clientLoadBalance === 'enable') cmds.push(`radio profile ${p} client-load-balance`)
+  if (clientLoadBalance === 'disable') cmds.push(`no radio profile ${p} client-load-balance`)
+  if (maxClient) cmds.push(`radio profile ${p} max-client ${maxClient}`)
+  return cmds
+}
+
+// Data-rate ladders (Mbps, ascending) confirmed live on the AP230. 11g (2.4 GHz) includes the slow 802.11b
+// rates; 11a (5 GHz) starts at 6. Fractional 5.5 is kept as a number and stringifies to "5.5".
+const RATES_11G = [1, 2, 5.5, 6, 9, 11, 12, 18, 24, 36, 48, 54]
+const RATES_11A = [6, 9, 12, 18, 24, 36, 48, 54]
+
+/**
+ * Prune slow basic rates by setting a minimum data rate on an SSID (a large high-density airtime win). HiveOS
+ * grammar confirmed live: `ssid <name> 11g-rate-set <rate>[-basic] [<rate>[-basic] ...]` (2.4 GHz) /
+ * `11a-rate-set` (5 GHz) — one line, ascending Mbps, the lowest token marked `-basic` (mandatory) and the rest
+ * optional. Every rate below the minimum is left out, so it is removed from the air entirely (1/2/5.5/11 Mbps
+ * 11b clients can no longer associate at those rates). band: '2.4' | '5'. Nothing without ssid+band+minRate.
+ */
+export function minRateCommands(ssid, { band, minRate } = {}) {
+  const name = (ssid || '').trim()
+  const min = Number(minRate)
+  if (!name || !Number.isFinite(min)) return []
+  const ladder = band === '2.4' ? RATES_11G : band === '5' ? RATES_11A : null
+  if (!ladder) return []
+  const kept = ladder.filter((r) => r >= min)
+  if (kept.length === 0) return []
+  const keyword = band === '2.4' ? '11g-rate-set' : '11a-rate-set'
+  const tokens = kept.map((r, i) => (i === 0 ? `${r}-basic` : `${r}`))
+  return [`ssid ${name} ${keyword} ${tokens.join(' ')}`]
 }
 
 /** Set the AP hostname (1-32 chars). */

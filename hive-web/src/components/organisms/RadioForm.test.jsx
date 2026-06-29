@@ -43,4 +43,15 @@ describe('RadioForm', () => {
     fireEvent.change(screen.getByPlaceholderText('auto or 12'), { target: { value: '12' } })
     expect(screen.queryByTestId('radio-advisories')).not.toBeInTheDocument()
   })
+
+  it('applies a client target power (tx-power-control) line', () => {
+    const onApply = vi.fn()
+    render(<RadioForm device={device} onApply={onApply} />)
+    fireEvent.change(screen.getByPlaceholderText('auto or 15'), { target: { value: '15' } })
+    fireEvent.click(screen.getByRole('button', { name: /apply radio/i }))
+    expect(onApply).toHaveBeenCalledWith(device, {
+      commands: ['interface wifi0 radio tx-power-control 15'],
+      save: true,
+    })
+  })
 })

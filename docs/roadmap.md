@@ -76,22 +76,29 @@ local vault, **encrypted at rest**. As built:
 
 ## Phase 1 — Radio completeness (closes the latency/density story)
 
-Makes the new `radioAdvisories` warnings *actionable*. Note the HiveOS split confirmed on the AP230: the
+Makes the new `radioAdvisories` warnings *actionable*. **SHIPPED** — channel width, client target power,
+band-steering, client load-balancing and the per-profile max-client cap are live in the **Radio** section (a
+`radioProfileCommands` builder + the `RadioProfileForm` organism, both unit-tested; `tx-power-control` added to
+the existing `RadioForm`), and **slow-rate pruning** ships as a minimum-data-rate picker in the **Wi-Fi**
+section (`minRateCommands` + a block in `WifiSection`). The channel-width advisory renders next to the profile
+control. The rate-set grammar AND a generated line were **confirmed live on the AP230** (`ssid <name>
+11g-rate-set 12-basic 18 24 36 48 54` applied to running-config and reverted). Note the HiveOS split confirmed
+on the AP230: the
 `interface wifiN radio` menu has `channel`, `power`/`txpower`, `tx-power-control`, `range`, `rx-sop`,
 `ed-threshold`, `antenna`, `dfs-backup-channel` — but **channel width and most density knobs live on the
 named radio profile** (`radio_ng0` 2.4 GHz, `radio_ac0` 5 GHz) that interfaces reference.
 
-- **Channel width** — `radio profile <name> channel-width 20|40|80`. Read which profile each `wifiN` uses and
-  show its blast radius (a profile may be shared across interfaces/APs — wider than per-interface channel).
-- **Client target power** — `interface wifiN radio tx-power-control <1-20|auto>` (addresses AP↔client
+- ✅ **Channel width** — `radio profile <name> channel-width 20|40|80`. The form surfaces the blast radius (a
+  profile may be shared across interfaces/APs — wider than per-interface channel) and shows the width advisory.
+- ✅ **Client target power** — `interface wifiN radio tx-power-control <1-20|auto>` (addresses AP↔client
   asymmetry / sticky clients).
-- **Band-steering** — `radio profile <name> band-steering` (push dual-band clients to 5 GHz).
-- **Client load-balancing** — `radio profile <name> client-load-balance` (spread clients across hive members).
-- **Drop slow basic rates** — `ssid <name> 11g-rate-set` / `11a-rate-set` (kill 1/2/5.5/11 Mbps 11b rates that
-  hog airtime — a large high-density win).
-- **Max clients** — `ssid <name> max-client` and `radio profile <name> max-client`.
-
-Wire the advisories (`radioAdvisories`) to suggest the exact fix and pre-fill these controls.
+- ✅ **Band-steering** — `radio profile <name> band-steering` (push dual-band clients to 5 GHz).
+- ✅ **Client load-balancing** — `radio profile <name> client-load-balance` (spread clients across hive members).
+- ✅ **Drop slow basic rates** — `ssid <name> 11g-rate-set` / `11a-rate-set` (kill 1/2/5.5/11 Mbps 11b rates that
+  hog airtime — a large high-density win). A minimum-data-rate picker in the Wi-Fi section; the lowest kept rate
+  becomes the only `-basic` (mandatory) rate, dropping everything slower from the air. Confirmed live on the AP230.
+- ✅ **Max clients (per profile)** — `radio profile <name> max-client`. (`ssid <name> max-client` belongs with
+  the per-SSID hardening in Phase 2.)
 
 ---
 

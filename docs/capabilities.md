@@ -25,9 +25,16 @@ Per device, via the web UI ([device configuration](/device-configuration/) expla
   agent's local vault, encrypted at rest. Optionally it also changes the admin password **on the AP itself**
   (`admin root-admin <user> password …`, validated live on an AP230 — HiveOS requires 8–32 chars with a number
   and an uppercase letter); a wrong value can lock you out, so it is confirm-gated.
-- **Wi-Fi** — create / edit / remove WPA2-PSK SSIDs, with optional VLAN.
-- **Captive portal**, **Mesh/Hive** join, **Radio** (band, channel, width, Tx power), **Client mode**,
-  **Network** (IP / routing / DHCP / DNS), **Monitoring** (SNMP, syslog), **Power & LED**, **Reboot**.
+- **Wi-Fi** — create / edit / remove WPA2-PSK SSIDs, with optional VLAN, and a per-SSID **minimum data rate**
+  that prunes slow 802.11b basic rates (1/2/5.5/11 Mbps) to reclaim airtime in dense deployments.
+- **Captive portal**, **Mesh/Hive** join, **Client mode**, **Network** (IP / routing / DHCP / DNS),
+  **Monitoring** (SNMP, syslog), **Power & LED**, **Reboot**.
+- **Radio** — per-interface channel, Tx power, operational mode, and **client target power**
+  (`tx-power-control`); plus the named **radio profile** that interfaces reference: **channel width**
+  (20/40/80 MHz), **band-steering**, **client load-balancing**, and a per-profile **max-clients** cap.
+  Best-practice advisories (channel overlap, wide channels, high power) flag settings likely to hurt latency
+  under client density, right next to the control that fixes them. A profile can be shared across interfaces
+  and APs, so a profile change has a wider blast radius than a per-interface tweak.
 - **Advanced** — a raw HiveOS CLI escape hatch (send arbitrary commands, optionally `save config`).
 - **Backup** — capture the running-config to a git-versioned store, with optional secrets and PPSK users.
 - **Restore** — re-apply a saved running-config (additive replay, then `save config`). In the web UI it lives

@@ -23,10 +23,16 @@ export function RadioForm({ device, onApply, busy }) {
   const [iface, setIface] = useState('wifi0')
   const [channel, setChannel] = useState('')
   const [power, setPower] = useState('')
+  const [txPowerControl, setTxPowerControl] = useState('')
   const [mode, setMode] = useState('')
 
   const apply = () => {
-    const commands = radioCommands(iface, { channel: channel.trim(), power: power.trim(), mode })
+    const commands = radioCommands(iface, {
+      channel: channel.trim(),
+      power: power.trim(),
+      txPowerControl: txPowerControl.trim(),
+      mode,
+    })
     if (commands.length === 0) return
     onApply(device, { commands, save: true })
   }
@@ -59,7 +65,20 @@ export function RadioForm({ device, onApply, busy }) {
           <span className="text-xs text-muted-foreground">Power (dBm)</span>
           <MriInput value={power} onChange={(e) => setPower(e.target.value)} placeholder="auto or 12" />
         </label>
+        <label className="flex flex-col gap-1">
+          <span className="text-xs text-muted-foreground">Client target power (dBm)</span>
+          <MriInput
+            value={txPowerControl}
+            onChange={(e) => setTxPowerControl(e.target.value)}
+            placeholder="auto or 15"
+          />
+        </label>
       </div>
+      <p className="text-xs text-muted-foreground">
+        Client target power (<code className="font-mono">tx-power-control</code>, 1–20 dBm or{' '}
+        <code className="font-mono">auto</code>) steers the AP toward clients of a given strength — it helps with
+        AP↔client asymmetry and sticky clients, and is distinct from the AP&apos;s own TX power above.
+      </p>
       {advisories.length > 0 && (
         <ul className="space-y-2" data-testid="radio-advisories">
           {advisories.map((a) => (

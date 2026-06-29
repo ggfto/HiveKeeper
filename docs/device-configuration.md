@@ -17,10 +17,10 @@ panels) are strictly read-only. The agent holds the device credential — the ga
 | --- | --- |
 | **Overview** | HiveKeeper metadata (label, site, groups) and the read-only inventory header. |
 | **Credentials** | Set / rotate the SSH credential HiveKeeper uses for this AP. The secret is sealed to the agent's key (never stored in the cloud) and written to the agent's vault, encrypted at rest. An optional, confirm-gated "also change the password on the AP" toggle rotates the device's admin password too (HiveOS policy: 8–32 chars, ≥1 number, ≥1 uppercase). |
-| **Wi-Fi** | Create / edit / remove WPA2-PSK SSIDs, with an optional VLAN. Reads the live SSID list from `show running-config`. |
+| **Wi-Fi** | Create / edit / remove WPA2-PSK SSIDs, with an optional VLAN. Reads the live SSID list from `show running-config`. Also a per-SSID **minimum data rate** picker (2.4 / 5 GHz) that drops slow basic rates — the lowest kept rate becomes mandatory and everything slower is removed from the air, reclaiming airtime in dense deployments. |
 | **Captive portal** | A walled-garden captive portal (web directory, HTTP port, allowed hosts). |
 | **Mesh** | Join / configure a Hive (mesh): name + shared key, interface binding, thresholds. Reads `show hive`. |
-| **Radio** | Per-band radio settings (2.4 / 5 / 6 GHz): channel, width, Tx power. |
+| **Radio** | Per-interface settings (wifi0 = 2.4 GHz, wifi1 = 5 GHz): channel, Tx power, operational mode, and **client target power** (`tx-power-control`). Below it, the named **radio profile** the interfaces reference (defaults `radio_ng0` / `radio_ac0`): **channel width** (20/40/80 MHz), **band-steering**, **client load-balancing**, and a per-profile **max-clients** cap. ⚠️ A profile may be shared across interfaces and APs, so changes here have a wider blast radius than a per-interface tweak. Best-practice advisories sit next to the controls. |
 | **Client mode** | Run the AP as a wireless client to an upstream SSID. |
 | **Network** | IP address / netmask / default gateway, management & native VLAN, DNS. |
 | **Monitoring** | SNMP and syslog, plus a live panel: connected clients, per-radio status, recent on-AP log. |

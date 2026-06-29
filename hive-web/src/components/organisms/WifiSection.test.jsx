@@ -45,4 +45,32 @@ describe('WifiSection', () => {
     fireEvent.click(screen.getByRole('button', { name: /add ssid/i }))
     expect(configureSsid).toHaveBeenCalledWith(device, { name: 'Lab', psk: 'pass1234', vlan: 5, remove: false })
   })
+
+  it('applies a minimum data rate (rate-set) for the chosen SSID via apply-config', async () => {
+    const loadSsids = vi.fn().mockResolvedValue(ssids)
+    const onApply = vi.fn()
+    render(<WifiSection device={device} loadSsids={loadSsids} configureSsid={vi.fn()} onApply={onApply} />)
+    await screen.findByLabelText(/minimum rate/i)
+    fireEvent.change(screen.getByLabelText(/^ssid$/i), { target: { value: 'HK-JOB' } })
+    fireEvent.change(screen.getByLabelText(/minimum rate/i), { target: { value: '12' } })
+    fireEvent.click(screen.getByRole('button', { name: /apply minimum rate/i }))
+    expect(onApply).toHaveBeenCalledWith(device, {
+      commands: ['ssid HK-JOB 11g-rate-set 12-basic 18 24 36 48 54'],
+      save: true,
+    })
+  })
+
+  it('switches the rate ladder to 11a for the 5 GHz band', async () => {
+    const loadSsids = vi.fn().mockResolvedValue(ssids)
+    const onApply = vi.fn()
+    render(<WifiSection device={device} loadSsids={loadSsids} configureSsid={vi.fn()} onApply={onApply} />)
+    await screen.findByLabelText(/minimum rate/i)
+    fireEvent.change(screen.getByLabelText(/band/i), { target: { value: '5' } })
+    fireEvent.change(screen.getByLabelText(/minimum rate/i), { target: { value: '24' } })
+    fireEvent.click(screen.getByRole('button', { name: /apply minimum rate/i }))
+    expect(onApply).toHaveBeenCalledWith(device, {
+      commands: ['ssid TESTE 11a-rate-set 24-basic 36 48 54'],
+      save: true,
+    })
+  })
 })

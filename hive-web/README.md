@@ -40,8 +40,10 @@ Pages (gateway mode):
   tested/untested badge), and adopt new devices — optionally supplying a credential at adopt time.
 - **Devices** — the managed-fleet table; open one to manage it.
 - **Device detail** — a per-AP page with config sections: **Overview** (label/site/groups + inventory/backup),
-  **Credentials** (set/rotate the SSH credential, sealed to the agent), **Wi-Fi** (WPA2-PSK SSIDs + VLAN),
-  **Captive portal**, **Mesh**, **Radio** (band/channel/width/Tx power), **Client mode**, **Network**
+  **Credentials** (set/rotate the SSH credential, sealed to the agent), **Wi-Fi** (WPA2-PSK SSIDs + VLAN + a
+  per-SSID minimum data rate), **Captive portal**, **Mesh**, **Radio** (channel/Tx power/mode + client target
+  power, plus the radio profile: channel width, band-steering, client load-balancing, max-client), **Client
+  mode**, **Network**
   (IP/routing/DHCP/DNS), **Monitoring** (SNMP/syslog + live clients/radios/log), **Advanced** (raw HiveOS CLI),
   and **Power** (reboot + LED).
 - **Sites & groups** — organize the fleet.
