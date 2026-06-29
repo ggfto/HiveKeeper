@@ -11,7 +11,7 @@ import picocli.CommandLine;
 import java.util.concurrent.Callable;
 
 @CommandLine.Command(name = "configure-ssid", mixinStandardHelpOptions = true,
-        description = "Create or remove a WPA2-PSK SSID (optionally on a VLAN) and save the config.")
+        description = "Create or remove an SSID (optionally on a VLAN) and save the config.")
 final class ConfigureSsidCmd implements Callable<Integer> {
 
     @CommandLine.Mixin
@@ -20,22 +20,58 @@ final class ConfigureSsidCmd implements Callable<Integer> {
     @CommandLine.Option(names = {"-n", "--name"}, required = true, description = "SSID name")
     String name;
 
-    @CommandLine.Option(names = {"-k", "--psk"}, description = "WPA2 passphrase (required unless --remove)")
+    @CommandLine.Option(names = {"-k", "--psk"}, description = "Passphrase (required for keyed suites unless --remove)")
     String psk;
 
     @CommandLine.Option(names = "--vlan", description = "VLAN id to bind via a user-profile")
     Integer vlan;
 
+    @CommandLine.Option(names = "--security", defaultValue = SsidSpec.WPA2_PSK,
+            description = "Security suite: ${COMPLETION-CANDIDATES} (default: ${DEFAULT-VALUE})",
+            completionCandidates = SecuritySuites.class)
+    String security;
+
+    @CommandLine.Option(names = "--radius-server", description = "RADIUS server IP/host (enterprise 802.1X suites)")
+    String radiusServer;
+
+    @CommandLine.Option(names = "--radius-secret", description = "RADIUS shared secret (enterprise 802.1X suites)")
+    String radiusSecret;
+
+    @CommandLine.Option(names = "--radius-auth-port", description = "RADIUS authentication port (optional)")
+    Integer radiusAuthPort;
+
     @CommandLine.Option(names = "--remove", description = "Remove the SSID instead of creating it")
     boolean remove;
 
+    /** The selectable suites, so picocli can list and tab-complete them. */
+    static final class SecuritySuites extends java.util.ArrayList<String> {
+        SecuritySuites() {
+            super(java.util.List.of(SsidSpec.OPEN, SsidSpec.WPA2_PSK, SsidSpec.WPA3_SAE,
+                    SsidSpec.WPA2_8021X, SsidSpec.WPA3_8021X));
+        }
+    }
+
     @Override
     public Integer call() {
-        if (!remove && (psk == null || psk.isBlank())) {
-            System.err.println("--psk is required to create an SSID");
+        boolean enterprise = !remove && SsidSpec.ENTERPRISE_SUITES.contains(security);
+        boolean keyed = !remove && SsidSpec.PSK_SUITES.contains(security);
+        if (keyed && (psk == null || psk.isBlank())) {
+            System.err.println("--psk is required to create a " + security + " SSID");
             return 2;
         }
-        SsidSpec spec = remove ? SsidSpec.removal(name) : SsidSpec.create(name, psk, vlan);
+        if (enterprise && (radiusServer == null || radiusServer.isBlank() || radiusSecret == null || radiusSecret.isBlank())) {
+            System.err.println("--radius-server and --radius-secret are required for " + security);
+            return 2;
+        }
+        SsidSpec spec;
+        if (remove) {
+            spec = SsidSpec.removal(name);
+        } else if (enterprise) {
+            spec = SsidSpec.createEnterprise(name, vlan, security,
+                    new SsidSpec.RadiusSpec(radiusServer, radiusSecret, radiusAuthPort));
+        } else {
+            spec = SsidSpec.create(name, psk, vlan, security);
+        }
         DeviceRef ref = DeviceRef.ssh(conn.host, conn.port);
         Engine engine = HiveCore.localEngine(CliSupport.credentials(conn), CliSupport.NO_STORE);
         try {

@@ -25,8 +25,12 @@ Per device, via the web UI ([device configuration](/device-configuration/) expla
   agent's local vault, encrypted at rest. Optionally it also changes the admin password **on the AP itself**
   (`admin root-admin <user> password …`, validated live on an AP230 — HiveOS requires 8–32 chars with a number
   and an uppercase letter); a wrong value can lock you out, so it is confirm-gated.
-- **Wi-Fi** — create / edit / remove WPA2-PSK SSIDs, with optional VLAN, and a per-SSID **minimum data rate**
-  that prunes slow 802.11b basic rates (1/2/5.5/11 Mbps) to reclaim airtime in dense deployments.
+- **Wi-Fi** — create / edit / remove SSIDs on a chosen **security suite** (Open, WPA2-PSK, **WPA3-SAE**, or
+  **802.1X Enterprise** — WPA2/WPA3 — bound to a **RADIUS** server), with optional VLAN. Per-SSID **hardening**
+  (hide-SSID, client cap, client isolation, DTIM, schedule, 802.11k/v), a **minimum data rate** that prunes slow
+  802.11b basic rates (1/2/5.5/11 Mbps) to reclaim airtime, and **PPSK** (per-user PSK) with the **self-registration**
+  model — a HiveAP serves PPSK and hosts the enrolment portal (optionally RADIUS-authenticated) so users register and
+  the AP issues keys locally. HiveKeeper configures the model; it does not mint individual keys.
 - **Captive portal**, **Mesh/Hive** join, **Client mode**, **Network** (IP / routing / DHCP / DNS),
   **Monitoring** (SNMP, syslog), **Power & LED**, **Reboot**.
 - **Radio** — per-interface channel, Tx power, operational mode, and **client target power**

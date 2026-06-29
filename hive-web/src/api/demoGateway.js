@@ -229,7 +229,7 @@ export function createDemoGateway() {
       if (!body.remove) {
         d.ssids.push({
           name: body.name,
-          security: 'wpa2-aes-psk',
+          security: body.security || 'wpa2-aes-psk',
           vlan: body.vlan ?? null,
           radios: ['wifi0', 'wifi1'],
         })

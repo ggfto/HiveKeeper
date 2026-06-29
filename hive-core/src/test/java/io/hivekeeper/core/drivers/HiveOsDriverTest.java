@@ -99,6 +99,33 @@ class HiveOsDriverTest {
     }
 
     @Test
+    void buildsWpa3SaeSsidWithAsciiKey() {
+        List<String> commands = driver.ssidCommands(SsidSpec.create("HK3", "secretpass", null, SsidSpec.WPA3_SAE));
+
+        assertTrue(commands.contains("security-object HK3 security protocol-suite wpa3-sae ascii-key secretpass"));
+        assertTrue(commands.contains("ssid HK3 security-object HK3"));
+    }
+
+    @Test
+    void buildsOpenSsidWithoutAKey() {
+        List<String> commands = driver.ssidCommands(SsidSpec.create("HKguest", null, null, SsidSpec.OPEN));
+
+        assertTrue(commands.contains("security-object HKguest security protocol-suite open"));
+        assertFalse(commands.stream().anyMatch(c -> c.contains("ascii-key")));
+    }
+
+    @Test
+    void buildsEnterpriseSsidBindingARadiusServer() {
+        SsidSpec.RadiusSpec radius = new SsidSpec.RadiusSpec("10.0.0.5", "r4dsecret", 1812);
+        List<String> commands = driver.ssidCommands(SsidSpec.createEnterprise("Corp", null, SsidSpec.WPA2_8021X, radius));
+
+        assertTrue(commands.contains("security-object Corp security protocol-suite wpa2-aes-8021x"));
+        assertTrue(commands.contains(
+                "security-object Corp security aaa radius-server primary 10.0.0.5 shared-secret r4dsecret auth-port 1812"));
+        assertFalse(commands.stream().anyMatch(c -> c.contains("ascii-key")));
+    }
+
+    @Test
     void buildsSsidRemoveCommands() {
         List<String> commands = driver.ssidCommands(SsidSpec.removal("HK"));
 

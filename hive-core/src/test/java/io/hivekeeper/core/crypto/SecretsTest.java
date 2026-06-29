@@ -17,6 +17,8 @@ class SecretsTest {
         assertEquals("security-object HK security protocol-suite wpa2-aes-psk ascii-key ***",
                 Secrets.redact("security-object HK security protocol-suite wpa2-aes-psk ascii-key hunter2"));
         assertEquals("hive lab password ***", Secrets.redact("hive lab password s3cr3t"));
+        assertEquals("security-object E security aaa radius-server primary 10.0.0.5 shared-secret ***",
+                Secrets.redact("security-object E security aaa radius-server primary 10.0.0.5 shared-secret r4dsecret"));
     }
 
     @Test

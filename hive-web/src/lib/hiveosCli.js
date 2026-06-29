@@ -67,6 +67,69 @@ export function minRateCommands(ssid, { band, minRate } = {}) {
   return [`ssid ${name} ${keyword} ${tokens.join(' ')}`]
 }
 
+/**
+ * Per-SSID hardening / tuning. Grammar confirmed live on an AP230 (HiveOS 10.6r1a) via `?`:
+ *   `ssid <n> hide-ssid` (toggle), `ssid <n> max-client <1-255>`, `ssid <n> inter-station-traffic` (toggle,
+ *   default Enabled = clients can talk to each other), `ssid <n> dtim-period <1-255>`, `ssid <n> schedule <name>`,
+ *   `ssid <n> rrm enable` (802.11k neighbor reports), `ssid <n> wnm enable` (802.11v BSS transition).
+ * Toggle fields take 'enable' | 'disable' | '' (unchanged). NOTE: client isolation is the inverse of
+ * inter-station-traffic — isolation 'enable' emits `no ssid <n> inter-station-traffic` (deny peer traffic).
+ * Blank/absent fields emit nothing; no SSID name means nothing to do. Dispatched through apply-config.
+ */
+export function ssidHardeningCommands(ssid, { hideSsid, maxClient, clientIsolation, dtimPeriod, schedule, rrm, wnm } = {}) {
+  const name = (ssid || '').trim()
+  if (!name) return []
+  const cmds = []
+  if (hideSsid === 'enable') cmds.push(`ssid ${name} hide-ssid`)
+  if (hideSsid === 'disable') cmds.push(`no ssid ${name} hide-ssid`)
+  if (maxClient) cmds.push(`ssid ${name} max-client ${maxClient}`)
+  // Client isolation is the negation of inter-station-traffic (default permitted).
+  if (clientIsolation === 'enable') cmds.push(`no ssid ${name} inter-station-traffic`)
+  if (clientIsolation === 'disable') cmds.push(`ssid ${name} inter-station-traffic`)
+  if (dtimPeriod) cmds.push(`ssid ${name} dtim-period ${dtimPeriod}`)
+  if (schedule && schedule.trim()) cmds.push(`ssid ${name} schedule ${schedule.trim()}`)
+  if (rrm === 'enable') cmds.push(`ssid ${name} rrm enable`)
+  if (wnm === 'enable') cmds.push(`ssid ${name} wnm enable`)
+  return cmds
+}
+
+/**
+ * Private PSK (PPSK). HiveKeeper does NOT mint individual per-user keys — HiveOS has no running-config grammar to
+ * create a key (confirmed live: `… private-psk user …` is rejected). Instead a HiveAP itself acts as the PPSK
+ * server and hosts a self-registration web portal: users enrol (optionally authenticated against RADIUS) and the
+ * AP issues + stores the key locally (in users.txt, which the backup captures). This builder configures that
+ * model. All grammar `?`-confirmed on the AP230:
+ *   `[no] security-object <so> security private-psk` (enable PPSK mode on the security object),
+ *   `… private-psk external-server` (look up keys on an external PPSK server instead of this AP),
+ *   `… private-psk default-psk-disabled` (refuse the default PSK — require a private key),
+ *   `… private-psk ppsk-server <ip>` (the mgt0 IP of the HiveAP that serves PPSK — point members at it),
+ *   `security-object <so> ppsk-web-server` (enable the self-registration portal; `… https`, `… web-directory <d>`,
+ *   `… auth-user` to authenticate registrants against RADIUS first),
+ *   `ssid <so> user-group <group>` (bind the SSID to a PPSK user-group).
+ * In HiveKeeper a security object and its SSID share a name, so `so` is the SSID name. Toggles take
+ * 'enable'|'disable'|'' (unchanged); blanks emit nothing; no name means nothing to do.
+ */
+export function ppskCommands(
+  securityObject,
+  { enable, externalServer, defaultPskDisabled, ppskServer, webServer, webHttps, webDirectory, authUser, userGroup } = {},
+) {
+  const so = (securityObject || '').trim()
+  if (!so) return []
+  const cmds = []
+  if (enable === 'enable') cmds.push(`security-object ${so} security private-psk`)
+  if (enable === 'disable') cmds.push(`no security-object ${so} security private-psk`)
+  if (externalServer === 'enable') cmds.push(`security-object ${so} security private-psk external-server`)
+  if (defaultPskDisabled === 'enable') cmds.push(`security-object ${so} security private-psk default-psk-disabled`)
+  if (ppskServer && ppskServer.trim()) cmds.push(`security-object ${so} security private-psk ppsk-server ${ppskServer.trim()}`)
+  if (webServer === 'enable') cmds.push(`security-object ${so} ppsk-web-server`)
+  if (webServer === 'disable') cmds.push(`no security-object ${so} ppsk-web-server`)
+  if (webHttps === 'enable') cmds.push(`security-object ${so} ppsk-web-server https`)
+  if (webDirectory && webDirectory.trim()) cmds.push(`security-object ${so} ppsk-web-server web-directory ${webDirectory.trim()}`)
+  if (authUser === 'enable') cmds.push(`security-object ${so} ppsk-web-server auth-user`)
+  if (userGroup && userGroup.trim()) cmds.push(`ssid ${so} user-group ${userGroup.trim()}`)
+  return cmds
+}
+
 /** Set the AP hostname (1-32 chars). */
 export function hostnameCommands(name) {
   return [`hostname ${name}`]

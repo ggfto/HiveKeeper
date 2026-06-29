@@ -152,7 +152,25 @@ public final class HiveOsDriver implements Driver {
             return commands;
         }
         commands.add("security-object " + name);
-        commands.add("security-object " + name + " security protocol-suite wpa2-aes-psk ascii-key " + spec.passphrase());
+        // HiveOS uses the same suite tokens as the vendor-neutral model. `open` has no key; the preshared-key
+        // suites (wpa2-aes-psk, wpa3-sae) take an ascii-key; the enterprise 802.1X suites take no key but bind a
+        // RADIUS server. WPA3-SAE keeps its default transition mode on, so legacy WPA2 clients still associate.
+        // All grammar was confirmed live on an AP230 (HiveOS 10.6r1a) via `?` context help.
+        if (SsidSpec.OPEN.equals(spec.security())) {
+            commands.add("security-object " + name + " security protocol-suite open");
+        } else if (SsidSpec.ENTERPRISE_SUITES.contains(spec.security())) {
+            commands.add("security-object " + name + " security protocol-suite " + spec.security());
+            SsidSpec.RadiusSpec radius = spec.radius();
+            String line = "security-object " + name + " security aaa radius-server primary " + radius.server()
+                    + " shared-secret " + radius.sharedSecret();
+            if (radius.authPort() != null) {
+                line = line + " auth-port " + radius.authPort();
+            }
+            commands.add(line);
+        } else {
+            commands.add("security-object " + name + " security protocol-suite " + spec.security()
+                    + " ascii-key " + spec.passphrase());
+        }
         if (spec.vlan() != null) {
             commands.add("user-profile " + name + " qos-policy def-user-qos vlan-id " + spec.vlan()
                     + " attribute " + spec.vlan());

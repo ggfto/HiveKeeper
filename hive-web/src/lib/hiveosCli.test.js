@@ -4,6 +4,8 @@ import {
   radioProfileCommands,
   minRateCommands,
   hostnameCommands,
+  ssidHardeningCommands,
+  ppskCommands,
   meshCommands,
   hiveTuningCommands,
   captivePortalCommands,
@@ -103,6 +105,81 @@ describe('minRateCommands', () => {
 describe('hostnameCommands', () => {
   it('sets the hostname', () => {
     expect(hostnameCommands('lab-ap-01')).toEqual(['hostname lab-ap-01'])
+  })
+})
+
+// Confirmed live on an AP230: ssid <n> hide-ssid | max-client <1-255> | inter-station-traffic |
+// dtim-period <1-255> | schedule <name> | rrm enable | wnm enable.
+describe('ssidHardeningCommands', () => {
+  it('hides, caps clients, and isolates (inverse of inter-station-traffic)', () => {
+    expect(ssidHardeningCommands('Corp', { hideSsid: 'enable', maxClient: 50, clientIsolation: 'enable' })).toEqual([
+      'ssid Corp hide-ssid',
+      'ssid Corp max-client 50',
+      'no ssid Corp inter-station-traffic',
+    ])
+  })
+  it('un-hides and re-permits peer traffic with the disable toggles', () => {
+    expect(ssidHardeningCommands('Corp', { hideSsid: 'disable', clientIsolation: 'disable' })).toEqual([
+      'no ssid Corp hide-ssid',
+      'ssid Corp inter-station-traffic',
+    ])
+  })
+  it('sets dtim, schedule and the 802.11k/v toggles', () => {
+    expect(ssidHardeningCommands('Corp', { dtimPeriod: 3, schedule: 'business-hours', rrm: 'enable', wnm: 'enable' })).toEqual([
+      'ssid Corp dtim-period 3',
+      'ssid Corp schedule business-hours',
+      'ssid Corp rrm enable',
+      'ssid Corp wnm enable',
+    ])
+  })
+  it('returns nothing without an SSID or fields', () => {
+    expect(ssidHardeningCommands('', { hideSsid: 'enable' })).toEqual([])
+    expect(ssidHardeningCommands('Corp', {})).toEqual([])
+  })
+})
+
+// Confirmed live on an AP230: [no] security-object <so> security private-psk [external-server|default-psk-disabled|
+// ppsk-server <ip>]; [no] security-object <so> ppsk-web-server [https|web-directory <d>|auth-user];
+// ssid <so> user-group <group>. HiveKeeper configures the self-registration model; it does not mint per-user keys.
+describe('ppskCommands', () => {
+  it('enables PPSK mode with an external server and a bound user-group', () => {
+    expect(
+      ppskCommands('Corp', { enable: 'enable', externalServer: 'enable', defaultPskDisabled: 'enable', userGroup: 'staff' }),
+    ).toEqual([
+      'security-object Corp security private-psk',
+      'security-object Corp security private-psk external-server',
+      'security-object Corp security private-psk default-psk-disabled',
+      'ssid Corp user-group staff',
+    ])
+  })
+  it('configures the AP as the PPSK server with a self-registration portal', () => {
+    expect(
+      ppskCommands('Corp', {
+        enable: 'enable',
+        ppskServer: '10.0.0.1',
+        webServer: 'enable',
+        webHttps: 'enable',
+        webDirectory: 'ppsk-reg',
+        authUser: 'enable',
+      }),
+    ).toEqual([
+      'security-object Corp security private-psk',
+      'security-object Corp security private-psk ppsk-server 10.0.0.1',
+      'security-object Corp ppsk-web-server',
+      'security-object Corp ppsk-web-server https',
+      'security-object Corp ppsk-web-server web-directory ppsk-reg',
+      'security-object Corp ppsk-web-server auth-user',
+    ])
+  })
+  it('disables PPSK mode and the portal with the no-form', () => {
+    expect(ppskCommands('Corp', { enable: 'disable', webServer: 'disable' })).toEqual([
+      'no security-object Corp security private-psk',
+      'no security-object Corp ppsk-web-server',
+    ])
+  })
+  it('returns nothing without a security object or fields', () => {
+    expect(ppskCommands('', { enable: 'enable' })).toEqual([])
+    expect(ppskCommands('Corp', {})).toEqual([])
   })
 })
 

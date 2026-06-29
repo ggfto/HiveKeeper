@@ -14,8 +14,8 @@ import java.util.regex.Pattern;
 public final class Secrets {
 
     // The HiveOS keywords whose following token is a secret. Case-insensitive; the value is a single
-    // whitespace-delimited token (PSKs and hive passwords are unquoted single tokens).
-    private static final Pattern SECRET_TOKEN = Pattern.compile("(?i)\\b(ascii-key|password)\\s+(\\S+)");
+    // whitespace-delimited token (PSKs, hive passwords and RADIUS shared secrets are unquoted single tokens).
+    private static final Pattern SECRET_TOKEN = Pattern.compile("(?i)\\b(ascii-key|password|shared-secret)\\s+(\\S+)");
     private static final String MASK = "***";
 
     private Secrets() {

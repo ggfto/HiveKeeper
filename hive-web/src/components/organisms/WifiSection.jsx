@@ -9,8 +9,8 @@ import {
   MriStatusBadge,
   MriSectionHeader,
 } from '@mriqbox/ui-kit'
-import { Wifi, Lock, LockOpen } from 'lucide-react'
-import { minRateCommands } from '../../lib/hiveosCli'
+import { Wifi, Lock, LockOpen, ShieldCheck, KeyRound } from 'lucide-react'
+import { minRateCommands, ssidHardeningCommands, ppskCommands } from '../../lib/hiveosCli'
 
 // Data-rate ladders (Mbps) per band, for the minimum-data-rate picker. 2.4 GHz (11g) carries the slow 802.11b
 // rates that hog airtime; 5 GHz (11a) starts at 6.
@@ -18,6 +18,19 @@ const RATE_OPTS = {
   '2.4': ['1', '2', '5.5', '6', '9', '11', '12', '18', '24', '36', '48', '54'],
   5: ['6', '9', '12', '18', '24', '36', '48', '54'],
 }
+
+// Security suites the guided form offers (grammar confirmed live on an AP230). `open` carries no key; WPA2-PSK
+// and WPA3-SAE take a passphrase; the enterprise 802.1X suites bind a RADIUS server (IP + shared secret) instead.
+const SUITES = [
+  { value: 'wpa2-aes-psk', label: 'WPA2-PSK (AES)' },
+  { value: 'wpa3-sae', label: 'WPA3-SAE' },
+  { value: 'wpa2-aes-8021x', label: 'WPA2-Enterprise (802.1X)' },
+  { value: 'wpa3-aes-8021x-std', label: 'WPA3-Enterprise (802.1X)' },
+  { value: 'open', label: 'Open (no auth)' },
+]
+const ENTERPRISE_SUITES = new Set(['wpa2-aes-8021x', 'wpa3-aes-8021x-std'])
+const isEnterprise = (suite) => ENTERPRISE_SUITES.has(suite)
+const isKeyed = (suite) => suite !== 'open' && !isEnterprise(suite)
 
 function Field({ label, value, onChange, placeholder }) {
   return (
@@ -38,21 +51,46 @@ function Info({ label, value }) {
 }
 
 /** Edit an existing SSID: re-apply its passphrase/VLAN (HiveOS overwrites by name). The current passphrase is
- *  masked in the config, so editing means setting a new one. */
+ *  masked in the config, so editing means setting a new one. The SSID's existing security suite is preserved so
+ *  an edit never silently downgrades (e.g. WPA3-SAE back to WPA2-PSK); an open SSID has no passphrase to set. */
 function SsidEditRow({ ssid, onUpdate, onRemove, busy }) {
   const [psk, setPsk] = useState('')
   const [vlan, setVlan] = useState(ssid.vlan != null ? String(ssid.vlan) : '')
+  const security = ssid.security || 'wpa2-aes-psk'
+  const keyed = isKeyed(security)
+  // Enterprise SSIDs carry RADIUS settings that the inline editor does not collect, so editing them in place
+  // would drop the server binding. Offer only removal; the operator re-creates to change RADIUS.
+  if (isEnterprise(security)) {
+    return (
+      <div className="space-y-2">
+        <p className="text-xs text-muted-foreground">
+          802.1X SSID — edit its RADIUS settings by removing and re-adding it.
+        </p>
+        <MriButton size="sm" variant="destructive" disabled={busy} onClick={onRemove}>
+          Remove SSID
+        </MriButton>
+      </div>
+    )
+  }
   return (
     <div className="space-y-2">
       <div className="grid gap-2 sm:grid-cols-2">
-        <Field label="New passphrase" value={psk} onChange={setPsk} placeholder="leave blank to keep" />
+        {keyed && <Field label="New passphrase" value={psk} onChange={setPsk} placeholder="leave blank to keep" />}
         <Field label="VLAN" value={vlan} onChange={setVlan} placeholder="—" />
       </div>
       <div className="flex gap-2">
         <MriButton
           size="sm"
-          disabled={busy || !psk}
-          onClick={() => onUpdate({ name: ssid.name, psk, vlan: vlan ? Number(vlan) : null, remove: false })}
+          disabled={busy || (keyed && !psk)}
+          onClick={() =>
+            onUpdate({
+              name: ssid.name,
+              psk: keyed ? psk : '',
+              vlan: vlan ? Number(vlan) : null,
+              remove: false,
+              security,
+            })
+          }
         >
           Update
         </MriButton>
@@ -131,6 +169,164 @@ function MinRateBlock({ ssids, onApply, busy }) {
   )
 }
 
+// Tri-state options for the hardening toggles: leave unchanged, turn on, or turn off.
+const TOGGLE_OPTS = [
+  { value: '', label: '(keep)' },
+  { value: 'enable', label: 'Enable' },
+  { value: 'disable', label: 'Disable' },
+]
+
+function ToggleSelect({ id, label, value, onChange, hint }) {
+  return (
+    <label className="flex flex-col gap-1" htmlFor={id}>
+      <span className="text-xs text-muted-foreground">{label}</span>
+      <select id={id} className={SELECT_CLASS} value={value} onChange={(e) => onChange(e.target.value)}>
+        {TOGGLE_OPTS.map((o) => (
+          <option key={o.value} value={o.value}>
+            {o.label}
+          </option>
+        ))}
+      </select>
+      {hint && <span className="text-[10px] text-muted-foreground">{hint}</span>}
+    </label>
+  )
+}
+
+/**
+ * Per-SSID hardening / tuning (hide-ssid, client cap, client isolation, DTIM, schedule, 802.11k/v). Pure
+ * builder confirmed live on an AP230; dispatched through apply-config like the minimum-data-rate block. Picks an
+ * SSID, then only the changed fields emit a line. Client isolation is surfaced as its own switch (the CLI models
+ * it as the negation of inter-station-traffic) so the operator does not have to reason about the inversion.
+ */
+function HardeningBlock({ ssids, onApply, busy }) {
+  const empty = { hideSsid: '', maxClient: '', clientIsolation: '', dtimPeriod: '', schedule: '', rrm: '', wnm: '' }
+  const [name, setName] = useState(ssids[0]?.name || '')
+  const [form, setForm] = useState(empty)
+  const set = (k) => (v) => setForm((f) => ({ ...f, [k]: v }))
+
+  const apply = () => {
+    const commands = ssidHardeningCommands(name, {
+      ...form,
+      maxClient: form.maxClient ? Number(form.maxClient) : undefined,
+      dtimPeriod: form.dtimPeriod ? Number(form.dtimPeriod) : undefined,
+    })
+    if (commands.length === 0 || !onApply) return
+    onApply({ commands, save: true })
+    setForm(empty)
+  }
+
+  return (
+    <div className="space-y-2 rounded-md border border-border p-3">
+      <span className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground">
+        <ShieldCheck className="h-3.5 w-3.5" /> Hardening &amp; tuning
+      </span>
+      <p className="text-xs text-muted-foreground">
+        Per-SSID controls. Only the fields you change are applied. Client isolation blocks traffic between clients
+        on the SSID (guest networks); 802.11k/v help clients roam.
+      </p>
+      <div className="grid gap-2 sm:grid-cols-3">
+        <label className="flex flex-col gap-1" htmlFor="hd-ssid">
+          <span className="text-xs text-muted-foreground">Apply to SSID</span>
+          <select id="hd-ssid" className={SELECT_CLASS} value={name} onChange={(e) => setName(e.target.value)}>
+            {ssids.map((s) => (
+              <option key={s.name} value={s.name}>
+                {s.name}
+              </option>
+            ))}
+          </select>
+        </label>
+        <ToggleSelect id="hd-hide" label="Hide SSID" value={form.hideSsid} onChange={set('hideSsid')} />
+        <ToggleSelect id="hd-isolation" label="Client isolation" value={form.clientIsolation} onChange={set('clientIsolation')} />
+        <Field label="Max clients (1-255)" value={form.maxClient} onChange={set('maxClient')} placeholder="—" />
+        <Field label="DTIM period (1-255)" value={form.dtimPeriod} onChange={set('dtimPeriod')} placeholder="—" />
+        <Field label="Schedule name" value={form.schedule} onChange={set('schedule')} placeholder="—" />
+        <ToggleSelect id="hd-rrm" label="802.11k (RRM)" value={form.rrm} onChange={set('rrm')} />
+        <ToggleSelect id="hd-wnm" label="802.11v (WNM)" value={form.wnm} onChange={set('wnm')} />
+      </div>
+      <MriButton size="sm" disabled={busy || !name} onClick={apply}>
+        Apply hardening
+      </MriButton>
+    </div>
+  )
+}
+
+/**
+ * Private PSK (PPSK). Configures the self-registration model: enable PPSK mode on an SSID's security object, point
+ * it at the HiveAP that serves PPSK (its mgt0 IP), and host the self-registration portal so users enrol and the AP
+ * issues the per-user key locally (optionally authenticating registrants against RADIUS). HiveKeeper does NOT mint
+ * individual keys — HiveOS has no running-config grammar for that; keys come from user self-registration.
+ */
+function PpskBlock({ ssids, onApply, busy }) {
+  const empty = {
+    enable: '',
+    externalServer: '',
+    defaultPskDisabled: '',
+    ppskServer: '',
+    webServer: '',
+    webHttps: '',
+    webDirectory: '',
+    authUser: '',
+    userGroup: '',
+  }
+  const [name, setName] = useState(ssids[0]?.name || '')
+  const [form, setForm] = useState(empty)
+  const set = (k) => (v) => setForm((f) => ({ ...f, [k]: v }))
+
+  const apply = () => {
+    const commands = ppskCommands(name, form)
+    if (commands.length === 0 || !onApply) return
+    onApply({ commands, save: true })
+    setForm(empty)
+  }
+
+  return (
+    <div className="space-y-2 rounded-md border border-border p-3">
+      <span className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground">
+        <KeyRound className="h-3.5 w-3.5" /> Private PSK (PPSK)
+      </span>
+      <p className="text-xs text-muted-foreground">
+        Per-user PSK with self-registration: a HiveAP serves PPSK and hosts the enrolment portal, so users register
+        and the AP issues the key locally. HiveKeeper configures this model — it does not mint individual keys (those
+        come from user self-registration or an external server).
+      </p>
+      <div className="grid gap-2 sm:grid-cols-3">
+        <label className="flex flex-col gap-1" htmlFor="ppsk-ssid">
+          <span className="text-xs text-muted-foreground">Apply to SSID</span>
+          <select id="ppsk-ssid" className={SELECT_CLASS} value={name} onChange={(e) => setName(e.target.value)}>
+            {ssids.map((s) => (
+              <option key={s.name} value={s.name}>
+                {s.name}
+              </option>
+            ))}
+          </select>
+        </label>
+        <ToggleSelect id="ppsk-enable" label="PPSK mode" value={form.enable} onChange={set('enable')} />
+        <ToggleSelect
+          id="ppsk-default-off"
+          label="Disable default PSK"
+          value={form.defaultPskDisabled}
+          onChange={set('defaultPskDisabled')}
+        />
+        <Field
+          label="PPSK server IP (mgt0)"
+          value={form.ppskServer}
+          onChange={set('ppskServer')}
+          placeholder="this AP's IP"
+        />
+        <ToggleSelect id="ppsk-ext" label="External server" value={form.externalServer} onChange={set('externalServer')} />
+        <ToggleSelect id="ppsk-web" label="Registration portal" value={form.webServer} onChange={set('webServer')} />
+        <ToggleSelect id="ppsk-https" label="Portal HTTPS" value={form.webHttps} onChange={set('webHttps')} />
+        <Field label="Portal web directory" value={form.webDirectory} onChange={set('webDirectory')} placeholder="—" />
+        <ToggleSelect id="ppsk-authuser" label="Auth registrants (RADIUS)" value={form.authUser} onChange={set('authUser')} />
+        <Field label="User-group" value={form.userGroup} onChange={set('userGroup')} placeholder="staff" />
+      </div>
+      <MriButton size="sm" disabled={busy || !name} onClick={apply}>
+        Apply PPSK
+      </MriButton>
+    </div>
+  )
+}
+
 /**
  * Wi-Fi management for a device: list the SSIDs read from the AP's running-config (each in an accordion with
  * its security/VLAN/radios + edit + remove), and add new ones. SSID writes use the typed configure-ssid path
@@ -139,7 +335,8 @@ function MinRateBlock({ ssids, onApply, busy }) {
  */
 export function WifiSection({ device, loadSsids, configureSsid, onApply, busy }) {
   const [ssids, setSsids] = useState(null)
-  const [add, setAdd] = useState({ name: '', psk: '', vlan: '' })
+  const emptyAdd = { name: '', psk: '', vlan: '', security: 'wpa2-aes-psk', radiusServer: '', radiusSecret: '' }
+  const [add, setAdd] = useState(emptyAdd)
 
   const refresh = useCallback(() => {
     setSsids(null)
@@ -153,10 +350,25 @@ export function WifiSection({ device, loadSsids, configureSsid, onApply, busy })
   }, [refresh])
 
   const doConfigure = (body) => Promise.resolve(configureSsid(device, body)).then(refresh)
+  const addKeyed = isKeyed(add.security)
+  const addEnterprise = isEnterprise(add.security)
+  const addReady =
+    add.name && (!addKeyed || add.psk) && (!addEnterprise || (add.radiusServer && add.radiusSecret))
   const addSsid = () => {
-    if (!add.name || !add.psk) return
-    doConfigure({ name: add.name, psk: add.psk, vlan: add.vlan ? Number(add.vlan) : null, remove: false })
-    setAdd({ name: '', psk: '', vlan: '' })
+    if (!addReady) return
+    const body = {
+      name: add.name,
+      psk: addKeyed ? add.psk : '',
+      vlan: add.vlan ? Number(add.vlan) : null,
+      remove: false,
+      security: add.security,
+    }
+    if (addEnterprise) {
+      body.radiusServer = add.radiusServer
+      body.radiusSecret = add.radiusSecret
+    }
+    doConfigure(body)
+    setAdd(emptyAdd)
   }
 
   return (
@@ -215,24 +427,64 @@ export function WifiSection({ device, loadSsids, configureSsid, onApply, busy })
       )}
 
       <div className="space-y-2 rounded-md border border-border p-3">
-        <span className="text-xs font-medium text-muted-foreground">Add SSID (WPA2-PSK)</span>
+        <span className="text-xs font-medium text-muted-foreground">Add SSID</span>
         <div className="grid gap-2 sm:grid-cols-3">
           <Field label="Name" value={add.name} onChange={(v) => setAdd({ ...add, name: v })} placeholder="HK-DEMO" />
-          <Field
-            label="Passphrase"
-            value={add.psk}
-            onChange={(v) => setAdd({ ...add, psk: v })}
-            placeholder="min 8 chars"
-          />
+          <label className="flex flex-col gap-1" htmlFor="add-security">
+            <span className="text-xs text-muted-foreground">Security</span>
+            <select
+              id="add-security"
+              className={SELECT_CLASS}
+              value={add.security}
+              onChange={(e) => setAdd({ ...add, security: e.target.value })}
+            >
+              {SUITES.map((s) => (
+                <option key={s.value} value={s.value}>
+                  {s.label}
+                </option>
+              ))}
+            </select>
+          </label>
+          {addKeyed && (
+            <Field
+              label="Passphrase"
+              value={add.psk}
+              onChange={(v) => setAdd({ ...add, psk: v })}
+              placeholder="min 8 chars"
+            />
+          )}
+          {addEnterprise && (
+            <>
+              <Field
+                label="RADIUS server"
+                value={add.radiusServer}
+                onChange={(v) => setAdd({ ...add, radiusServer: v })}
+                placeholder="10.0.0.5"
+              />
+              <Field
+                label="RADIUS shared secret"
+                value={add.radiusSecret}
+                onChange={(v) => setAdd({ ...add, radiusSecret: v })}
+                placeholder="shared secret"
+              />
+            </>
+          )}
+          {!addKeyed && !addEnterprise && (
+            <div className="flex items-end text-xs text-muted-foreground">No passphrase (open network)</div>
+          )}
           <Field label="VLAN (optional)" value={add.vlan} onChange={(v) => setAdd({ ...add, vlan: v })} placeholder="7" />
         </div>
-        <MriButton size="sm" disabled={busy || !add.name || !add.psk} onClick={addSsid}>
+        <MriButton size="sm" disabled={busy || !addReady} onClick={addSsid}>
           Add SSID
         </MriButton>
       </div>
 
       {onApply && ssids?.length > 0 && (
-        <MinRateBlock ssids={ssids} busy={busy} onApply={(body) => onApply(device, body)} />
+        <>
+          <MinRateBlock ssids={ssids} busy={busy} onApply={(body) => onApply(device, body)} />
+          <HardeningBlock ssids={ssids} busy={busy} onApply={(body) => onApply(device, body)} />
+          <PpskBlock ssids={ssids} busy={busy} onApply={(body) => onApply(device, body)} />
+        </>
       )}
     </div>
   )

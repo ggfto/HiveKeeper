@@ -102,17 +102,34 @@ named radio profile** (`radio_ng0` 2.4 GHz, `radio_ac0` 5 GHz) that interfaces r
 
 ---
 
-## Phase 2 — Wi-Fi & security (largest functional gap)
+## Phase 2 — Wi-Fi & security (largest functional gap) — **SHIPPED**
 
-Today only WPA2-PSK. The AP230 supports a full suite (`security-object <so> security protocol-suite ?`).
+Was WPA2-PSK only. The AP230 supports a full suite (`security-object <so> security protocol-suite ?`), now exposed.
 
-- **Security suite picker** — `open`, `wpa2-aes-psk`, **`wpa3-sae`**, `wpa2-aes-8021x`,
-  **`wpa3-aes-8021x-std`**, etc. (replace the implicit WPA2-PSK-only path).
-- **802.1X / RADIUS** — `aaa radius-server` (primary / backup1-3 / accounting / keepalive). Enterprise auth.
-- **PPSK (Private PSK)** — `aaa ppsk-server` + `ssid <name> user-group` + `security-object <so>
-  ppsk-web-server`. The backup channel already captures `users.txt` (TPM), so this is anticipated.
-- **Per-SSID hardening/tuning** — `hide-ssid`, `max-client`, **`schedule`** (guest Wi-Fi on business hours
-  only), `dtim-period`, `inter-station-traffic` (client isolation), `wmm`, `rrm` (802.11k), `wnm` (802.11v).
+- ✅ **Security suite picker** — `open`, `wpa2-aes-psk`, **`wpa3-sae`** ship now: a `security` field on `SsidSpec`
+  drives the typed configure-ssid path (so the passphrase stays sealed/redacted), the **Add SSID** form has a
+  suite selector (passphrase hidden for `open`), and an edit preserves the SSID's existing suite. The
+  `protocol-suite` grammar was confirmed live on the AP230 (`wpa3-sae`/`open` take `ascii-key`/no-key
+  respectively). The 802.1X suites (`wpa2-aes-8021x`, **`wpa3-aes-8021x-std`**) need a RADIUS server and land
+  with the 802.1X/RADIUS work below.
+- ✅ **802.1X / RADIUS** — the enterprise suites (`wpa2-aes-8021x`, `wpa3-aes-8021x-std`) ship via the typed
+  `SsidSpec` path: a nested `RadiusSpec` (server + shared-secret + optional auth-port) emits
+  `security-object <so> security aaa radius-server primary <ip> shared-secret <secret>`. The shared secret is
+  masked by `Secrets` (now covers `shared-secret`) and encrypted at rest in durable jobs. The **Add SSID** form
+  swaps the passphrase field for RADIUS server + secret when an enterprise suite is picked; 802.1X SSIDs are
+  edited by remove + re-add. Grammar confirmed live on the AP230. (Backup1-3 / accounting / keepalive are a
+  later tuning pass.)
+- ✅ **PPSK (Private PSK)** — the **self-registration model** ships (Caminho A): a HiveAP serves PPSK and hosts the
+  enrolment portal, so users register and the AP issues + stores the per-user key locally (in `users.txt`, which the
+  backup captures). The PPSK block in the Wi-Fi section emits, all confirmed live: `[no] security-object <so>
+  security private-psk` (+ `external-server`, `default-psk-disabled`, `ppsk-server <mgt0-ip>`), `[no] security-object
+  <so> ppsk-web-server` (+ `https`, `web-directory <d>`, `auth-user` to authenticate registrants against RADIUS), and
+  `ssid <so> user-group <group>` — via apply-config. **HiveKeeper does NOT mint individual keys**: HiveOS has no
+  running-config grammar to create a key (`… private-psk user …` is rejected — confirmed live); keys come from user
+  self-registration or an external server. Admin-driven key minting is **Caminho B** below.
+- ✅ **Per-SSID hardening/tuning** — `hide-ssid`, `max-client`, **`schedule`**, `dtim-period`,
+  `inter-station-traffic` (surfaced as **client isolation**, its inverse), `rrm` (802.11k), `wnm` (802.11v) ship
+  as a Hardening block in the Wi-Fi section (`ssidHardeningCommands`, apply-config). Grammar confirmed live.
 
 ---
 
@@ -144,6 +161,18 @@ Radio-profile knobs for dense RF environments, behind an "advanced" disclosure:
 - **Scheduling** — global `schedule <name>` objects reused by SSIDs and user-profiles; scheduled reboot.
 - **Alerting / thresholds** and **config templates** (apply a profile across a site/group) — both currently
   in the "Not yet" list; they build naturally on the policy and bulk-ops foundations.
+- **PPSK admin-driven key management (Caminho B)** — let an operator mint per-user private PSKs from HiveKeeper
+  itself, rather than relying on end-user self-registration (Phase 2's Caminho A). HiveOS exposes **no
+  running-config grammar to create an individual key over SSH** (confirmed live on the AP230: `security-object
+  <so> security private-psk user …` is rejected — that path is HiveManager's proprietary channel). The clean,
+  north-star-aligned way to add it is to make the **on-prem agent run/own a RADIUS server** (e.g. FreeRADIUS)
+  that stores the user↔PSK mappings, and point the AP at it via `aaa ppsk-server radius-server primary <ip>` /
+  `security-object <so> ppsk-web-server auth-user` / `security-object <so> security private-psk radius-auth`
+  (all grammar already confirmed on the AP230). HiveKeeper would then own a key CRUD (generate/rotate/revoke a
+  user's PSK) in its DB and provision RADIUS — a **new subsystem (a RADIUS-managing component), not a guided
+  form**, so it lands as its own phase. The agent-as-RADIUS placement keeps secrets on-prem, consistent with the
+  sealed-credential model. (Writing keys directly into the AP's local `users.txt` over SSH is **not** a
+  supported/safe path — those live in a separate TPM store, not the replayable running-config.)
 
 ---
 

@@ -56,7 +56,7 @@ The `hive-cli` front-end talks to the engine directly (no server needed):
 | `backup -h HOST` | Git-version the running-config (`--no-users`, `--no-secrets` to trim). |
 | `capture -h HOST -c "show ..."` | Run arbitrary CLI commands and dump verbatim output. |
 | `discover [CIDR]` | Sweep a subnet for SSH-reachable hosts. |
-| `configure-ssid -h HOST -n NAME` | Create/remove a WPA2-PSK SSID (`--psk`, `--vlan`, `--remove`). |
+| `configure-ssid -h HOST -n NAME` | Create/remove an SSID (`--security open\|wpa2-aes-psk\|wpa3-sae`, `--psk`, `--vlan`, `--remove`). |
 | `configure-hive -h HOST -n HIVE -w PWD` | Join a Hive/mesh. |
 | `reboot -h HOST --yes` | Reboot the device. |
 | `restore -h HOST -f PATH` | Replay a saved config. |

@@ -61,8 +61,11 @@ public class GatewayController {
     public record DiscoverRequest(String cidr, Integer port, Integer timeoutMillis) {
     }
 
-    /** Create or remove a WPA2-PSK SSID on a device behind the agent. */
-    public record SsidRequest(String host, Integer port, String name, String psk, Integer vlan, boolean remove) {
+    /** Create or remove an SSID on a device behind the agent. {@code security} is the protocol suite
+     *  (open|wpa2-aes-psk|wpa3-sae|wpa2-aes-8021x|wpa3-aes-8021x-std); a null/blank value defaults to WPA2-PSK.
+     *  The enterprise (802.1X) suites carry the RADIUS fields instead of a {@code psk}. */
+    public record SsidRequest(String host, Integer port, String name, String psk, Integer vlan, boolean remove,
+                              String security, String radiusServer, String radiusSecret, Integer radiusAuthPort) {
     }
 
     /** Join a device behind the agent to a hive/mesh. */
@@ -87,7 +90,8 @@ public class GatewayController {
     /** Submit a durable job. {@code type} is inventory|backup|discover|configure-ssid|configure-hive;
      *  the write types carry the secret fields, which are encrypted at rest by the {@link JobGateway}. */
     public record JobRequest(String type, String host, String cidr, Integer port,
-                             String name, String psk, Integer vlan, boolean remove, String password) {
+                             String name, String psk, Integer vlan, boolean remove, String password,
+                             String security, String radiusServer, String radiusSecret, Integer radiusAuthPort) {
     }
 
     public record JobSubmitted(String jobId, String status) {
@@ -197,11 +201,24 @@ public class GatewayController {
             case "backup" -> Command.BackupConfig.of(DeviceRef.ssh(requireHost(req), port));
             case "discover" -> Command.Discover.of(requireCidr(req), port, 800);
             case "configure-ssid" -> Command.ConfigureSsid.of(DeviceRef.ssh(requireHost(req), port),
-                    req.remove() ? SsidSpec.removal(req.name()) : SsidSpec.create(req.name(), req.psk(), req.vlan()));
+                    req.remove() ? SsidSpec.removal(req.name())
+                            : ssidSpec(req.name(), req.psk(), req.vlan(), req.security(),
+                                    req.radiusServer(), req.radiusSecret(), req.radiusAuthPort()));
             case "configure-hive" -> Command.ConfigureHive.of(DeviceRef.ssh(requireHost(req), port),
                     new HiveSpec(req.name(), req.password(), null));
             default -> throw new IllegalArgumentException("unknown job type: " + req.type());
         };
+    }
+
+    /** Build a create {@link SsidSpec}, routing the enterprise (802.1X) suites to a RADIUS-backed spec and
+     *  every other suite to the preshared-key/open path. Validation lives in {@code SsidSpec}. */
+    private static SsidSpec ssidSpec(String name, String psk, Integer vlan, String security,
+                                     String radiusServer, String radiusSecret, Integer radiusAuthPort) {
+        if (security != null && SsidSpec.ENTERPRISE_SUITES.contains(security)) {
+            return SsidSpec.createEnterprise(name, vlan, security,
+                    new SsidSpec.RadiusSpec(radiusServer, radiusSecret, radiusAuthPort));
+        }
+        return SsidSpec.create(name, psk, vlan, security);
     }
 
     private static String requireHost(JobRequest req) {
@@ -328,7 +345,9 @@ public class GatewayController {
         return () -> {
             SsidSpec spec;
             try {
-                spec = req.remove() ? SsidSpec.removal(req.name()) : SsidSpec.create(req.name(), req.psk(), req.vlan());
+                spec = req.remove() ? SsidSpec.removal(req.name())
+                        : ssidSpec(req.name(), req.psk(), req.vlan(), req.security(),
+                                req.radiusServer(), req.radiusSecret(), req.radiusAuthPort());
             } catch (IllegalArgumentException e) {
                 return status(400, new ApiError("bad_request", e.getMessage()));
             }
