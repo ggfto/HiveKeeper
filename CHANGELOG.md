@@ -1,3 +1,10 @@
+## [0.5.1](https://github.com/ggfto/HiveKeeper/compare/v0.5.0...v0.5.1) (2026-06-29)
+
+
+### Bug Fixes
+
+* **demo:** add setCredential to the demo gateway and make Identify work ([08d3a22](https://github.com/ggfto/HiveKeeper/commit/08d3a223f0ca63538c2c4378c505ae5071ce1460))
+
 # [0.5.0](https://github.com/ggfto/HiveKeeper/compare/v0.4.0...v0.5.0) (2026-06-29)
 
 
