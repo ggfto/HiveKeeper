@@ -1,3 +1,10 @@
+# [0.5.0](https://github.com/ggfto/HiveKeeper/compare/v0.4.0...v0.5.0) (2026-06-29)
+
+
+### Features
+
+* enable the on-AP admin password change (validated live on an AP230) ([b9c6478](https://github.com/ggfto/HiveKeeper/commit/b9c64782672c692df895f762c6f97bbdab536e22))
+
 # [0.4.0](https://github.com/ggfto/HiveKeeper/compare/v0.3.0...v0.4.0) (2026-06-29)
 
 
