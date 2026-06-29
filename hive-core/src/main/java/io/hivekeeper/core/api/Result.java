@@ -12,7 +12,7 @@ import java.util.UUID;
  *  network-scoped result the deviceId is the scan scope, e.g. the CIDR). */
 public sealed interface Result
         permits Result.Inventory, Result.Backup, Result.RawCapture, Result.Discovered, Result.ConfigApplied,
-                Result.FirmwareUpgraded {
+                Result.FirmwareUpgraded, Result.CredentialSet {
 
     UUID commandId();
 
@@ -51,5 +51,11 @@ public sealed interface Result
      *  restart — verify the running version once it is back online. */
     record FirmwareUpgraded(UUID commandId, DeviceId deviceId, String imageUrl, String output, boolean rebooting)
             implements Result {
+    }
+
+    /** Outcome of a {@link Command.SetCredential}: which {@code credRef} was set, whether the agent vault
+     *  was updated, and whether the admin password was also changed on the AP. Carries NO secret. */
+    record CredentialSet(UUID commandId, DeviceId deviceId, String credRef, boolean vaultUpdated,
+                         boolean deviceUpdated) implements Result {
     }
 }

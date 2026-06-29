@@ -23,6 +23,8 @@ import io.hivekeeper.core.session.CommandRunner;
 import io.hivekeeper.core.spi.BackupStore;
 import io.hivekeeper.core.spi.CredentialProvider;
 import io.hivekeeper.core.spi.Credentials;
+import io.hivekeeper.core.spi.SecretUnsealer;
+import io.hivekeeper.core.spi.WritableCredentialProvider;
 import io.hivekeeper.core.transport.SshSession;
 import io.hivekeeper.core.transport.SshTransport;
 import lombok.extern.slf4j.Slf4j;
@@ -47,14 +49,29 @@ public final class LocalEngine implements Engine {
     private final DriverRegistry drivers;
     private final BackupStore backupStore;
     private final Scanner scanner;
+    private final WritableCredentialProvider writableCredentials;   // nullable — credential mgmt off when null
+    private final SecretUnsealer unsealer;                          // nullable — credential mgmt off when null
 
     public LocalEngine(SshTransport transport, CredentialProvider credentials, DriverRegistry drivers,
                        BackupStore backupStore, Scanner scanner) {
+        this(transport, credentials, drivers, backupStore, scanner, null, null);
+    }
+
+    /**
+     * Full constructor. Pass a {@code writableCredentials} + {@code unsealer} to enable
+     * {@link Command.SetCredential} (the on-prem agent does); pass {@code null} for both to leave credential
+     * management disabled (e.g. a read-only/local setup), in which case a {@code SetCredential} is refused.
+     */
+    public LocalEngine(SshTransport transport, CredentialProvider credentials, DriverRegistry drivers,
+                       BackupStore backupStore, Scanner scanner,
+                       WritableCredentialProvider writableCredentials, SecretUnsealer unsealer) {
         this.transport = transport;
         this.credentials = credentials;
         this.drivers = drivers;
         this.backupStore = backupStore;
         this.scanner = scanner;
+        this.writableCredentials = writableCredentials;
+        this.unsealer = unsealer;
     }
 
     @Override
@@ -63,6 +80,9 @@ public final class LocalEngine implements Engine {
 
         if (command instanceof Command.Discover discover) {
             return discover(id, discover, sink);
+        }
+        if (command instanceof Command.SetCredential setCredential) {
+            return setCredential(id, setCredential, sink);
         }
 
         DeviceRef ref = deviceRefOf(command);
@@ -113,6 +133,57 @@ public final class LocalEngine implements Engine {
             log.warn("discover failed for {}: {}", command.cidr(), detail);
             sink.emit(new Event.Failed(id, scope, e.getClass().getSimpleName(), detail));
             throw new HiveException(id, scope, "discover failed: " + detail, e);
+        }
+    }
+
+    /**
+     * Sets the SSH credential for a device. This is an agent-control operation, not a device CLI command:
+     * the secret arrives sealed to this node's key, is unsealed locally, and written to the local vault —
+     * the cloud never holds the plaintext. When {@code alsoSetOnDevice} is set, the admin password is first
+     * changed ON the AP (authenticated with the CURRENT credential), so the vault is only updated after the
+     * device has accepted the new password.
+     */
+    private Result setCredential(UUID id, Command.SetCredential cmd, EventSink sink) throws HiveException {
+        DeviceRef ref = cmd.device();
+        DeviceId deviceId = ref != null ? ref.id() : DeviceId.of(cmd.credRef());
+        sink.emit(new Event.Started(id, deviceId, "SetCredential"));
+        try {
+            if (unsealer == null || writableCredentials == null) {
+                throw new IllegalStateException("credential management is not enabled on this engine");
+            }
+            Credentials creds = unsealer.unseal(cmd.sealedSecret());
+
+            boolean deviceUpdated = false;
+            if (cmd.alsoSetOnDevice()) {
+                if (ref == null) {
+                    throw new IllegalStateException("a device is required to change the password on the AP");
+                }
+                // AP first, authenticated with the CURRENT credential, before the vault is touched.
+                sink.emit(new Event.Progress(id, deviceId, "Changing the admin password on the device", 30));
+                Credentials current = credentials.resolve(ref).orElseThrow(() ->
+                        new IllegalStateException("No current credential to authenticate the change for " + deviceId));
+                try (SshSession session = transport.open(ref, current)) {
+                    CliExecutor exec = new CommandRunner(session)::run;
+                    ProgressReporter progress = (percent, message) ->
+                            sink.emit(new Event.Progress(id, deviceId, message, percent));
+                    Driver driver = drivers.identify(exec)
+                            .orElseThrow(() -> new IOException("No driver recognizes this device"));
+                    List<String> lines = driver.adminPasswordCommands(creds.username(), creds.password());
+                    driver.applyConfig(deviceId, exec, lines, true, progress);
+                }
+                deviceUpdated = true;
+            }
+
+            writableCredentials.store(cmd.credRef(), creds);
+            sink.emit(new Event.Progress(id, deviceId, "Stored the credential in the agent vault", 100));
+            Result result = new Result.CredentialSet(id, deviceId, cmd.credRef(), true, deviceUpdated);
+            sink.emit(new Event.Completed(id, deviceId, result));
+            return result;
+        } catch (Exception e) {
+            String detail = e.getMessage() == null ? "" : e.getMessage();
+            log.warn("set-credential failed for {}: {}", deviceId, detail);
+            sink.emit(new Event.Failed(id, deviceId, e.getClass().getSimpleName(), detail));
+            throw new HiveException(id, deviceId, "set-credential failed: " + detail, e);
         }
     }
 
@@ -171,6 +242,8 @@ public final class LocalEngine implements Engine {
                 yield new Result.FirmwareUpgraded(id, deviceId, c.imageUrl(), output, c.reboot());
             }
             case Command.Discover ignored -> throw new IllegalStateException("discover is handled without a session");
+            case Command.SetCredential ignored ->
+                    throw new IllegalStateException("set-credential is handled before SSH dispatch");
         };
     }
 
@@ -186,6 +259,8 @@ public final class LocalEngine implements Engine {
             case Command.RestoreConfig c -> c.device();
             case Command.FirmwareUpgrade c -> c.device();
             case Command.Discover ignored -> throw new IllegalStateException("discover is network-scoped");
+            case Command.SetCredential ignored ->
+                    throw new IllegalStateException("set-credential is handled before deviceRefOf");
         };
     }
 }

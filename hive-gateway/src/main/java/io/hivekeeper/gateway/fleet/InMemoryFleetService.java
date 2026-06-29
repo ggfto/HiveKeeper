@@ -228,6 +228,14 @@ public class InMemoryFleetService implements FleetService {
     }
 
     @Override
+    public synchronized void setCredRef(String tenantId, String deviceId, String credRef) {
+        DeviceRow d = org(tenantId).devices.get(deviceId);
+        if (d != null) {
+            d.credRef = credRef;
+        }
+    }
+
+    @Override
     public synchronized Optional<ResourceScope> groupScope(String tenantId, String groupId) {
         Group g = org(tenantId).groups.get(groupId);
         return g == null ? Optional.empty() : Optional.of(ResourceScope.group(g.siteId(), groupId));

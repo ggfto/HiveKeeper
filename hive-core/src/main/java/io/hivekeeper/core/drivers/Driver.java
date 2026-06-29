@@ -69,4 +69,15 @@ public interface Driver {
                                    ProgressReporter progress) throws IOException {
         throw new UnsupportedOperationException("firmware upgrade not supported by driver");
     }
+
+    /**
+     * The CLI lines that change the admin {@code username}'s password to {@code newPassword} ON the device
+     * itself. Used by {@code SetCredential} when the operator opts to rotate the password on the AP and not
+     * only in HiveKeeper's vault. The default refuses — the exact grammar is vendor-specific and getting it
+     * wrong can lock the device out — so a driver must opt in by overriding with grammar confirmed against
+     * real hardware (never guessed). Returned lines are applied via {@link #applyConfig} with {@code save}.
+     */
+    default List<String> adminPasswordCommands(String username, String newPassword) {
+        throw new UnsupportedOperationException("on-device password change not supported by driver");
+    }
 }

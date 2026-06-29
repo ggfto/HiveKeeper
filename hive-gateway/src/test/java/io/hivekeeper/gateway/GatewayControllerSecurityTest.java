@@ -237,4 +237,56 @@ class GatewayControllerSecurityTest {
         DeviceRef ref = ((Command.Inventory) cmd.getValue()).device();
         assertEquals("cred-x", ref.credRef());
     }
+
+    // -- set-credential: admin-only, sealed to the agent key, never persisted -------------------------------
+
+    private static final String CRED_BODY =
+            "{\"host\":\"10.0.0.1\",\"deviceId\":\"dev-A\",\"username\":\"admin\",\"password\":\"sup3r-secret\"}";
+
+    @Test
+    void setCredentialRequiresAdminOnTheAgentSite() throws Exception {
+        mvc.perform(post("/api/agents/lab-agent/set-credential").contentType(JSON).content(CRED_BODY));
+        verify(guard).require(eq(principal), eq(Role.ADMIN), eq(ResourceScope.site("site-1")));
+    }
+
+    @Test
+    void setCredentialSealsTheSecretToTheAgentKeyAndLeaksNoPlaintext() throws Exception {
+        java.security.KeyPairGenerator kpg = java.security.KeyPairGenerator.getInstance("RSA");
+        kpg.initialize(2048);
+        java.security.KeyPair agentKey = kpg.generateKeyPair();
+        when(registry.publicKey("acme", "lab-agent")).thenReturn(Optional.of(agentKey.getPublic()));
+        RemoteEngine engine = mock(RemoteEngine.class);
+        when(registry.engine("acme", "lab-agent")).thenReturn(Optional.of(engine));
+        when(engine.execute(any(), any()))
+                .thenReturn(new Result.CredentialSet(UUID.randomUUID(), DeviceId.of("10.0.0.1"), "dev-A", true, false));
+
+        MvcResult result = mvc.perform(post("/api/agents/lab-agent/set-credential").contentType(JSON).content(CRED_BODY))
+                .andReturn();
+        mvc.perform(asyncDispatch(result))
+                .andExpect(status().isOk())
+                // the response carries the outcome but NOT the secret
+                .andExpect(content().string(org.hamcrest.Matchers.containsString("\"credRef\":\"dev-A\"")))
+                .andExpect(content().string(org.hamcrest.Matchers.not(org.hamcrest.Matchers.containsString("sup3r-secret"))));
+
+        ArgumentCaptor<Command> cmd = ArgumentCaptor.forClass(Command.class);
+        verify(engine).execute(cmd.capture(), any());
+        Command.SetCredential sc = (Command.SetCredential) cmd.getValue();
+        // the secret was sealed to the agent's public key (env1:) and the plaintext never appears in the command
+        org.junit.jupiter.api.Assertions.assertTrue(sc.sealedSecret().startsWith("env1:"), sc.sealedSecret());
+        org.junit.jupiter.api.Assertions.assertFalse(sc.sealedSecret().contains("sup3r-secret"));
+    }
+
+    @Test
+    void setCredentialPinsTheCredRefOnTheDeviceForFutureOps() throws Exception {
+        RemoteEngine engine = mock(RemoteEngine.class);
+        when(registry.engine("acme", "lab-agent")).thenReturn(Optional.of(engine));
+        when(engine.execute(any(), any()))
+                .thenReturn(new Result.CredentialSet(UUID.randomUUID(), DeviceId.of("10.0.0.1"), "dev-A", true, false));
+
+        MvcResult result = mvc.perform(post("/api/agents/lab-agent/set-credential").contentType(JSON).content(CRED_BODY))
+                .andReturn();
+        mvc.perform(asyncDispatch(result)).andExpect(status().isOk());
+
+        verify(fleet).setCredRef("acme", "dev-A", "dev-A");
+    }
 }

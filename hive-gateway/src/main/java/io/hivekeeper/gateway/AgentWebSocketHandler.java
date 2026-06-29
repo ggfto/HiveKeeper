@@ -44,6 +44,10 @@ class AgentWebSocketHandler extends TextWebSocketHandler {
         channel.attachEngine(engine);
         channels.put(session.getId(), channel);
         registry.register(tenantId, agentId, session.getId(), engine);
+        Object pubKey = session.getAttributes().get(AgentAuthInterceptor.ATTR_AGENT_PUBKEY);
+        if (pubKey instanceof java.security.PublicKey key) {
+            registry.registerPublicKey(tenantId, agentId, key);
+        }
         jobGateway.ifPresent(jg -> jg.onAgentConnected(tenantId, agentId, channel));
         log.info("agent '{}' connected for tenant '{}'", agentId, tenantId);
     }

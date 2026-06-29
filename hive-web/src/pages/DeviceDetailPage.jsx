@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { MriPageHeader, MriButton, MriStatusBadge } from '@mriqbox/ui-kit'
-import { Boxes, Wifi, Network, Radio, Globe, Terminal, Power, ArrowLeft, Router, Activity, DoorOpen } from 'lucide-react'
+import { Boxes, Wifi, Network, Radio, Globe, Terminal, Power, ArrowLeft, Router, Activity, DoorOpen, KeyRound } from 'lucide-react'
 import { useAuth } from '../context/AuthProvider'
 import { useToast } from '../context/ToastProvider'
 import { ConfigNav } from '../components/molecules/ConfigNav'
@@ -15,6 +15,7 @@ import { AdvancedConfigForm } from '../components/organisms/AdvancedConfigForm'
 import { PowerForm } from '../components/organisms/PowerForm'
 import { LedForm } from '../components/organisms/LedForm'
 import { DeviceOverviewForm } from '../components/organisms/DeviceOverviewForm'
+import { CredentialForm } from '../components/organisms/CredentialForm'
 import { CaptivePortalForm } from '../components/organisms/CaptivePortalForm'
 import { MonitoringSection } from '../components/organisms/MonitoringSection'
 import { MONITORING_SECTIONS } from '../lib/configSchema'
@@ -24,6 +25,7 @@ import { groupNamesFor, siteName } from '../lib/fleet'
 
 const SECTIONS = [
   { id: 'overview', label: 'Overview', icon: Boxes },
+  { id: 'credentials', label: 'Credentials', icon: KeyRound },
   { id: 'wifi', label: 'Wi-Fi', icon: Wifi },
   { id: 'captiveportal', label: 'Captive portal', icon: DoorOpen },
   { id: 'mesh', label: 'Mesh', icon: Network },
@@ -111,6 +113,13 @@ export function DeviceDetailPage() {
       return `Backup: ${r?.configBytes ?? '?'} bytes${sha ? ` · ${sha}` : ''}${r?.usersIncluded ? ' · users' : ''}`
     })
   const onConfigureSsid = (d, body) => run('SSID', () => apply(d, 'configure-ssid', body))
+  // Set/rotate the SSH credential HiveKeeper uses for this device. The gateway seals the secret to the agent
+  // and never persists it; we send the deviceId so the gateway can pin the resulting credRef for future ops.
+  const onSetCredential = (d, body) =>
+    run('Credential', async () => {
+      const r = await gateway.setCredential(d.agentId, { host: d.mgmtIp, port: 22, deviceId: d.deviceId, ...body })
+      return `Credential: vault ${r?.vaultUpdated ? 'updated' : 'unchanged'}${r?.deviceUpdated ? ' · AP password changed' : ''}`
+    })
   // Read the SSIDs straight from the AP's running-config (parsed UI-side) so the Wi-Fi list reflects reality.
   const loadSsids = useCallback(
     (d) =>
@@ -301,6 +310,9 @@ export function DeviceDetailPage() {
               onApply={onApplyConfig}
               busy={busy}
             />
+          )}
+          {section === 'credentials' && (
+            <CredentialForm device={device} onSetCredential={onSetCredential} busy={busy} />
           )}
           {section === 'wifi' && (
             <WifiSection device={device} loadSsids={loadSsids} configureSsid={onConfigureSsid} busy={busy} />

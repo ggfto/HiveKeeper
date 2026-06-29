@@ -1,4 +1,4 @@
-package io.hivekeeper.gateway.crypto;
+package io.hivekeeper.core.crypto;
 
 import org.junit.jupiter.api.Test;
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -31,7 +31,7 @@ class SecretCipherTest {
 
     @Test
     void encryptingTheSameValueTwiceYieldsDifferentTokens() {
-        // A fresh random nonce per call means the DB never reveals that two jobs share a secret.
+        // A fresh random nonce per call means the store never reveals that two records share a secret.
         assertNotEquals(cipher.encrypt("same"), cipher.encrypt("same"));
     }
 
@@ -56,6 +56,13 @@ class SecretCipherTest {
     void plaintextWithoutThePrefixIsRejectedNotPassedThrough() {
         // No silent downgrade: a value that was never encrypted must not be accepted as cleartext.
         assertThrows(IllegalArgumentException.class, () -> cipher.decrypt("just a plain string"));
+    }
+
+    @Test
+    void isEncryptedRecognizesOnlyTokens() {
+        assertTrue(SecretCipher.isEncrypted(cipher.encrypt("x")));
+        assertFalse(SecretCipher.isEncrypted("plain"));
+        assertFalse(SecretCipher.isEncrypted(null));
     }
 
     @Test

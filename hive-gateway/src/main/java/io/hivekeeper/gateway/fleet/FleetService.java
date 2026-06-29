@@ -71,6 +71,10 @@ public interface FleetService {
 
     void updateDevice(String tenantId, String deviceId, String label, String siteId);
 
+    /** Points a device at the credential reference the agent resolves locally — set when HiveKeeper manages
+     *  the device's credential, so future ops carry the right {@code credRef}. */
+    void setCredRef(String tenantId, String deviceId, String credRef);
+
     /** The lineage of a group — its site (null for a cross-site tag) — or empty if the group does not exist. */
     Optional<ResourceScope> groupScope(String tenantId, String groupId);
 

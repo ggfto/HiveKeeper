@@ -8,7 +8,7 @@ import io.hivekeeper.core.model.HiveSpec;
 import io.hivekeeper.core.model.SsidSpec;
 import io.hivekeeper.gateway.JobGateway.JobView;
 import io.hivekeeper.gateway.JobService.JobRow;
-import io.hivekeeper.gateway.crypto.SecretCipher;
+import io.hivekeeper.core.crypto.SecretCipher;
 import io.hivekeeper.protocol.Frame;
 import io.hivekeeper.protocol.FrameChannel;
 import io.hivekeeper.wire.JsonCodec;

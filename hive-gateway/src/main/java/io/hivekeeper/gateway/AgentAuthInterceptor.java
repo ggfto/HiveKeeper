@@ -31,6 +31,7 @@ public class AgentAuthInterceptor implements HandshakeInterceptor {
 
     static final String ATTR_AGENT_ID = "hk.agentId";
     static final String ATTR_TENANT_ID = "hk.tenantId";
+    static final String ATTR_AGENT_PUBKEY = "hk.agentPublicKey";
 
     private final TenantStore tenants;
 
@@ -48,6 +49,9 @@ public class AgentAuthInterceptor implements HandshakeInterceptor {
             Optional<AgentEnrollment> byCert = tenants.enrollmentByAgentId(cn);
             if (byCert.isPresent()) {
                 stamp(attributes, byCert.get());
+                // Cache the agent's public key (from its verified cert) so the gateway can seal credentials
+                // TO this agent — end-to-end, so the cloud never holds a usable plaintext secret.
+                attributes.put(ATTR_AGENT_PUBKEY, clientCert.getPublicKey());
                 log.info("agent authenticated via mTLS (CN={})", cn);
                 return true;
             }

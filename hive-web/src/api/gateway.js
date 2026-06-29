@@ -92,6 +92,9 @@ export function createGateway({ getAuth = () => ({}), fetchImpl = fetch, baseUrl
     discover: (agentId, cidr, port = 22) =>
       req(`/api/agents/${agentId}/discover`, { method: 'POST', body: { cidr, port, timeoutMillis: 600 } }),
     adopt: (agentId, body) => req(`/api/agents/${agentId}/adopt`, { method: 'POST', body }),
+    // set/rotate a device's SSH credential. The secret is sealed to the agent's key at the gateway and never
+    // persisted in the cloud; `alsoSetOnDevice` also changes the admin password on the AP itself.
+    setCredential: (agentId, body) => req(`/api/agents/${agentId}/set-credential`, { method: 'POST', body }),
     // bulk read ops across a scope
     bulk: (op, target) => req(`/api/fleet/bulk/${op}`, { method: 'POST', body: bulkBody(target) }),
   }

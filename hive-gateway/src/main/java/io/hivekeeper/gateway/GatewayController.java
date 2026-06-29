@@ -3,6 +3,8 @@ package io.hivekeeper.gateway;
 import io.hivekeeper.core.api.Command;
 import io.hivekeeper.core.api.EventSink;
 import io.hivekeeper.core.api.Result;
+import io.hivekeeper.core.crypto.CredentialPayload;
+import io.hivekeeper.core.crypto.EnvelopeCipher;
 import io.hivekeeper.core.model.Device;
 import io.hivekeeper.core.model.DeviceRef;
 import io.hivekeeper.core.model.HiveSpec;
@@ -12,7 +14,7 @@ import io.hivekeeper.gateway.access.AccessGuard;
 import io.hivekeeper.gateway.access.Principal;
 import io.hivekeeper.gateway.access.ResourceScope;
 import io.hivekeeper.gateway.access.Role;
-import io.hivekeeper.gateway.crypto.Secrets;
+import io.hivekeeper.core.crypto.Secrets;
 import io.hivekeeper.gateway.fleet.FleetService;
 import io.hivekeeper.gateway.tenant.TenantStore;
 import io.hivekeeper.protocol.RemoteEngine;
@@ -29,6 +31,7 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 import java.io.IOException;
+import java.security.PublicKey;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
@@ -95,6 +98,17 @@ public class GatewayController {
     public record AdoptRequest(String host, Integer port, String label, String credRef) {
     }
 
+    /** Set (or rotate) the SSH credential HiveKeeper uses for a device. The secret is sealed to the agent's
+     *  public key here and never persisted in the cloud. {@code alsoSetOnDevice} additionally changes the
+     *  admin password ON the AP. {@code deviceId} (when the host is a registered device) lets the gateway
+     *  pin the resulting {@code credRef} so future ops resolve it. */
+    public record SetCredentialRequest(String host, Integer port, String deviceId, String credRef,
+                                       String username, String password, boolean alsoSetOnDevice) {
+    }
+
+    public record CredentialSetResponse(String credRef, boolean vaultUpdated, boolean deviceUpdated) {
+    }
+
     public record AdoptResponse(String deviceId, String serial, String model) {
     }
 
@@ -117,6 +131,7 @@ public class GatewayController {
     private static final Duration BULK_BUDGET = Duration.ofSeconds(50);
 
     private final JsonCodec codec = new JsonCodec();
+    private final EnvelopeCipher envelope = new EnvelopeCipher();   // stateless; seals credentials to agent keys
     private final AgentRegistry registry;
     private final AccessGuard guard;
     private final TenantStore tenants;
@@ -437,6 +452,74 @@ public class GatewayController {
                         e.getMessage() == null ? "" : e.getMessage()));
             }
         };
+    }
+
+    /** Set (or rotate) a device's SSH credential. The secret is sealed to the agent's public key HERE and
+     *  forwarded over the (mTLS) agent channel; it is NEVER persisted in the cloud and never goes through the
+     *  durable-job table. Admin-level on the agent's scope. When {@code alsoSetOnDevice} is set, the agent
+     *  also changes the admin password on the AP itself. */
+    @PostMapping("/api/agents/{agentId}/set-credential")
+    public Callable<ResponseEntity<String>> setCredential(@PathVariable String agentId,
+                                                          @RequestBody SetCredentialRequest req) {
+        Principal p = guard.authenticate();
+        guard.require(p, Role.ADMIN, agentScope(p, agentId));
+        return () -> doSetCredential(p, agentId, req);
+    }
+
+    private ResponseEntity<String> doSetCredential(Principal p, String agentId, SetCredentialRequest req) {
+        Optional<RemoteEngine> engine = registry.engine(p.tenantId(), agentId);
+        if (engine.isEmpty()) {
+            return status(404, new ApiError("agent_not_connected", agentId));
+        }
+        if (req == null || req.host() == null || req.host().isBlank()) {
+            return status(400, new ApiError("bad_request", "host is required"));
+        }
+        if (req.username() == null || req.username().isBlank()) {
+            return status(400, new ApiError("bad_request", "username is required"));
+        }
+        String host = req.host().trim();
+        int port = req.port() == null ? 22 : req.port();
+        String deviceId = req.deviceId() == null || req.deviceId().isBlank() ? null : req.deviceId().trim();
+
+        // Resolve the credRef: an explicit one, else the device's existing one, else mint a stable one.
+        String credRef = req.credRef() != null && !req.credRef().isBlank() ? req.credRef().trim()
+                : fleet.flatMap(f -> f.credRefForHost(p.tenantId(), host)).orElse(null);
+        if (credRef == null) {
+            credRef = deviceId != null ? deviceId : "cred-" + host;
+        }
+        // Pin the credRef on the registered device so future ops resolve it (best-effort).
+        if (fleet.isPresent() && deviceId != null) {
+            try {
+                fleet.get().setCredRef(p.tenantId(), deviceId, credRef);
+            } catch (Exception e) {
+                log.warn("could not pin credRef on device '{}': {}", deviceId, e.getMessage());
+            }
+        }
+
+        // Seal the secret to the agent's public key — the gateway keeps no plaintext. Without a key (a dev
+        // agent over ws://) we fall back to the INSECURE plain1: form and say so loudly.
+        PublicKey agentKey = registry.publicKey(p.tenantId(), agentId).orElse(null);
+        if (agentKey == null) {
+            log.warn("agent '{}' has no public key (no mTLS cert); sealing the credential with the INSECURE "
+                    + "plain1: dev fallback — enable mTLS for end-to-end credential encryption", agentId);
+        }
+        String sealed = envelope.seal(agentKey, CredentialPayload.encode(req.username().trim(),
+                req.password() == null ? "" : req.password()));
+
+        try {
+            DeviceRef ref = DeviceRef.ssh(host, port, credRef);
+            Command cmd = Command.SetCredential.of(ref, credRef, sealed, req.alsoSetOnDevice());
+            Result result = engine.get().execute(cmd, EventSink.NOOP);
+            record(p.tenantId(), agentId, "set-credential", host, result.getClass().getSimpleName());
+            if (result instanceof Result.CredentialSet set) {
+                return json(new CredentialSetResponse(set.credRef(), set.vaultUpdated(), set.deviceUpdated()));
+            }
+            return status(502, new ApiError("unexpected_result", "set-credential did not return a credential result"));
+        } catch (Exception e) {
+            // The exception message is the engine's failure text; it never carries the secret.
+            log.warn("set-credential via agent '{}' failed: {}", agentId, e.getMessage());
+            return status(502, new ApiError(e.getClass().getSimpleName(), e.getMessage() == null ? "" : e.getMessage()));
+        }
     }
 
     /** Bulk read op (backup|inventory) over every registered device in a group/site/org. Each device is

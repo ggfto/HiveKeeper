@@ -135,6 +135,18 @@ describe('createGateway', () => {
     expect(JSON.parse(opts.body)).toEqual({ host: '10.0.0.1', credRef: 'lab-ap' })
   })
 
+  it('sets a device credential through an agent (POST with the secret in the body)', async () => {
+    const fetchImpl = okFetch({ credRef: 'dev-1', vaultUpdated: true, deviceUpdated: false })
+    const gw = createGateway({ getAuth: () => ({ tenantKey: 'k' }), fetchImpl })
+    await gw.setCredential('lab-agent', { host: '10.0.0.1', port: 22, deviceId: 'dev-1', username: 'admin', password: 'pw', alsoSetOnDevice: false })
+    const [url, opts] = fetchImpl.mock.calls[0]
+    expect(url).toBe('/gw/api/agents/lab-agent/set-credential')
+    expect(opts.method).toBe('POST')
+    expect(JSON.parse(opts.body)).toEqual({
+      host: '10.0.0.1', port: 22, deviceId: 'dev-1', username: 'admin', password: 'pw', alsoSetOnDevice: false,
+    })
+  })
+
   it('adds an organization member with POST', async () => {
     const fetchImpl = okFetch({ userId: 'usr-9' })
     const gw = createGateway({ getAuth: () => ({ accessToken: 'tok', org: 'acme' }), fetchImpl })

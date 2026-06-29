@@ -10,7 +10,10 @@ import java.net.URI;
  *   <li>{@code HIVEKEEPER_DEFAULT_USER} / {@code HIVEKEEPER_DEFAULT_PASSWORD} — fallback device creds used
  *       when a request has no {@code credRef} or it is not in the vault</li>
  *   <li>{@code HIVEKEEPER_CREDENTIAL_VAULT} — path to a per-device credential vault (properties:
- *       {@code <credRef>.user} / {@code <credRef>.password}); resolved locally, never sent by the cloud</li>
+ *       {@code <credRef>.user} / {@code <credRef>.password}); resolved locally, never sent by the cloud.
+ *       When set, HiveKeeper can also manage credentials from the UI (writes this file).</li>
+ *   <li>{@code HIVEKEEPER_VAULT_KEY} — base64 AES-256 key that encrypts vault passwords at rest; without it
+ *       the vault is read/written in plaintext (a logged warning)</li>
  *   <li>{@code HIVEKEEPER_BACKUP_DIR} — local git backup directory</li>
  *   <li>{@code HIVEKEEPER_TLS_KEYSTORE} (+ {@code _PASSWORD}) — client keystore for mTLS (PKCS12)</li>
  *   <li>{@code HIVEKEEPER_TLS_TRUSTSTORE} (+ {@code _PASSWORD}) — CA truststore (PKCS12)</li>
@@ -18,7 +21,7 @@ import java.net.URI;
  * mTLS is enabled when a keystore is configured (use a {@code wss://} gateway URL).
  */
 public record AgentConfig(URI gatewayUri, String agentId, String defaultUser, String defaultPassword,
-                          String credentialVault, String backupDir, String tlsKeystore,
+                          String credentialVault, String vaultKey, String backupDir, String tlsKeystore,
                           String tlsKeystorePassword, String tlsTruststore, String tlsTruststorePassword) {
 
     public boolean mtlsEnabled() {
@@ -32,6 +35,7 @@ public record AgentConfig(URI gatewayUri, String agentId, String defaultUser, St
                 env("HIVEKEEPER_DEFAULT_USER", "admin"),
                 env("HIVEKEEPER_DEFAULT_PASSWORD", ""),
                 env("HIVEKEEPER_CREDENTIAL_VAULT", null),
+                env("HIVEKEEPER_VAULT_KEY", null),
                 env("HIVEKEEPER_BACKUP_DIR", "hivekeeper-backups"),
                 env("HIVEKEEPER_TLS_KEYSTORE", null),
                 env("HIVEKEEPER_TLS_KEYSTORE_PASSWORD", "changeit"),

@@ -15,7 +15,7 @@ import java.util.UUID;
 public sealed interface Command
         permits Command.Inventory, Command.BackupConfig, Command.RunRaw, Command.Discover,
                 Command.ApplyConfig, Command.ConfigureSsid, Command.ConfigureHive, Command.Reboot,
-                Command.RestoreConfig, Command.FirmwareUpgrade {
+                Command.RestoreConfig, Command.FirmwareUpgrade, Command.SetCredential {
 
     UUID commandId();
 
@@ -102,6 +102,24 @@ public sealed interface Command
     record FirmwareUpgrade(UUID commandId, DeviceRef device, String imageUrl, boolean reboot) implements Command {
         public static FirmwareUpgrade of(DeviceRef device, String imageUrl, boolean reboot) {
             return new FirmwareUpgrade(UUID.randomUUID(), device, imageUrl, reboot);
+        }
+    }
+
+    /**
+     * Set (or rotate) the SSH credential HiveKeeper uses for a device, keyed by {@code credRef}. Unlike
+     * every other command this is NOT a device CLI operation by default — it writes the on-prem agent's
+     * local credential vault, so the secret is resolved locally and never persisted in the cloud. The
+     * secret travels as {@code sealedSecret}, an {@link io.hivekeeper.core.crypto.EnvelopeCipher} token of
+     * the JSON {@code {"username":...,"password":...}} sealed to the agent's public key — the engine that
+     * handles this command unseals it locally. When {@code alsoSetOnDevice} is true the agent additionally
+     * changes the admin password ON the AP itself (via the driver) BEFORE updating the vault, so a failed
+     * device change never leaves the vault pointing at a password the AP never accepted.
+     */
+    record SetCredential(UUID commandId, DeviceRef device, String credRef, String sealedSecret,
+                         boolean alsoSetOnDevice) implements Command {
+        public static SetCredential of(DeviceRef device, String credRef, String sealedSecret,
+                                       boolean alsoSetOnDevice) {
+            return new SetCredential(UUID.randomUUID(), device, credRef, sealedSecret, alsoSetOnDevice);
         }
     }
 }

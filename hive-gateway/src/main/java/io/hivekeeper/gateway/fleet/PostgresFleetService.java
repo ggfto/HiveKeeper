@@ -212,6 +212,13 @@ public class PostgresFleetService implements FleetService {
     }
 
     @Override
+    @Transactional
+    public void setCredRef(String tenantId, String deviceId, String credRef) {
+        setTenant(tenantId);
+        jdbc.update("update device set cred_ref = ? where device_id = ?", credRef, deviceId);
+    }
+
+    @Override
     @Transactional(readOnly = true)
     public Optional<ResourceScope> groupScope(String tenantId, String groupId) {
         setTenant(tenantId);

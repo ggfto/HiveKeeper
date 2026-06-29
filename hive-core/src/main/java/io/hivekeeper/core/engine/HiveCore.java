@@ -6,6 +6,8 @@ import io.hivekeeper.core.discovery.TcpBannerScanner;
 import io.hivekeeper.core.drivers.DriverRegistry;
 import io.hivekeeper.core.spi.BackupStore;
 import io.hivekeeper.core.spi.CredentialProvider;
+import io.hivekeeper.core.spi.SecretUnsealer;
+import io.hivekeeper.core.spi.WritableCredentialProvider;
 import io.hivekeeper.core.transport.SshTransport;
 import io.hivekeeper.core.transport.SshjTransport;
 
@@ -21,9 +23,19 @@ public final class HiveCore {
 
     /** Build a local engine with the default sshj transport and ServiceLoader-discovered drivers. */
     public static Engine localEngine(CredentialProvider credentials, BackupStore backupStore) {
+        return localEngine(credentials, backupStore, null, null);
+    }
+
+    /**
+     * Build a local engine that can also manage credentials. Pass a {@code writableCredentials} +
+     * {@code unsealer} (the on-prem agent does) to enable {@link io.hivekeeper.core.api.Command.SetCredential};
+     * pass {@code null} for both to leave it disabled.
+     */
+    public static Engine localEngine(CredentialProvider credentials, BackupStore backupStore,
+                                     WritableCredentialProvider writableCredentials, SecretUnsealer unsealer) {
         SshTransport transport = new SshjTransport();
         DriverRegistry drivers = DriverRegistry.fromServiceLoader();
         Scanner scanner = new TcpBannerScanner();
-        return new LocalEngine(transport, credentials, drivers, backupStore, scanner);
+        return new LocalEngine(transport, credentials, drivers, backupStore, scanner, writableCredentials, unsealer);
     }
 }

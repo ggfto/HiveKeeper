@@ -1,4 +1,4 @@
-package io.hivekeeper.gateway.crypto;
+package io.hivekeeper.core.crypto;
 
 import javax.crypto.Cipher;
 import javax.crypto.spec.GCMParameterSpec;
@@ -10,20 +10,19 @@ import java.util.Arrays;
 import java.util.Base64;
 
 /**
- * Authenticated at-rest encryption for the secret-bearing job blobs the gateway persists (a config-write
- * command carries an SSID passphrase or hive password). AES-256-GCM gives confidentiality AND integrity:
- * a tampered or truncated ciphertext fails to decrypt rather than yielding garbage. A fresh random 96-bit
- * nonce per encryption means encrypting the same plaintext twice produces different tokens, so the DB
- * never reveals that two jobs share a secret.
+ * Authenticated at-rest encryption for secret-bearing blobs. AES-256-GCM gives confidentiality AND
+ * integrity: a tampered or truncated ciphertext fails to decrypt rather than yielding garbage. A fresh
+ * random 96-bit nonce per encryption means encrypting the same plaintext twice produces different tokens,
+ * so the store never reveals that two records share a secret.
  *
  * <p>Token format: {@code "gcm1:" + base64(nonce[12] || ciphertext || tag[16])}. The version prefix lets
  * the format evolve and makes {@link #decrypt} strict — a value without the prefix is rejected rather than
  * silently treated as plaintext (no downgrade).
  *
- * <p>This is gateway-side envelope encryption: the gateway holds the key and can decrypt to redeliver a
- * job to its agent. It protects the data at rest (DB dumps, backups, a read of the table by anything other
- * than the app role). A future hardening is end-to-end encryption to the target agent's public key, so the
- * gateway never holds plaintext secrets even in memory; this class is the seam that change would replace.
+ * <p>This is symmetric (single-key) encryption: whoever holds the key can decrypt. The gateway uses it to
+ * protect persisted job blobs at rest; the agent uses it to protect its on-disk credential vault. For
+ * encrypting a secret <em>to</em> a specific recipient that the encryptor cannot itself read, see
+ * {@link EnvelopeCipher}.
  */
 public final class SecretCipher {
 
@@ -106,5 +105,10 @@ public final class SecretCipher {
             // AEADBadTagException (tamper / wrong key) and any other crypto failure land here.
             throw new IllegalStateException("decryption failed: ciphertext rejected", e);
         }
+    }
+
+    /** True if {@code value} is a {@code gcm1:} token produced by {@link #encrypt}. Null-safe. */
+    public static boolean isEncrypted(String value) {
+        return value != null && value.startsWith(PREFIX);
     }
 }

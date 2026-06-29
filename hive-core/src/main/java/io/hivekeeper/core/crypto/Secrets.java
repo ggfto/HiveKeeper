@@ -1,4 +1,4 @@
-package io.hivekeeper.gateway.crypto;
+package io.hivekeeper.core.crypto;
 
 import io.hivekeeper.core.api.Result;
 import java.util.List;
