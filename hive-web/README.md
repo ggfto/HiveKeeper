@@ -36,12 +36,14 @@ Pages (gateway mode):
 
 - **Overview** — fleet counts (agents / devices / sites / groups) and recent operations.
 - **Map** — visual sites → APs → clients topology with live online/offline status.
-- **Agents** — list connected agents, discover hosts on their LAN, and adopt new devices into the fleet.
+- **Agents** — list connected agents, discover hosts on their LAN, **identify** them (HiveOS AP + model, with a
+  tested/untested badge), and adopt new devices — optionally supplying a credential at adopt time.
 - **Devices** — the managed-fleet table; open one to manage it.
 - **Device detail** — a per-AP page with config sections: **Overview** (label/site/groups + inventory/backup),
-  **Wi-Fi** (WPA2-PSK SSIDs + VLAN), **Captive portal**, **Mesh**, **Radio** (band/channel/width/Tx power),
-  **Client mode**, **Network** (IP/routing/DHCP/DNS), **Monitoring** (SNMP/syslog + live clients/radios/log),
-  **Advanced** (raw HiveOS CLI), and **Power** (reboot + LED).
+  **Credentials** (set/rotate the SSH credential, sealed to the agent), **Wi-Fi** (WPA2-PSK SSIDs + VLAN),
+  **Captive portal**, **Mesh**, **Radio** (band/channel/width/Tx power), **Client mode**, **Network**
+  (IP/routing/DHCP/DNS), **Monitoring** (SNMP/syslog + live clients/radios/log), **Advanced** (raw HiveOS CLI),
+  and **Power** (reboot + LED).
 - **Sites & groups** — organize the fleet.
 - **Bulk** — run inventory/backup across an org / site / group scope.
 - **Members** — manage org members and roles (OIDC mode only).

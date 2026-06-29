@@ -14,13 +14,17 @@ backoff + jitter) that re-announces on every connect.
 | --- | --- | --- |
 | `HIVEKEEPER_GATEWAY_URL` | `ws://127.0.0.1:8090/agent` | gateway WebSocket URL |
 | `HIVEKEEPER_AGENT_ID` | hostname | stable agent identifier |
-| `HIVEKEEPER_DEFAULT_USER` | `admin` | fallback device username (v1 lab provider) |
+| `HIVEKEEPER_DEFAULT_USER` | `admin` | fallback device username (used when no `credRef` resolves) |
 | `HIVEKEEPER_DEFAULT_PASSWORD` | _(empty)_ | fallback device password |
+| `HIVEKEEPER_CREDENTIAL_VAULT` | _(unset)_ | path to a per-device credential vault (properties: `<credRef>.user` / `<credRef>.password`). When set, HiveKeeper can also **manage credentials from the UI** (the gateway seals the secret to this agent's key; the agent writes the vault). |
+| `HIVEKEEPER_VAULT_KEY` | _(unset)_ | base64 AES-256 key that encrypts vault passwords **at rest**; without it the vault is written in plaintext (a logged warning) |
 | `HIVEKEEPER_BACKUP_DIR` | `hivekeeper-backups` | local git backup directory |
 
-> v1 uses one credential for the whole fleet. The point is that resolution happens on the agent — the
-> cloud never sees device secrets. A production agent resolves per-device from a local encrypted
-> keystore behind the same `CredentialProvider` interface.
+> Resolution always happens on the agent — the cloud never sees device secrets, only an opaque `credRef`.
+> With a vault configured, each device's `credRef` maps to its own local secret (encrypted at rest), and the
+> credential can be set or rotated from the UI: the gateway seals it to the agent's public key (it holds no
+> plaintext) and the agent unseals it with its mTLS private key before writing the vault. Without a vault, one
+> default credential covers the fleet.
 
 ## Run / distribute
 

@@ -61,6 +61,11 @@ channel — no socket.)
 
 - Device credentials **stay on-prem**: the agent resolves them via a local `CredentialProvider`; the
   cloud stores only device refs + intent + metadata.
+- Managing a credential is **end-to-end encrypted to the agent**: on `POST /api/agents/{id}/set-credential`
+  the gateway seals the secret to the agent's public key (taken from its mTLS cert) with `EnvelopeCipher`
+  (RSA-OAEP + AES-GCM), dispatches a `SetCredential` command synchronously (**never** persisted as a durable
+  job, never logged), and the agent unseals it with its keystore private key before writing its vault
+  (encrypted at rest). The gateway holds no plaintext.
 - Enrollment: one-time token (scoped `tenantId`/`siteId`) → agent generates a keypair **locally** →
   mTLS client cert (CA-pinned, short-lived, auto-renewed). `tenantId` is derived server-side from the
   agent record, never trusted from the client.
@@ -96,8 +101,10 @@ including submit-while-agent-offline → reconnect → redelivered → succeeded
 - **Automated certificate enrollment** — the one-time token exists (`POST /api/enrollments`), but the
   token → CSR → issued/auto-renewed cert flow is not built; mTLS certs are still pre-provisioned via
   `scripts/gen-dev-pki.ps1`.
-- **End-to-end secret encryption to the agent's public key** — secrets are encrypted at rest by the gateway
-  today; encrypting them target-agent-side is a planned hardening (see `SecretCipher`).
+- **End-to-end secret encryption to the agent's public key** — **done for credential management** (the
+  `SetCredential` flow seals to the agent key with `EnvelopeCipher`; the gateway holds no plaintext).
+  Durable-job secrets (SSID passphrase, hive password) are still encrypted *at rest* by the gateway's
+  symmetric `SecretCipher`; sealing those to the agent too is the remaining hardening.
 - **Per-user authorization on every endpoint** — the bearer filter runs on `/api/me`; extending per-user
   enforcement (vs the controller-level checks) across the rest of the API is the next phase.
 - **TLS / ingress hardening** for a real cloud deployment (the WSS:443 single-port story is by design;

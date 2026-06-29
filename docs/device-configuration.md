@@ -16,6 +16,7 @@ panels) are strictly read-only. The agent holds the device credential — the ga
 | Section | What you configure |
 | --- | --- |
 | **Overview** | HiveKeeper metadata (label, site, groups) and the read-only inventory header. |
+| **Credentials** | Set / rotate the SSH credential HiveKeeper uses for this AP. The secret is sealed to the agent's key (never stored in the cloud) and written to the agent's vault, encrypted at rest. An optional "also change the password on the AP" toggle is disabled until its HiveOS grammar is confirmed live. |
 | **Wi-Fi** | Create / edit / remove WPA2-PSK SSIDs, with an optional VLAN. Reads the live SSID list from `show running-config`. |
 | **Captive portal** | A walled-garden captive portal (web directory, HTTP port, allowed hosts). |
 | **Mesh** | Join / configure a Hive (mesh): name + shared key, interface binding, thresholds. Reads `show hive`. |

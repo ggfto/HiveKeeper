@@ -32,9 +32,10 @@ docker compose -f docker-compose.yml -f docker-compose.postgres.yml -f docker-co
 
 The gateway listens on `:8090`. The agent dials **out** to it over WebSocket (no inbound ports) and resolves
 SSH credentials locally — the cloud never sees them. Configure via env (copy `.env.example` to `.env`); the
-key ones are `HIVEKEEPER_DEFAULT_USER` / `HIVEKEEPER_DEFAULT_PASSWORD` (the agent's fallback SSH login) and,
-for the Postgres profile, `HIVEKEEPER_CRYPTO_KEY` (job-secret encryption — set a real key in production:
-`openssl rand -base64 32`).
+key ones are `HIVEKEEPER_DEFAULT_USER` / `HIVEKEEPER_DEFAULT_PASSWORD` (the agent's fallback SSH login),
+`HIVEKEEPER_CREDENTIAL_VAULT` + `HIVEKEEPER_VAULT_KEY` (a per-device vault HiveKeeper can manage from the UI,
+encrypted at rest), and, for the Postgres profile, `HIVEKEEPER_CRYPTO_KEY` (job-secret encryption — set a real
+key in production: `openssl rand -base64 32`).
 
 :::note
 The web console (`hive-web`) is served separately by design — it is not bundled into the gateway. Run it

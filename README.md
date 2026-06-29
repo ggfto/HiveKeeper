@@ -199,9 +199,11 @@ To add or edit a page, change the markdown in `docs/` — both surfaces pick it 
 The full, phased plan — every item's HiveOS CLI grammar confirmed live on an AP230 — lives in
 [`docs/roadmap.md`](docs/roadmap.md). In short:
 
-- **Phase 0 — Foundation** — credential management (set/rotate per device or site, end-to-end encrypted to the
-  agent's key, **never stored in the cloud**) and trustworthy adoption (identify HiveOS APs during discovery,
-  flag tested vs untested models, prompt for credentials at adopt time).
+- **Phase 0 — Foundation** ✅ **shipped** — credential management (set/rotate a device's SSH credential from the
+  UI, **sealed to the agent's public key** so it is **never stored in the cloud**, written to the agent's vault
+  encrypted at rest) and trustworthy adoption (identify HiveOS APs during discovery, flag tested vs untested
+  models, supply a credential at adopt time). Changing the admin password *on the AP* is built behind a driver
+  seam, disabled until its HiveOS grammar is confirmed live.
 - **Phase 1 — Radio completeness** — channel width, client Tx-power control, band-steering, client
   load-balancing, and slow-rate pruning, making the built-in radio best-practice advisories actionable.
 - **Phase 2 — Wi-Fi & security** — WPA3-SAE, 802.1X / RADIUS, PPSK, and per-SSID hardening (schedules, client
