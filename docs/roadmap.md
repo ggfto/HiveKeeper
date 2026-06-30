@@ -186,9 +186,13 @@ where knobs live: **interface-level** (`interface wifiN radio …`) vs **profile
 - **Live write quirks the apply test caught** (and why probing beats `?`-only confirmation):
   - **Default radio profiles are read-only.** `radio profile radio_ac0 …` (and `radio_ng0`) is rejected with
     *“can't configure default radio profile radio_ac0!”* — this hits Phase 1's channel-width too. The knobs
-    only apply to a **custom** profile, which the first knob line **auto-creates**; the operator then binds it
-    to the radio (`interface wifiN radio profile <name>`). `RadioProfileForm` now warns when the chosen name
-    looks like a factory default.
+    only apply to a **custom** profile, which the first knob line **auto-creates**. `RadioProfileForm` warns
+    when the chosen name looks like a factory default, and a **Bind to radio** selector closes the loop: it
+    appends `interface wifiN radio profile <name>` as the last line so the configured custom profile actually
+    takes effect (confirmed live: create+configure `HKBIND`, `interface wifi1 radio profile HKBIND`, revert by
+    re-binding `radio_ac0` + `no radio profile HKBIND`). Binding is warned (it swaps the radio's whole profile
+    and briefly drops its wireless clients; mgt0 is unaffected) and flags a band mismatch (an 11ac profile
+    bound to the 2.4 GHz radio).
   - **`phymode` must precede `channel-width` and `tx-beamforming`.** A fresh profile is `11b/g`; both reject as
     *“inconsistent with current phymode”* / *“incompatible PHY mode … configure PHY mode first”* until phymode
     matches. `radioProfileCommands` therefore emits `phymode` first.

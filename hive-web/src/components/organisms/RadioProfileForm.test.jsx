@@ -72,4 +72,31 @@ describe('RadioProfileForm', () => {
     fireEvent.change(screen.getByLabelText(/radio profile/i), { target: { value: 'hk_5g_dense' } })
     expect(screen.queryByTestId('default-profile-warning')).not.toBeInTheDocument()
   })
+
+  it('binds a configured custom profile to a radio (bind line emitted last) with a disruption warning', () => {
+    const onApply = vi.fn()
+    render(<RadioProfileForm device={device} onApply={onApply} />)
+    fireEvent.change(screen.getByLabelText(/radio profile/i), { target: { value: 'hk_5g_dense' } })
+    fireEvent.change(screen.getByLabelText(/phy mode/i), { target: { value: '11ac' } })
+    fireEvent.change(screen.getByLabelText(/channel width/i), { target: { value: '80' } })
+    fireEvent.change(screen.getByLabelText(/bind to radio/i), { target: { value: 'wifi1' } })
+    expect(screen.getByTestId('bind-warning')).toHaveTextContent(/disrupts its wireless clients/i)
+    fireEvent.click(screen.getByRole('button', { name: /apply profile/i }))
+    expect(onApply).toHaveBeenCalledWith(device, {
+      commands: [
+        'radio profile hk_5g_dense phymode 11ac',
+        'radio profile hk_5g_dense channel-width 80',
+        'interface wifi1 radio profile hk_5g_dense',
+      ],
+      save: true,
+    })
+  })
+
+  it('flags a band mismatch (an 11ac profile bound to the 2.4 GHz radio)', () => {
+    render(<RadioProfileForm device={device} onApply={vi.fn()} />)
+    fireEvent.change(screen.getByLabelText(/radio profile/i), { target: { value: 'hk_dense' } })
+    fireEvent.change(screen.getByLabelText(/phy mode/i), { target: { value: '11ac' } })
+    fireEvent.change(screen.getByLabelText(/bind to radio/i), { target: { value: 'wifi0' } })
+    expect(screen.getByTestId('bind-warning')).toHaveTextContent(/band mismatch/i)
+  })
 })

@@ -56,6 +56,22 @@ function isDefaultProfile(name) {
   return /^radio_[a-z]+\d+$/i.test((name || '').trim())
 }
 
+// A profile takes effect on a radio only once it is BOUND to the interface (`interface wifiN radio profile
+// <name>`). Offer the two radios (2.4 GHz = wifi0, 5 GHz = wifi1) plus "don't bind".
+const BIND_TARGETS = [
+  { label: "(don't bind)", value: '' },
+  { label: 'wifi0 (2.4 GHz)', value: 'wifi0' },
+  { label: 'wifi1 (5 GHz)', value: 'wifi1' },
+]
+
+// Infer the band a phymode belongs to so we can warn on a band mismatch when binding (e.g. an 11ac profile bound
+// to the 2.4 GHz radio). 5 GHz: 11a / 11ac / 11na. 2.4 GHz: 11b/g / 11ng. Unknown → no opinion.
+function ifaceForPhymode(phymode) {
+  if (phymode === '11a' || phymode === '11ac' || phymode === '11na') return 'wifi1'
+  if (phymode === '11b/g' || phymode === '11ng') return 'wifi0'
+  return null
+}
+
 /**
  * Guided radio-PROFILE config: channel width, band-steering, client load-balancing and a per-profile client cap.
  * BLAST RADIUS: a profile can be shared across interfaces and across APs in a hive, so a change here is wider
@@ -79,6 +95,7 @@ export function RadioProfileForm({ device, onApply, busy }) {
   const [phymode, setPhymode] = useState('')
   const [receiveChain, setReceiveChain] = useState('')
   const [transmitChain, setTransmitChain] = useState('')
+  const [bindInterface, setBindInterface] = useState('')
 
   const apply = () => {
     const commands = radioProfileCommands(profile.trim(), {
@@ -97,6 +114,7 @@ export function RadioProfileForm({ device, onApply, busy }) {
       phymode,
       receiveChain,
       transmitChain,
+      bindInterface,
     })
     if (commands.length === 0) return
     onApply(device, { commands, save: true })
@@ -107,6 +125,9 @@ export function RadioProfileForm({ device, onApply, busy }) {
     ? radioAdvisories({ iface: ifaceForProfile(profile), width: channelWidth })
     : []
   const defaultProfile = isDefaultProfile(profile)
+  // Warn if binding an N-band profile to the other band's radio (a likely mistake). Only when both are known.
+  const bandForPhymode = ifaceForPhymode(phymode)
+  const bandMismatch = bindInterface && bandForPhymode && bindInterface !== bandForPhymode
 
   const selectClass =
     'h-9 rounded-md border border-border bg-background px-2 text-sm text-foreground'
@@ -173,6 +194,21 @@ export function RadioProfileForm({ device, onApply, busy }) {
             placeholder="e.g. 60"
           />
         </label>
+        <label className="flex flex-col gap-1" htmlFor="rp-bind">
+          <span className="text-xs text-muted-foreground">Bind to radio (apply this profile)</span>
+          <select
+            id="rp-bind"
+            className={selectClass}
+            value={bindInterface}
+            onChange={(e) => setBindInterface(e.target.value)}
+          >
+            {BIND_TARGETS.map((o) => (
+              <option key={o.value} value={o.value}>
+                {o.label}
+              </option>
+            ))}
+          </select>
+        </label>
       </div>
       {advisories.length > 0 && (
         <ul className="space-y-2" data-testid="profile-advisories">
@@ -199,6 +235,27 @@ export function RadioProfileForm({ device, onApply, busy }) {
             Use a custom profile name (e.g. <code className="font-mono">hk_5g_dense</code>); the first setting
             auto-creates it, and you then bind it to the radio with{' '}
             <code className="font-mono">interface wifiN radio profile &lt;name&gt;</code> (Advanced).
+          </span>
+        </div>
+      )}
+      {bindInterface && (
+        <div
+          data-testid="bind-warning"
+          className="flex items-start gap-2 rounded-md border border-amber-500/40 bg-amber-500/10 p-2 text-xs text-amber-700 dark:text-amber-400"
+        >
+          <TriangleAlert className="mt-0.5 h-4 w-4 shrink-0" />
+          <span>
+            Binding swaps the entire profile on <code className="font-mono">{bindInterface}</code> and briefly
+            disrupts its wireless clients (the management path on <code className="font-mono">mgt0</code> is
+            unaffected).
+            {bandMismatch && (
+              <>
+                {' '}
+                <strong>Band mismatch:</strong> a <code className="font-mono">{phymode}</code> profile targets the{' '}
+                {bandForPhymode === 'wifi1' ? '5 GHz' : '2.4 GHz'} radio, not{' '}
+                <code className="font-mono">{bindInterface}</code> — double-check the PHY mode.
+              </>
+            )}
           </span>
         </div>
       )}

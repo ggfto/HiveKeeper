@@ -55,6 +55,11 @@ export function radioCommands(
  *   - `phymode` must be set BEFORE `channel-width` and `tx-beamforming` — a fresh profile is 11b/g, and both
  *     reject as "inconsistent with current phymode" / "incompatible PHY mode" until phymode matches. So phymode
  *     is emitted first.
+ *
+ * `bindInterface` (e.g. 'wifi1') appends `interface <iface> radio profile <p>` as the LAST line — this is how a
+ * custom profile takes effect on a radio (the knobs above auto-create it first). Confirmed live on the AP230
+ * (`interface wifi1 radio profile <name>`). Binding swaps the radio's whole profile and briefly disrupts its
+ * wireless clients — the caller warns. Match the profile's band to the radio (5 GHz = wifi1, 2.4 GHz = wifi0).
  */
 export function radioProfileCommands(
   profile,
@@ -74,6 +79,7 @@ export function radioProfileCommands(
     phymode,
     receiveChain,
     transmitChain,
+    bindInterface,
   } = {},
 ) {
   const p = (profile || '').trim()
@@ -111,6 +117,8 @@ export function radioProfileCommands(
   if (txBeamforming === 'disable') cmds.push(`no radio profile ${p} tx-beamforming`)
   if (receiveChain) cmds.push(`radio profile ${p} receive-chain ${receiveChain}`)
   if (transmitChain) cmds.push(`radio profile ${p} transmit-chain ${transmitChain}`)
+  // Bind LAST: the profile must exist/be configured before a radio adopts it (the knobs above auto-create it).
+  if (bindInterface) cmds.push(`interface ${bindInterface} radio profile ${p}`)
   return cmds
 }
 

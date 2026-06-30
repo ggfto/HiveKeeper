@@ -159,6 +159,22 @@ describe('radioProfileCommands', () => {
       'radio profile custom1 channel-width 80',
     ])
   })
+  // bindInterface appends `interface <iface> radio profile <p>` LAST so the configured profile takes effect on
+  // the radio. Confirmed live: create+configure HKBIND, then `interface wifi1 radio profile HKBIND`.
+  it('binds the profile to a radio interface as the last line', () => {
+    expect(
+      radioProfileCommands('hk_5g_dense', { phymode: '11ac', channelWidth: '80', bindInterface: 'wifi1' }),
+    ).toEqual([
+      'radio profile hk_5g_dense phymode 11ac',
+      'radio profile hk_5g_dense channel-width 80',
+      'interface wifi1 radio profile hk_5g_dense',
+    ])
+  })
+  it('emits the bind line even with no knob changes', () => {
+    expect(radioProfileCommands('hk_5g_dense', { bindInterface: 'wifi0' })).toEqual([
+      'interface wifi0 radio profile hk_5g_dense',
+    ])
+  })
 })
 
 // Confirmed live on the AP230 via `?`: ssid <name> 11g-rate-set <rate>[-basic] [<rate>[-basic] ...] (one line,
