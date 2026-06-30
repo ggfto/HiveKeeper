@@ -94,6 +94,218 @@ export function ssidHardeningCommands(ssid, { hideSsid, maxClient, clientIsolati
 }
 
 /**
+ * User profile (the HiveOS policy a client lands in: default VLAN, QoS, schedule, L2/L3 firewall). Confirmed
+ * live on an AP230 (HiveOS 10.6r1a): a profile is keyed by a numeric `attribute` (0-4095) and each setting is
+ * its OWN line — HiveOS REJECTS a combined `user-profile <n> attribute 99 vlan-id 99` (verified: it errors at
+ * the second keyword), even though `show running-config` later coalesces them onto one line. So we emit:
+ *   `user-profile <name> attribute <0-4095>`  (creates/keys the profile — always first),
+ *   `user-profile <name> vlan-id <1-4094>`     (the default VLAN) OR
+ *   `user-profile <name> vlan-group <name>`    (a VLAN group instead of a single VLAN — mutually exclusive),
+ *   `user-profile <name> qos-policy <name>`    (reference an existing QoS policy by name),
+ *   `user-profile <name> schedule <name>`      (only apply the profile during a named schedule).
+ * The numeric attribute is what an SSID/security-object binds to (see bindUserProfileCommands) and what RADIUS
+ * returns to select a profile. A blank name (or a non-numeric attribute) yields nothing. Dispatched through
+ * apply-config. `vlanId` wins if both a VLAN id and a VLAN group are somehow supplied.
+ */
+export function userProfileCommands(name, { attribute, vlanId, vlanGroup, qosPolicy, schedule } = {}) {
+  const n = (name || '').trim()
+  const attr = String(attribute ?? '').trim()
+  if (!n || !/^\d+$/.test(attr)) return []
+  const cmds = [`user-profile ${n} attribute ${attr}`]
+  const vid = String(vlanId ?? '').trim()
+  const vgroup = (vlanGroup || '').trim()
+  if (vid) cmds.push(`user-profile ${n} vlan-id ${vid}`)
+  else if (vgroup) cmds.push(`user-profile ${n} vlan-group ${vgroup}`)
+  if (qosPolicy && qosPolicy.trim()) cmds.push(`user-profile ${n} qos-policy ${qosPolicy.trim()}`)
+  if (schedule && schedule.trim()) cmds.push(`user-profile ${n} schedule ${schedule.trim()}`)
+  return cmds
+}
+
+/**
+ * Bind a user profile to an SSID's security object as the DEFAULT profile applied to its traffic. Confirmed
+ * live: `security-object <so> default-user-profile-attr <attribute>` (the running-config shows exactly this for
+ * a bound SSID). In HiveKeeper a security object and its SSID share a name, so `so` is the SSID name. The
+ * attribute must match a user profile's `attribute` (see userProfileCommands). Nothing without both.
+ */
+export function bindUserProfileCommands(securityObject, attribute) {
+  const so = (securityObject || '').trim()
+  const attr = String(attribute ?? '').trim()
+  if (!so || !/^\d+$/.test(attr)) return []
+  return [`security-object ${so} default-user-profile-attr ${attr}`]
+}
+
+/** Remove a user profile entirely. Confirmed live: `no user-profile <name>` (clears it from running-config). */
+export function removeUserProfileCommands(name) {
+  const n = (name || '').trim()
+  return n ? [`no user-profile ${n}`] : []
+}
+
+/**
+ * Advanced user-profile policy: a per-user rate limit (via a QoS policy), a guaranteed-bandwidth SLA
+ * (performance-sentinel), L2/L3 firewall bindings + default actions, and a QoS marker-map. All grammar confirmed
+ * live on an AP230, each setting its own line:
+ *   `user-profile <n> performance-sentinel enable` / `… guaranteed-bandwidth <100-500000>` (kbps) /
+ *     `… action boost|log`,
+ *   `user-profile <n> ip-policy-default-action permit|deny|inter-station-traffic-drop`,
+ *   `user-profile <n> security ip-policy from-access|to-access <ip-policy-name>`,
+ *   `user-profile <n> mac-policy-default-action permit|deny`,
+ *   `user-profile <n> security mac-policy from-access|to-access <mac-policy-name>`,
+ *   `user-profile <n> qos-marker-map 8021p|diffserv <marker-map-name>`.
+ * The firewall/marker-map references point at objects defined elsewhere (ip-policy/mac-policy/qos marker-map).
+ * Toggles take 'enable'|'disable'|''; blanks emit nothing; no profile name means nothing to do.
+ */
+export function userProfilePolicyCommands(
+  name,
+  {
+    perfSentinel,
+    guaranteedBandwidth,
+    perfAction,
+    ipDefaultAction,
+    ipPolicyFrom,
+    ipPolicyTo,
+    macDefaultAction,
+    macPolicyFrom,
+    macPolicyTo,
+    qosMarkerMapType,
+    qosMarkerMap,
+  } = {},
+) {
+  const n = (name || '').trim()
+  if (!n) return []
+  const cmds = []
+  if (perfSentinel === 'enable') cmds.push(`user-profile ${n} performance-sentinel enable`)
+  if (perfSentinel === 'disable') cmds.push(`no user-profile ${n} performance-sentinel enable`)
+  const bw = String(guaranteedBandwidth ?? '').trim()
+  if (bw) cmds.push(`user-profile ${n} performance-sentinel guaranteed-bandwidth ${bw}`)
+  if (perfAction) cmds.push(`user-profile ${n} performance-sentinel action ${perfAction}`)
+  if (ipDefaultAction) cmds.push(`user-profile ${n} ip-policy-default-action ${ipDefaultAction}`)
+  if (ipPolicyFrom && ipPolicyFrom.trim()) cmds.push(`user-profile ${n} security ip-policy from-access ${ipPolicyFrom.trim()}`)
+  if (ipPolicyTo && ipPolicyTo.trim()) cmds.push(`user-profile ${n} security ip-policy to-access ${ipPolicyTo.trim()}`)
+  if (macDefaultAction) cmds.push(`user-profile ${n} mac-policy-default-action ${macDefaultAction}`)
+  if (macPolicyFrom && macPolicyFrom.trim()) cmds.push(`user-profile ${n} security mac-policy from-access ${macPolicyFrom.trim()}`)
+  if (macPolicyTo && macPolicyTo.trim()) cmds.push(`user-profile ${n} security mac-policy to-access ${macPolicyTo.trim()}`)
+  if (qosMarkerMap && qosMarkerMap.trim()) {
+    const type = qosMarkerMapType === 'diffserv' ? 'diffserv' : '8021p'
+    cmds.push(`user-profile ${n} qos-marker-map ${type} ${qosMarkerMap.trim()}`)
+  }
+  return cmds
+}
+
+/**
+ * IP firewall policy. Confirmed live on an AP230: the policy GROUP must exist before a rule is added —
+ * `ip-policy <name>` creates the (empty) group, then a rule is ONE line
+ * `ip-policy <name> id <n> from <src> to <dst> service <svc> action <permit|deny|nat|redirect|inter-station-traffic-drop>`
+ * (the combined line is accepted once the group exists; `any` is a valid from/to/service). `from`/`to`/`service`
+ * default to `any` when blank. Pass `remove: true` for `no ip-policy <name>`. The rule is emitted only when an id
+ * and an action are given; the create line is always emitted (idempotent) so a first rule works.
+ */
+export function ipPolicyCommands(name, { id, from, to, service, action, remove } = {}) {
+  const n = (name || '').trim()
+  if (!n) return []
+  if (remove) return [`no ip-policy ${n}`]
+  const cmds = [`ip-policy ${n}`]
+  const rid = String(id ?? '').trim()
+  if (rid && action) {
+    const f = (from || '').trim() || 'any'
+    const t = (to || '').trim() || 'any'
+    const s = (service || '').trim() || 'any'
+    cmds.push(`ip-policy ${n} id ${rid} from ${f} to ${t} service ${s} action ${action}`)
+  }
+  return cmds
+}
+
+/**
+ * MAC firewall policy (object lifecycle only). Confirmed live: `mac-policy <name>` creates the group and
+ * `no mac-policy <name>` removes it. MAC rules are entered per-attribute (`mac-policy <n> id <i> from <mac>` …,
+ * the combined `from any to any action` line is rejected) and are niche, so HiveKeeper exposes create/remove here
+ * and leaves rule entry to the Advanced raw-CLI section. The created policy is bindable from a user profile.
+ */
+export function macPolicyCommands(name, { remove } = {}) {
+  const n = (name || '').trim()
+  if (!n) return []
+  return remove ? [`no mac-policy ${n}`] : [`mac-policy ${n}`]
+}
+
+/**
+ * QoS policy (per-user-profile rate limit). Confirmed live: `qos policy <name>` creates the policy (auto-filling
+ * the default per-class weights), and `qos policy <name> user-profile <rate-kbps> <weight 0-1000>` sets the
+ * user-profile rate limit + scheduling weight (the trailing weight is required — without it HiveOS reports
+ * "Incomplete command"). `qos enable` turns QoS on globally. `no qos policy <name>` removes it. Weight defaults to
+ * 10 (the HiveOS default). A user profile then references this policy by name (`user-profile <n> qos-policy <name>`).
+ */
+export function qosPolicyCommands(name, { rateKbps, weight = 10, enableQos, remove } = {}) {
+  const n = (name || '').trim()
+  if (!n) return []
+  if (remove) return [`no qos policy ${n}`]
+  const cmds = []
+  if (enableQos) cmds.push('qos enable')
+  cmds.push(`qos policy ${n}`)
+  const rate = String(rateKbps ?? '').trim()
+  if (rate) cmds.push(`qos policy ${n} user-profile ${rate} ${weight}`)
+  return cmds
+}
+
+/**
+ * Per-SSID QoS. Confirmed live on an AP230: `ssid <n> qos-classifier <profile>` (classify incoming traffic),
+ * `ssid <n> qos-marker <profile>` (mark outgoing), and `ssid <n> wmm` (a toggle — WMM is on by default, so the
+ * `no` form disables it). The classifier/marker reference `qos classifier-profile` / `qos marker-profile` objects
+ * by name. Blanks emit nothing; no SSID name means nothing to do.
+ */
+export function ssidQosCommands(ssid, { qosClassifier, qosMarker, wmm } = {}) {
+  const name = (ssid || '').trim()
+  if (!name) return []
+  const cmds = []
+  if (qosClassifier && qosClassifier.trim()) cmds.push(`ssid ${name} qos-classifier ${qosClassifier.trim()}`)
+  if (qosMarker && qosMarker.trim()) cmds.push(`ssid ${name} qos-marker ${qosMarker.trim()}`)
+  if (wmm === 'enable') cmds.push(`ssid ${name} wmm`)
+  if (wmm === 'disable') cmds.push(`no ssid ${name} wmm`)
+  return cmds
+}
+
+/**
+ * LLDP / CDP neighbor discovery (global, not per-interface — `interface mgt0 lldp` is rejected; the settings are
+ * device-wide). Confirmed live on an AP230: `lldp` enables it (and shows as `lldp` in running-config), `no lldp`
+ * disables, `lldp timer <5-65534>` (advertise interval, default 30), `lldp holdtime <0-65535>` (default 90),
+ * `lldp receive-only` (cache neighbors but don't advertise — a toggle), `lldp max-entries <1-128>` (default 64).
+ * Toggles take 'enable'|'disable'|''; blank numerics emit nothing.
+ */
+export function lldpCommands({ enable, timer, holdtime, receiveOnly, maxEntries } = {}) {
+  const cmds = []
+  if (enable === 'enable') cmds.push('lldp')
+  if (enable === 'disable') cmds.push('no lldp')
+  if (String(timer ?? '').trim()) cmds.push(`lldp timer ${String(timer).trim()}`)
+  if (String(holdtime ?? '').trim()) cmds.push(`lldp holdtime ${String(holdtime).trim()}`)
+  if (receiveOnly === 'enable') cmds.push('lldp receive-only')
+  if (receiveOnly === 'disable') cmds.push('no lldp receive-only')
+  if (String(maxEntries ?? '').trim()) cmds.push(`lldp max-entries ${String(maxEntries).trim()}`)
+  return cmds
+}
+
+/**
+ * Static IP route. Confirmed live on an AP230 (and that the gateway must be on a directly-connected subnet, else
+ * HiveOS silently drops the route): a network route is `ip route net <ip> <netmask> gateway <gw> [metric <m>]`
+ * and a host route is `ip route host <ip> gateway <gw> [metric <m>]`. `no ip route …` removes it (echo the full
+ * line). type is 'net' | 'host'. A net route needs dest+netmask+gateway; a host route needs dest+gateway.
+ * DANGER-adjacent: a bad route can blackhole traffic, so the caller should confirm.
+ */
+export function staticRouteCommands({ type = 'net', dest, netmask, gateway, metric, remove } = {}) {
+  const d = (dest || '').trim()
+  const gw = (gateway || '').trim()
+  if (!d || !gw) return []
+  const m = String(metric ?? '').trim()
+  let line
+  if (type === 'host') {
+    line = `ip route host ${d} gateway ${gw}`
+  } else {
+    const nm = (netmask || '').trim()
+    if (!nm) return []
+    line = `ip route net ${d} ${nm} gateway ${gw}`
+  }
+  if (m) line += ` metric ${m}`
+  return [remove ? `no ${line}` : line]
+}
+
+/**
  * Private PSK (PPSK). HiveKeeper does NOT mint individual per-user keys — HiveOS has no running-config grammar to
  * create a key (confirmed live: `… private-psk user …` is rejected). Instead a HiveAP itself acts as the PPSK
  * server and hosts a self-registration web portal: users enrol (optionally authenticated against RADIUS) and the

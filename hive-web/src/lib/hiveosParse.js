@@ -42,6 +42,111 @@ export function parseSsids(config) {
 }
 
 /**
+ * Parse the user profiles (and their SSID bindings) from a `show running-config`. HiveOS coalesces a profile's
+ * settings onto one line — e.g. `user-profile HK-JOB qos-policy def-user-qos vlan-id 7 attribute 7` — so each
+ * profile is one `user-profile <name> <key> <value> ...` line; we still merge across lines defensively. A
+ * security object binds a profile as its default via `security-object <so> default-user-profile-attr <attr>`,
+ * matched back to the profile by its numeric attribute. -> [{ name, attribute, vlanId, vlanGroup, qosPolicy,
+ * schedule, boundTo: [<so names>] }], sorted by attribute then name.
+ */
+export function parseUserProfiles(config) {
+  const lines = (config || '')
+    .split('\n')
+    .map((l) => l.trim())
+    .filter(Boolean)
+
+  // attribute -> [security-object names that default to it]
+  const binds = {}
+  for (const l of lines) {
+    const m = l.match(/^security-object (\S+) default-user-profile-attr (\d+)$/)
+    if (m) (binds[m[2]] ||= []).push(m[1])
+  }
+
+  const KEYS = { attribute: 'attribute', 'vlan-id': 'vlanId', 'vlan-group': 'vlanGroup', 'qos-policy': 'qosPolicy', schedule: 'schedule' }
+  const byName = new Map()
+  for (const l of lines) {
+    const m = l.match(/^user-profile (\S+)\s+(.*)$/)
+    if (!m) continue
+    const name = m[1]
+    const prof = byName.get(name) || { name, attribute: null, vlanId: null, vlanGroup: null, qosPolicy: null, schedule: null }
+    const tokens = m[2].split(/\s+/)
+    for (let i = 0; i < tokens.length - 1; i += 2) {
+      const field = KEYS[tokens[i]]
+      if (!field) continue
+      const raw = tokens[i + 1]
+      prof[field] = field === 'attribute' || field === 'vlanId' ? num(raw) : raw
+    }
+    byName.set(name, prof)
+  }
+
+  return [...byName.values()]
+    .map((p) => ({ ...p, boundTo: p.attribute !== null ? binds[String(p.attribute)] || [] : [] }))
+    .sort((a, b) => (a.attribute ?? 1e9) - (b.attribute ?? 1e9) || a.name.localeCompare(b.name))
+}
+
+/**
+ * Parse static IP routes from a `show running-config`. Lines look like `ip route net <ip> <mask> gateway <gw>
+ * [metric <m>]`, `ip route host <ip> gateway <gw> [metric <m>]`, or `ip route default gateway <gw>`. ->
+ * [{ type: 'net'|'host'|'default', dest, netmask, gateway, metric }], dest/netmask null where not applicable.
+ */
+export function parseStaticRoutes(config) {
+  const routes = []
+  for (const raw of (config || '').split('\n')) {
+    const l = raw.trim()
+    const m = l.match(/^ip route (net|host|default)\s+(.*)$/)
+    if (!m) continue
+    const type = m[1]
+    const rest = m[2]
+    const gw = rest.match(/gateway (\S+)/)
+    const metric = rest.match(/metric (\d+)/)
+    const route = { type, dest: null, netmask: null, gateway: gw ? gw[1] : null, metric: metric ? num(metric[1]) : null }
+    if (type === 'net') {
+      const t = rest.match(/^(\S+)\s+(\S+)/)
+      if (t) {
+        route.dest = t[1]
+        route.netmask = t[2]
+      }
+    } else if (type === 'host') {
+      const t = rest.match(/^(\S+)/)
+      if (t) route.dest = t[1]
+    }
+    routes.push(route)
+  }
+  return routes
+}
+
+/**
+ * Parse the named firewall policies from a `show running-config` so the user-profile binding can offer real
+ * names. `ip-policy <name> …` / `mac-policy <name> …` declare a policy (the bare line creates it, rule lines
+ * repeat the name). -> { ip: [names], mac: [names] }, each de-duplicated and sorted.
+ */
+export function parseFirewallPolicies(config) {
+  const ip = new Set()
+  const mac = new Set()
+  for (const raw of (config || '').split('\n')) {
+    const l = raw.trim()
+    let m = l.match(/^ip-policy (\S+)/)
+    if (m) ip.add(m[1])
+    m = l.match(/^mac-policy (\S+)/)
+    if (m) mac.add(m[1])
+  }
+  return { ip: [...ip].sort(), mac: [...mac].sort() }
+}
+
+/**
+ * Parse the QoS policy names from a `show running-config` (`qos policy <name> …`). -> [names], de-duplicated and
+ * sorted, so a user profile can reference an existing rate-limit policy by name.
+ */
+export function parseQosPolicies(config) {
+  const names = new Set()
+  for (const raw of (config || '').split('\n')) {
+    const m = raw.trim().match(/^qos policy (\S+)/)
+    if (m) names.add(m[1])
+  }
+  return [...names].sort()
+}
+
+/**
  * Parse the hives (mesh profiles) from `show hive`. Each row starts with the hive name followed by its native
  * VLAN, so a name + a number anchors a data row (skipping the header/separator/prompt). -> [{ name, nativeVlan }].
  */

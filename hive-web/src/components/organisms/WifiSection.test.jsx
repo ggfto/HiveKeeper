@@ -152,6 +152,21 @@ describe('WifiSection', () => {
     })
   })
 
+  it('applies per-SSID QoS (classifier + marker + WMM) via apply-config', async () => {
+    const loadSsids = vi.fn().mockResolvedValue(ssids)
+    const onApply = vi.fn()
+    render(<WifiSection device={device} loadSsids={loadSsids} configureSsid={vi.fn()} onApply={onApply} />)
+    await screen.findByRole('button', { name: /apply qos/i })
+    fireEvent.change(screen.getByLabelText(/qos classifier profile/i), { target: { value: 'voip-class' } })
+    fireEvent.change(screen.getByLabelText(/qos marker profile/i), { target: { value: 'voip-mark' } })
+    fireEvent.change(screen.getByLabelText(/^wmm$/i), { target: { value: 'enable' } })
+    fireEvent.click(screen.getByRole('button', { name: /apply qos/i }))
+    expect(onApply).toHaveBeenCalledWith(device, {
+      commands: ['ssid TESTE qos-classifier voip-class', 'ssid TESTE qos-marker voip-mark', 'ssid TESTE wmm'],
+      save: true,
+    })
+  })
+
   it('switches the rate ladder to 11a for the 5 GHz band', async () => {
     const loadSsids = vi.fn().mockResolvedValue(ssids)
     const onApply = vi.fn()

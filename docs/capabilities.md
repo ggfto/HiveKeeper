@@ -28,11 +28,20 @@ Per device, via the web UI ([device configuration](/device-configuration/) expla
 - **Wi-Fi** — create / edit / remove SSIDs on a chosen **security suite** (Open, WPA2-PSK, **WPA3-SAE**, or
   **802.1X Enterprise** — WPA2/WPA3 — bound to a **RADIUS** server), with optional VLAN. Per-SSID **hardening**
   (hide-SSID, client cap, client isolation, DTIM, schedule, 802.11k/v), a **minimum data rate** that prunes slow
-  802.11b basic rates (1/2/5.5/11 Mbps) to reclaim airtime, and **PPSK** (per-user PSK) with the **self-registration**
+  802.11b basic rates (1/2/5.5/11 Mbps) to reclaim airtime, per-SSID **QoS** (bind a **classifier** / **marker**
+  profile and toggle **WMM** for voice/video priority), and **PPSK** (per-user PSK) with the **self-registration**
   model — a HiveAP serves PPSK and hosts the enrolment portal (optionally RADIUS-authenticated) so users register and
   the AP issues keys locally. HiveKeeper configures the model; it does not mint individual keys.
-- **Captive portal**, **Mesh/Hive** join, **Client mode**, **Network** (IP / routing / DHCP / DNS),
-  **Monitoring** (SNMP, syslog), **Power & LED**, **Reboot**.
+- **Policy** — **user profiles**: the policy a client lands in (default **VLAN** id or VLAN group, optional
+  **QoS policy** and **schedule**), keyed by a numeric attribute (0–4095). List the profiles read from the AP,
+  create / overwrite one, **bind** it to an SSID's security object as the default profile, and remove it. Per
+  profile: a **bandwidth SLA** (performance-sentinel), **L2/L3 firewall** bindings (`ip-policy` / `mac-policy`
+  from/to client + default action) and a **QoS marker-map**. Plus the objects those reference — **IP firewall
+  policies** (create + a permit/deny/NAT/redirect rule on a service), **MAC firewall policies** (create), and
+  **QoS rate-limit policies** (`qos policy` capping a user profile's kbps) — created and listed here.
+- **Network** — the mgt0 interface (IP / VLAN / routing / DHCP-client / DNS / NTP), plus **static routes**
+  (net / host, list + add + remove) and **LLDP/CDP** neighbor discovery (enable, timers, receive-only, cache size).
+- **Captive portal**, **Mesh/Hive** join, **Client mode**, **Monitoring** (SNMP, syslog), **Power & LED**, **Reboot**.
 - **Radio** — per-interface channel, Tx power, operational mode, and **client target power**
   (`tx-power-control`); plus the named **radio profile** that interfaces reference: **channel width**
   (20/40/80 MHz), **band-steering**, **client load-balancing**, and a per-profile **max-clients** cap.
@@ -60,3 +69,13 @@ The gateway:
 Alerting / thresholds, config templates, scheduling, and any non-HiveOS vendor (the driver SPI is ready for
 them). Firmware upgrade ships but is **lab/untested** until validated on real hardware. The project README's
 Roadmap tracks the current plan.
+
+A few HiveOS features are **not exposed because the AP230 has no running-config grammar for them** (confirmed
+live, so they can't be driven through the SSH/apply-config path HiveKeeper uses):
+
+- **IGMP snooping / multicast** — there is no `igmp` command, no `mgt0` sub-node, and no `show igmp`; the AP
+  bridges multicast and IGMP snooping is the upstream switch's job.
+- **Tunnel-policy objects** — a user profile can *reference* a `tunnel-policy <name>`, but `tunnel-policy` is not
+  a top-level object you can create over SSH (L3 VPN tunneling, out of scope for a standalone AP).
+- **Individual PPSK keys** and **MAC-policy rules** — see Wi-Fi (PPSK) and Policy; MAC rules go through Advanced
+  raw-CLI as the combined rule line is rejected.

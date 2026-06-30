@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { MriPageHeader, MriButton, MriStatusBadge } from '@mriqbox/ui-kit'
-import { Boxes, Wifi, Network, Radio, Globe, Terminal, Power, ArrowLeft, Router, Activity, DoorOpen, KeyRound } from 'lucide-react'
+import { Boxes, Wifi, Network, Radio, Globe, Terminal, Power, ArrowLeft, Router, Activity, DoorOpen, KeyRound, ShieldUser } from 'lucide-react'
 import { useAuth } from '../context/AuthProvider'
 import { useToast } from '../context/ToastProvider'
 import { ConfigNav } from '../components/molecules/ConfigNav'
@@ -11,6 +11,7 @@ import { MeshSection } from '../components/organisms/MeshSection'
 import { RadioForm } from '../components/organisms/RadioForm'
 import { RadioProfileForm } from '../components/organisms/RadioProfileForm'
 import { NetworkSection } from '../components/organisms/NetworkSection'
+import { PolicySection } from '../components/organisms/PolicySection'
 import { ClientModeForm } from '../components/organisms/ClientModeForm'
 import { AdvancedConfigForm } from '../components/organisms/AdvancedConfigForm'
 import { PowerForm } from '../components/organisms/PowerForm'
@@ -20,7 +21,17 @@ import { CredentialForm } from '../components/organisms/CredentialForm'
 import { CaptivePortalForm } from '../components/organisms/CaptivePortalForm'
 import { MonitoringSection } from '../components/organisms/MonitoringSection'
 import { MONITORING_SECTIONS } from '../lib/configSchema'
-import { parseSsids, parseHives, parseCapwap, parseAcsp, parseLog } from '../lib/hiveosParse'
+import {
+  parseSsids,
+  parseHives,
+  parseCapwap,
+  parseAcsp,
+  parseLog,
+  parseUserProfiles,
+  parseFirewallPolicies,
+  parseQosPolicies,
+  parseStaticRoutes,
+} from '../lib/hiveosParse'
 import { meshCommands } from '../lib/hiveosCli'
 import { groupNamesFor, siteName } from '../lib/fleet'
 import { supportLevel, supportBadge } from '../lib/deviceSupport'
@@ -34,6 +45,7 @@ const SECTIONS = [
   { id: 'radio', label: 'Radio', icon: Radio },
   { id: 'clientmode', label: 'Client mode', icon: Router },
   { id: 'network', label: 'Network', icon: Globe },
+  { id: 'policy', label: 'Policy', icon: ShieldUser },
   { id: 'monitoring', label: 'Monitoring', icon: Activity },
   { id: 'advanced', label: 'Advanced', icon: Terminal },
   { id: 'power', label: 'Power', icon: Power },
@@ -133,6 +145,41 @@ export function DeviceDetailPage() {
           save: false,
         })
         .then((r) => parseSsids((r.outputs || []).join('\n'))),
+    [gateway],
+  )
+  // Read the user profiles + SSIDs from one running-config: the Policy section lists the profiles (default
+  // VLAN / QoS / schedule a client lands in) and binds them to an SSID's security object.
+  const loadPolicy = useCallback(
+    (d) =>
+      gateway
+        .agentOp(d.agentId, 'apply-config', {
+          host: d.mgmtIp,
+          port: 22,
+          commands: ['show running-config'],
+          save: false,
+        })
+        .then((r) => {
+          const cfg = (r.outputs || []).join('\n')
+          return {
+            profiles: parseUserProfiles(cfg),
+            ssids: parseSsids(cfg),
+            firewall: parseFirewallPolicies(cfg),
+            qos: parseQosPolicies(cfg),
+          }
+        }),
+    [gateway],
+  )
+  // Read the static routes from the AP for the Network section's routes editor.
+  const loadRoutes = useCallback(
+    (d) =>
+      gateway
+        .agentOp(d.agentId, 'apply-config', {
+          host: d.mgmtIp,
+          port: 22,
+          commands: ['show running-config'],
+          save: false,
+        })
+        .then((r) => parseStaticRoutes((r.outputs || []).join('\n'))),
     [gateway],
   )
   // Read the hives from the AP (show hive) so the Mesh list reflects reality; apply binds the chosen interfaces.
@@ -348,7 +395,12 @@ export function DeviceDetailPage() {
             </div>
           )}
           {section === 'clientmode' && <ClientModeForm device={device} onApply={onApplyConfig} busy={busy} />}
-          {section === 'network' && <NetworkSection device={device} onApply={onApplyConfig} busy={busy} />}
+          {section === 'network' && (
+            <NetworkSection device={device} loadRoutes={loadRoutes} onApply={onApplyConfig} busy={busy} />
+          )}
+          {section === 'policy' && (
+            <PolicySection device={device} loadPolicy={loadPolicy} onApply={onApplyConfig} busy={busy} />
+          )}
           {section === 'monitoring' && (
             <MonitoringSection
               device={device}

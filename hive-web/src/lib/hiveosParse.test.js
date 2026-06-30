@@ -1,5 +1,16 @@
 import { describe, it, expect } from 'vitest'
-import { parseSsids, parseHives, parseCapwap, parseAcsp, parseLog, filterLog } from './hiveosParse'
+import {
+  parseSsids,
+  parseHives,
+  parseCapwap,
+  parseAcsp,
+  parseLog,
+  filterLog,
+  parseUserProfiles,
+  parseStaticRoutes,
+  parseFirewallPolicies,
+  parseQosPolicies,
+} from './hiveosParse'
 
 // A real running-config excerpt captured from the AP230 (secrets already masked by the gateway).
 const CONFIG = `
@@ -32,6 +43,88 @@ describe('parseSsids', () => {
     expect(parseSsids('hostname x\nno capwap client enable')).toEqual([])
     expect(parseSsids('')).toEqual([])
     expect(parseSsids(null)).toEqual([])
+  })
+})
+
+describe('parseUserProfiles', () => {
+  it('reads the coalesced profile line and the SSID that binds its attribute', () => {
+    expect(parseUserProfiles(CONFIG)).toEqual([
+      {
+        name: 'HK-JOB',
+        attribute: 7,
+        vlanId: 7,
+        vlanGroup: null,
+        qosPolicy: 'def-user-qos',
+        schedule: null,
+        boundTo: ['HK-JOB'],
+      },
+    ])
+  })
+
+  it('orders by attribute, leaves boundTo empty when nothing binds it, and reads a VLAN group', () => {
+    const cfg = `
+user-profile staff attribute 5 vlan-id 50
+user-profile guest vlan-group guest-vlans attribute 3
+security-object Corp default-user-profile-attr 5
+`
+    expect(parseUserProfiles(cfg)).toEqual([
+      { name: 'guest', attribute: 3, vlanId: null, vlanGroup: 'guest-vlans', qosPolicy: null, schedule: null, boundTo: [] },
+      { name: 'staff', attribute: 5, vlanId: 50, vlanGroup: null, qosPolicy: null, schedule: null, boundTo: ['Corp'] },
+    ])
+  })
+
+  it('returns an empty list when there are no user profiles', () => {
+    expect(parseUserProfiles('hostname x')).toEqual([])
+    expect(parseUserProfiles('')).toEqual([])
+    expect(parseUserProfiles(null)).toEqual([])
+  })
+})
+
+describe('parseStaticRoutes', () => {
+  it('parses net, host and default routes with optional metric', () => {
+    const cfg = `
+ip route default gateway 192.168.1.1
+ip route net 10.9.9.0 255.255.255.0 gateway 192.168.1.1
+ip route host 10.8.8.8 gateway 192.168.1.2 metric 5
+`
+    expect(parseStaticRoutes(cfg)).toEqual([
+      { type: 'default', dest: null, netmask: null, gateway: '192.168.1.1', metric: null },
+      { type: 'net', dest: '10.9.9.0', netmask: '255.255.255.0', gateway: '192.168.1.1', metric: null },
+      { type: 'host', dest: '10.8.8.8', netmask: null, gateway: '192.168.1.2', metric: 5 },
+    ])
+  })
+  it('returns an empty list when there are no routes', () => {
+    expect(parseStaticRoutes('hostname x')).toEqual([])
+    expect(parseStaticRoutes('')).toEqual([])
+  })
+})
+
+describe('parseFirewallPolicies', () => {
+  it('collects de-duplicated, sorted ip- and mac-policy names', () => {
+    const cfg = `
+ip-policy block-smb
+ip-policy block-smb id 1 from any to any service smb action deny
+ip-policy allow-dns
+mac-policy mac-allow
+`
+    expect(parseFirewallPolicies(cfg)).toEqual({ ip: ['allow-dns', 'block-smb'], mac: ['mac-allow'] })
+  })
+  it('returns empty arrays for a config with no policies', () => {
+    expect(parseFirewallPolicies('hostname x')).toEqual({ ip: [], mac: [] })
+  })
+})
+
+describe('parseQosPolicies', () => {
+  it('collects de-duplicated, sorted qos policy names', () => {
+    const cfg = `
+qos policy voip
+qos policy voip user-profile 5000 10
+qos policy bulk
+`
+    expect(parseQosPolicies(cfg)).toEqual(['bulk', 'voip'])
+  })
+  it('returns an empty list when there are none', () => {
+    expect(parseQosPolicies('hostname x')).toEqual([])
   })
 })
 

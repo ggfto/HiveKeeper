@@ -9,8 +9,8 @@ import {
   MriStatusBadge,
   MriSectionHeader,
 } from '@mriqbox/ui-kit'
-import { Wifi, Lock, LockOpen, ShieldCheck, KeyRound } from 'lucide-react'
-import { minRateCommands, ssidHardeningCommands, ppskCommands } from '../../lib/hiveosCli'
+import { Wifi, Lock, LockOpen, ShieldCheck, KeyRound, Gauge } from 'lucide-react'
+import { minRateCommands, ssidHardeningCommands, ppskCommands, ssidQosCommands } from '../../lib/hiveosCli'
 
 // Data-rate ladders (Mbps) per band, for the minimum-data-rate picker. 2.4 GHz (11g) carries the slow 802.11b
 // rates that hog airtime; 5 GHz (11a) starts at 6.
@@ -328,6 +328,56 @@ function PpskBlock({ ssids, onApply, busy }) {
 }
 
 /**
+ * Per-SSID QoS: bind a QoS classifier profile (classify incoming traffic) and a marker profile (mark outgoing),
+ * and toggle WMM (Wi-Fi Multimedia — on by default; needed for voice/video priority). Grammar confirmed live on
+ * an AP230: `ssid <n> qos-classifier <profile>`, `ssid <n> qos-marker <profile>`, `[no] ssid <n> wmm`. The
+ * classifier/marker reference `qos classifier-profile` / `qos marker-profile` objects by name.
+ */
+function QosBlock({ ssids, onApply, busy }) {
+  const empty = { qosClassifier: '', qosMarker: '', wmm: '' }
+  const [name, setName] = useState(ssids[0]?.name || '')
+  const [form, setForm] = useState(empty)
+  const set = (k) => (v) => setForm((f) => ({ ...f, [k]: v }))
+
+  const apply = () => {
+    const commands = ssidQosCommands(name, form)
+    if (commands.length === 0 || !onApply) return
+    onApply({ commands, save: true })
+    setForm(empty)
+  }
+
+  return (
+    <div className="space-y-2 rounded-md border border-border p-3">
+      <span className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground">
+        <Gauge className="h-3.5 w-3.5" /> QoS (voice / video priority)
+      </span>
+      <p className="text-xs text-muted-foreground">
+        Bind QoS classifier / marker profiles to prioritise traffic, and toggle WMM. Profiles are referenced by
+        name (define them on the AP); WMM is on by default and is required for voice/video QoS.
+      </p>
+      <div className="grid gap-2 sm:grid-cols-3">
+        <label className="flex flex-col gap-1" htmlFor="qos-ssid">
+          <span className="text-xs text-muted-foreground">Apply to SSID</span>
+          <select id="qos-ssid" className={SELECT_CLASS} value={name} onChange={(e) => setName(e.target.value)}>
+            {ssids.map((s) => (
+              <option key={s.name} value={s.name}>
+                {s.name}
+              </option>
+            ))}
+          </select>
+        </label>
+        <Field label="QoS classifier profile" value={form.qosClassifier} onChange={set('qosClassifier')} placeholder="—" />
+        <Field label="QoS marker profile" value={form.qosMarker} onChange={set('qosMarker')} placeholder="—" />
+        <ToggleSelect id="qos-wmm" label="WMM" value={form.wmm} onChange={set('wmm')} />
+      </div>
+      <MriButton size="sm" disabled={busy || !name} onClick={apply}>
+        Apply QoS
+      </MriButton>
+    </div>
+  )
+}
+
+/**
  * Wi-Fi management for a device: list the SSIDs read from the AP's running-config (each in an accordion with
  * its security/VLAN/radios + edit + remove), and add new ones. SSID writes use the typed configure-ssid path
  * (the driver generates the CLI); the list re-reads after each change. onApply (apply-config) drives the raw
@@ -483,6 +533,7 @@ export function WifiSection({ device, loadSsids, configureSsid, onApply, busy })
         <>
           <MinRateBlock ssids={ssids} busy={busy} onApply={(body) => onApply(device, body)} />
           <HardeningBlock ssids={ssids} busy={busy} onApply={(body) => onApply(device, body)} />
+          <QosBlock ssids={ssids} busy={busy} onApply={(body) => onApply(device, body)} />
           <PpskBlock ssids={ssids} busy={busy} onApply={(body) => onApply(device, body)} />
         </>
       )}

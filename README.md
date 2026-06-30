@@ -208,9 +208,13 @@ The full, phased plan — every item's HiveOS CLI grammar confirmed live on an A
   named radio profile, client Tx-power control (`tx-power-control`) on the radio, a per-profile/per-SSID client
   cap, and a per-SSID minimum data rate that prunes slow 802.11b basic rates — all making the built-in radio
   best-practice advisories actionable. Every line's grammar was confirmed live on the AP230.
-- **Phase 2 — Wi-Fi & security** — WPA3-SAE, 802.1X / RADIUS, PPSK, and per-SSID hardening (schedules, client
-  isolation, 802.11k/v).
-- **Phase 3 — Network policy** — user-profiles, VLAN / QoS / rate-limit / firewall, IGMP snooping, LLDP.
+- **Phase 2 — Wi-Fi & security** ✅ **shipped** — WPA3-SAE, 802.1X / RADIUS, PPSK (self-registration), and
+  per-SSID hardening (schedules, client isolation, 802.11k/v). Grammar confirmed live on the AP230.
+- **Phase 3 — Network policy & L2/L3** ✅ **shipped** — user-profiles (default VLAN / QoS / schedule + bind to an
+  SSID), per-profile bandwidth SLA and L2/L3 firewall bindings, IP/MAC firewall-policy objects, QoS rate-limit
+  policies + per-SSID QoS (classifier / marker / WMM), LLDP, and static routes. Grammar confirmed live on the
+  AP230; IGMP snooping / multicast turned out **not exposed** by HiveOS over SSH (the upstream switch's job — see
+  [`docs/capabilities.md`](docs/capabilities.md)).
 - **Phase 4 — RF tuning** — DFS, short guard interval, A-MPDU / A-MSDU, beamforming, high-density knobs.
 - **Phase 5 — Operations** — firmware-upgrade GA, scheduling, alerting / thresholds, config templates.
 

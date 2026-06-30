@@ -133,15 +133,35 @@ Was WPA2-PSK only. The AP230 supports a full suite (`security-object <so> securi
 
 ---
 
-## Phase 3 — Network policy & L2/L3
+## Phase 3 — Network policy & L2/L3 — **SHIPPED**
 
-Today VLAN is read from config but not edited beyond the SSID's optional VLAN.
+Was: VLAN read from config but not edited beyond the SSID's optional VLAN. Now a full policy/L2-L3 surface, all
+grammar **confirmed live on the AP230** (with two write quirks the live probes caught: HiveOS **rejects a
+combined** `user-profile <n> attribute 99 vlan-id 99` — each setting is its own line, the running-config later
+coalescing them; and firewall/QoS objects must be **created before** they take a rule).
 
-- **User-profiles & VLANs** — `user-profile <name> vlan-id | vlan-group | qos-policy | qos-marker-map |
-  performance-sentinel (rate limit) | ip-policy-default-action / mac-policy (firewall) | schedule |
-  tunnel-policy`. A first-class policy editor.
-- **QoS** — `ssid <name> qos-classifier | qos-marker | wmm`, mapped to user-profiles (voice/video priority).
-- **Multicast / IGMP snooping**, **LLDP**, additional static routes.
+- ✅ **User-profiles & VLANs** — the **Policy** section lists the user profiles read from the running-config and
+  lets an operator create/overwrite one (default **VLAN id** or **VLAN group**, optional **QoS policy** +
+  **schedule**, keyed by a numeric **attribute** 0–4095), **bind** it to an SSID's security object
+  (`security-object <so> default-user-profile-attr <attr>`), and remove it (`userProfileCommands` /
+  `bindUserProfileCommands` / `removeUserProfileCommands` + `parseUserProfiles`).
+- ✅ **Per-profile policy** — a bandwidth SLA (`performance-sentinel enable | guaranteed-bandwidth | action`),
+  **L2/L3 firewall** bindings + default actions (`security ip-policy from-access|to-access`,
+  `ip-policy-default-action`, the MAC equivalents) and a `qos-marker-map 8021p|diffserv` (`userProfilePolicyCommands`).
+- ✅ **Firewall policy objects** — `ip-policy <name>` (create + a `permit|deny|nat|redirect` rule on a service
+  between from/to) and `mac-policy <name>` (create; MAC rules via Advanced raw-CLI — the combined line is rejected)
+  (`ipPolicyCommands` / `macPolicyCommands` + `parseFirewallPolicies`).
+- ✅ **QoS** — a `qos policy <name>` rate-limit object (`qos policy <n> user-profile <kbps> <weight>`, `qos enable`),
+  referenced by a profile's QoS field (`qosPolicyCommands` + `parseQosPolicies`); and **per-SSID** `qos-classifier` /
+  `qos-marker` profile bindings + `wmm` toggle for voice/video priority (`ssidQosCommands`, in the Wi-Fi section).
+- ✅ **LLDP** — device-wide `lldp` enable + `timer` / `holdtime` / `receive-only` / `max-entries` (`lldpCommands`,
+  in the Network section). HiveOS has no per-interface LLDP (`interface mgt0 lldp` is rejected).
+- ✅ **Static routes** — `ip route net <ip> <mask> gateway <gw> [metric]` / `ip route host <ip> gateway <gw>`,
+  listed + added + removed (confirm-gated; the gateway must be on a connected subnet) (`staticRouteCommands` +
+  `parseStaticRoutes`, in the Network section).
+- ⛔ **Multicast / IGMP snooping** — **not exposed**: the AP230 has no `igmp` command, no `mgt0` sub-node, and no
+  `show igmp` (confirmed live). The AP bridges multicast; IGMP snooping is the upstream switch's job. **Tunnel
+  policy** is likewise referenced-only (no top-level object grammar) — see `capabilities.md` → *Not yet*.
 
 ---
 

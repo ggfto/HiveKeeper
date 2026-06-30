@@ -14,6 +14,16 @@ import {
   clientModeConnectCommands,
   clientModeDisconnectCommands,
   ledCommands,
+  userProfileCommands,
+  bindUserProfileCommands,
+  removeUserProfileCommands,
+  userProfilePolicyCommands,
+  ipPolicyCommands,
+  macPolicyCommands,
+  qosPolicyCommands,
+  ssidQosCommands,
+  lldpCommands,
+  staticRouteCommands,
 } from './hiveosCli'
 
 // Syntax confirmed live on an AP230 (HiveOS 10.6r1a) via `?` context help:
@@ -305,5 +315,212 @@ describe('ledCommands', () => {
   it('leaves power-saving unchanged when blank, and emits nothing for an empty request', () => {
     expect(ledCommands({ brightness: 'off', powerSaving: '' })).toEqual(['system led brightness off'])
     expect(ledCommands({})).toEqual([])
+  })
+})
+
+// Confirmed live on the AP230: each user-profile setting is its OWN line (a combined
+// `user-profile <n> attribute 99 vlan-id 99` is REJECTED), the running-config later coalescing them. The
+// numeric attribute keys the profile; an SSID binds it via `security-object <so> default-user-profile-attr`.
+describe('userProfileCommands', () => {
+  it('emits attribute first, then VLAN id, QoS policy and schedule as separate lines', () => {
+    expect(
+      userProfileCommands('staff', { attribute: 7, vlanId: 7, qosPolicy: 'def-user-qos', schedule: 'work-hours' }),
+    ).toEqual([
+      'user-profile staff attribute 7',
+      'user-profile staff vlan-id 7',
+      'user-profile staff qos-policy def-user-qos',
+      'user-profile staff schedule work-hours',
+    ])
+  })
+  it('uses a VLAN group when no VLAN id is given (id wins if both are present)', () => {
+    expect(userProfileCommands('guest', { attribute: 3, vlanGroup: 'guest-vlans' })).toEqual([
+      'user-profile guest attribute 3',
+      'user-profile guest vlan-group guest-vlans',
+    ])
+    expect(userProfileCommands('guest', { attribute: 3, vlanId: 9, vlanGroup: 'guest-vlans' })).toEqual([
+      'user-profile guest attribute 3',
+      'user-profile guest vlan-id 9',
+    ])
+  })
+  it('needs a name and a numeric attribute, otherwise nothing', () => {
+    expect(userProfileCommands('staff', { vlanId: 7 })).toEqual([])
+    expect(userProfileCommands('', { attribute: 7 })).toEqual([])
+    expect(userProfileCommands('staff', { attribute: 'x', vlanId: 7 })).toEqual([])
+    expect(userProfileCommands('  ', { attribute: 1 })).toEqual([])
+  })
+  it('allows attribute 0 (the default-profile attribute)', () => {
+    expect(userProfileCommands('default-profile', { attribute: 0, vlanId: 1 })).toEqual([
+      'user-profile default-profile attribute 0',
+      'user-profile default-profile vlan-id 1',
+    ])
+  })
+})
+
+describe('bindUserProfileCommands', () => {
+  it('binds a profile attribute to a security object as its default', () => {
+    expect(bindUserProfileCommands('Corp', 7)).toEqual(['security-object Corp default-user-profile-attr 7'])
+  })
+  it('needs a security object and a numeric attribute', () => {
+    expect(bindUserProfileCommands('', 7)).toEqual([])
+    expect(bindUserProfileCommands('Corp', '')).toEqual([])
+    expect(bindUserProfileCommands('Corp', 'x')).toEqual([])
+  })
+})
+
+describe('removeUserProfileCommands', () => {
+  it('negates the named profile', () => {
+    expect(removeUserProfileCommands('staff')).toEqual(['no user-profile staff'])
+  })
+  it('emits nothing without a name', () => {
+    expect(removeUserProfileCommands('')).toEqual([])
+    expect(removeUserProfileCommands('  ')).toEqual([])
+  })
+})
+
+// Confirmed live: each is its own line. perf-sentinel enable/guaranteed-bandwidth/action; ip/mac-policy default
+// actions; security ip/mac-policy from-access|to-access <named policy>; qos-marker-map 8021p|diffserv <map>.
+describe('userProfilePolicyCommands', () => {
+  it('builds performance-sentinel, firewall bindings + default actions, and a marker-map', () => {
+    expect(
+      userProfilePolicyCommands('staff', {
+        perfSentinel: 'enable',
+        guaranteedBandwidth: 2000,
+        perfAction: 'boost',
+        ipDefaultAction: 'deny',
+        ipPolicyFrom: 'block-smb',
+        ipPolicyTo: 'allow-dns',
+        macDefaultAction: 'permit',
+        macPolicyFrom: 'mac-allow',
+        qosMarkerMapType: 'diffserv',
+        qosMarkerMap: 'voip-map',
+      }),
+    ).toEqual([
+      'user-profile staff performance-sentinel enable',
+      'user-profile staff performance-sentinel guaranteed-bandwidth 2000',
+      'user-profile staff performance-sentinel action boost',
+      'user-profile staff ip-policy-default-action deny',
+      'user-profile staff security ip-policy from-access block-smb',
+      'user-profile staff security ip-policy to-access allow-dns',
+      'user-profile staff mac-policy-default-action permit',
+      'user-profile staff security mac-policy from-access mac-allow',
+      'user-profile staff qos-marker-map diffserv voip-map',
+    ])
+  })
+  it('disables performance-sentinel via the no form and defaults the marker-map type to 8021p', () => {
+    expect(userProfilePolicyCommands('staff', { perfSentinel: 'disable', qosMarkerMap: 'm1' })).toEqual([
+      'no user-profile staff performance-sentinel enable',
+      'user-profile staff qos-marker-map 8021p m1',
+    ])
+  })
+  it('emits nothing without a profile name or with all-blank fields', () => {
+    expect(userProfilePolicyCommands('', { perfSentinel: 'enable' })).toEqual([])
+    expect(userProfilePolicyCommands('staff', {})).toEqual([])
+  })
+})
+
+// Confirmed live: `ip-policy <name>` creates the group FIRST, then a combined rule line works; `any` is valid.
+describe('ipPolicyCommands', () => {
+  it('creates the policy group then adds a rule (defaulting from/to/service to any)', () => {
+    expect(ipPolicyCommands('block-smb', { id: 1, action: 'deny', service: 'smb' })).toEqual([
+      'ip-policy block-smb',
+      'ip-policy block-smb id 1 from any to any service smb action deny',
+    ])
+  })
+  it('emits only the create line when no full rule is given', () => {
+    expect(ipPolicyCommands('empty', {})).toEqual(['ip-policy empty'])
+    expect(ipPolicyCommands('empty', { id: 2 })).toEqual(['ip-policy empty']) // no action -> no rule
+  })
+  it('removes the policy and needs a name', () => {
+    expect(ipPolicyCommands('block-smb', { remove: true })).toEqual(['no ip-policy block-smb'])
+    expect(ipPolicyCommands('', { id: 1, action: 'deny' })).toEqual([])
+  })
+})
+
+describe('macPolicyCommands', () => {
+  it('creates and removes a MAC policy', () => {
+    expect(macPolicyCommands('mac-allow')).toEqual(['mac-policy mac-allow'])
+    expect(macPolicyCommands('mac-allow', { remove: true })).toEqual(['no mac-policy mac-allow'])
+    expect(macPolicyCommands('')).toEqual([])
+  })
+})
+
+// Confirmed live: `qos policy <n>` creates, `qos policy <n> user-profile <kbps> <weight>` (weight required).
+describe('qosPolicyCommands', () => {
+  it('enables QoS, creates the policy and sets the user-profile rate + weight', () => {
+    expect(qosPolicyCommands('voip', { enableQos: true, rateKbps: 5000, weight: 20 })).toEqual([
+      'qos enable',
+      'qos policy voip',
+      'qos policy voip user-profile 5000 20',
+    ])
+  })
+  it('defaults the weight to 10 and can just create the policy', () => {
+    expect(qosPolicyCommands('voip', { rateKbps: 5000 })).toEqual([
+      'qos policy voip',
+      'qos policy voip user-profile 5000 10',
+    ])
+    expect(qosPolicyCommands('voip', {})).toEqual(['qos policy voip'])
+  })
+  it('removes the policy and needs a name', () => {
+    expect(qosPolicyCommands('voip', { remove: true })).toEqual(['no qos policy voip'])
+    expect(qosPolicyCommands('')).toEqual([])
+  })
+})
+
+describe('ssidQosCommands', () => {
+  it('binds classifier/marker profiles and toggles WMM', () => {
+    expect(ssidQosCommands('Voice', { qosClassifier: 'voip-class', qosMarker: 'voip-mark', wmm: 'enable' })).toEqual([
+      'ssid Voice qos-classifier voip-class',
+      'ssid Voice qos-marker voip-mark',
+      'ssid Voice wmm',
+    ])
+    expect(ssidQosCommands('Voice', { wmm: 'disable' })).toEqual(['no ssid Voice wmm'])
+  })
+  it('emits nothing without an SSID or fields', () => {
+    expect(ssidQosCommands('', { wmm: 'enable' })).toEqual([])
+    expect(ssidQosCommands('Voice', {})).toEqual([])
+  })
+})
+
+// Confirmed live: `lldp`/`no lldp` toggle, `lldp timer|holdtime|max-entries <n>`, `lldp receive-only` toggle.
+describe('lldpCommands', () => {
+  it('enables LLDP and sets timers/limits', () => {
+    expect(lldpCommands({ enable: 'enable', timer: 45, holdtime: 120, receiveOnly: 'enable', maxEntries: 100 })).toEqual([
+      'lldp',
+      'lldp timer 45',
+      'lldp holdtime 120',
+      'lldp receive-only',
+      'lldp max-entries 100',
+    ])
+  })
+  it('disables LLDP and receive-only via the no forms', () => {
+    expect(lldpCommands({ enable: 'disable', receiveOnly: 'disable' })).toEqual(['no lldp', 'no lldp receive-only'])
+  })
+  it('emits nothing for an empty request', () => {
+    expect(lldpCommands({})).toEqual([])
+  })
+})
+
+// Confirmed live: net route `ip route net <ip> <mask> gateway <gw> [metric]`; host route omits the mask.
+describe('staticRouteCommands', () => {
+  it('builds a net route with an optional metric', () => {
+    expect(staticRouteCommands({ type: 'net', dest: '10.9.9.0', netmask: '255.255.255.0', gateway: '192.168.1.1' })).toEqual([
+      'ip route net 10.9.9.0 255.255.255.0 gateway 192.168.1.1',
+    ])
+    expect(
+      staticRouteCommands({ type: 'net', dest: '10.9.9.0', netmask: '255.255.255.0', gateway: '192.168.1.1', metric: 5 }),
+    ).toEqual(['ip route net 10.9.9.0 255.255.255.0 gateway 192.168.1.1 metric 5'])
+  })
+  it('builds a host route (no netmask) and the remove form', () => {
+    expect(staticRouteCommands({ type: 'host', dest: '10.9.9.9', gateway: '192.168.1.1' })).toEqual([
+      'ip route host 10.9.9.9 gateway 192.168.1.1',
+    ])
+    expect(staticRouteCommands({ type: 'host', dest: '10.9.9.9', gateway: '192.168.1.1', remove: true })).toEqual([
+      'no ip route host 10.9.9.9 gateway 192.168.1.1',
+    ])
+  })
+  it('needs a dest + gateway (and a netmask for a net route)', () => {
+    expect(staticRouteCommands({ type: 'net', dest: '10.9.9.0', gateway: '192.168.1.1' })).toEqual([])
+    expect(staticRouteCommands({ type: 'host', dest: '', gateway: '192.168.1.1' })).toEqual([])
+    expect(staticRouteCommands({ type: 'host', dest: '10.9.9.9' })).toEqual([])
   })
 })
