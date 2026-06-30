@@ -33,7 +33,7 @@ agent being online):
 - **Restore config** — pick a saved running-config (e.g. a backup `.txt`); its lines are replayed additively
   and persisted with `save config`.
 - **Firmware upgrade** — give a URL the AP can reach (TFTP/FTP/HTTP); HiveKeeper runs `save image` and reboots
-  to activate it. ⚠️ **Lab / untested in v0.1** — validate against your hardware first; the AP is offline for
+  to activate it. ⚠️ **Lab / untested** — validate against your hardware first; the AP is offline for
   several minutes, so re-run **Inventory** afterwards to confirm the new version.
 
 For the exact engine commands behind these (and the CLI equivalents), see [Capabilities](/capabilities/)

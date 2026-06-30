@@ -35,7 +35,7 @@ flowchart TD
 
 | Module | What |
 | --- | --- |
-| `hive-core` | Framework-free engine: `api` (Engine + DTOs), `engine` (LocalEngine), `transport` (sshj), `session` (CLI scraping), `model`, `drivers` (SPI), `spi` (EventSink / `CredentialProvider` + writable variant / `SecretUnsealer` / BackupStore), `crypto` (AES-GCM `SecretCipher` for at-rest, `EnvelopeCipher` for sealing a secret to an agent's public key), `tasks`. No Spring/UI/Jackson. |
+| `hive-core` | Framework-free engine: `api` (Engine + DTOs), `engine` (LocalEngine), `transport` (sshj), `session` (CLI scraping), `model`, `drivers` (SPI), `spi` (EventSink / `CredentialProvider` + writable variant / `SecretUnsealer` / `PpskUserStore` / BackupStore), `crypto` (AES-GCM `SecretCipher` for at-rest, `EnvelopeCipher` for sealing a secret to an agent's public key, `PskGenerator`), `alerts` (the pure alert / radio-advisory rule engine, shared verbatim with the web), `tasks`. No Spring/UI/Jackson. |
 | `hive-wire` | JSON (de)serialization of the core DTOs. The only module that depends on Jackson. |
 | `hive-protocol` | The serializable gateway↔agent protocol; carries the core `Command` / `Result` / `Event` DTOs verbatim so local and remote are the same contract. |
 | `hive-cli` | picocli front-end: `inventory`, `backup`, and the config commands. Talks to `Engine` + DTOs only. |
@@ -51,3 +51,12 @@ cloud cannot connect inward, so the **agent dials out** and the cloud only ever 
 connection. The wire payload is the **already-serializable in-process API**, so the agent literally does
 `engine.execute(decode(frame))`. The full transport, framing, and resilience design is documented in the
 [agent ⇄ gateway protocol](/agent-protocol/).
+
+## Background work in the gateway
+
+Beyond request/response, the `postgres`-profile gateway runs one scheduled job: the **fleet alert poller**
+(`FleetPoller`, `@Scheduled`). It walks every tenant on an interval, reaches each device through its agent
+exactly like a bulk inventory, evaluates the shared `hive-core` `alerts` rules, and diffs the result against a
+`fleet_alert` state table so an alert is delivered on **onset** and again on **resolution** — never every poll.
+Delivery fans out to per-tenant **webhook** and **email** channels. It is the only background scheduler;
+operator-initiated durable jobs use the separate `JobGateway` redelivery path, not the scheduler.

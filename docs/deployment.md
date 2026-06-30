@@ -37,6 +37,18 @@ key ones are `HIVEKEEPER_DEFAULT_USER` / `HIVEKEEPER_DEFAULT_PASSWORD` (the agen
 encrypted at rest), and, for the Postgres profile, `HIVEKEEPER_CRYPTO_KEY` (job-secret encryption — set a real
 key in production: `openssl rand -base64 32`).
 
+### Optional subsystem env (agent + gateway)
+
+| Variable | On | Enables |
+| --- | --- | --- |
+| `HIVEKEEPER_PPSK_STORE` | agent | Path to the on-prem PPSK key store — turns on admin-minted **PPSK via RADIUS** (with `HIVEKEEPER_VAULT_KEY` for at-rest encryption). Lab/untested; see [PPSK runbook](/ppsk-radius-runbook/). |
+| `HIVEKEEPER_RADIUS_DIR` | agent | Directory the agent writes the FreeRADIUS authorize file to (the PPSK RADIUS runtime). |
+| `HIVEKEEPER_ALERT_POLL_INTERVAL_MS` | gateway (`postgres`) | Background alert-poller interval (default `300000` = 5 min); `…_INITIAL_DELAY_MS` for the first run. |
+| `HIVEKEEPER_SMTP_HOST` / `…_PORT` / `…_USER` / `…_PASSWORD` + `HIVEKEEPER_ALERT_EMAIL_FROM` | gateway (`postgres`) | SMTP for **email** alert channels. Unset ⇒ email channels are skipped (webhook channels need no config). |
+
+The poller and email/webhook delivery only run under the `postgres` profile; channels + thresholds are managed
+in the console under **Alerts → Alert delivery** (admin-gated).
+
 :::note
 The web console (`hive-web`) is served separately by design — it is not bundled into the gateway. Run it
 with `pnpm --dir hive-web dev` (it proxies `/gw` to the gateway on `:8090`), or build the static `dist/` and

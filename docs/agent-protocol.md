@@ -65,7 +65,9 @@ channel — no socket.)
   the gateway seals the secret to the agent's public key (taken from its mTLS cert) with `EnvelopeCipher`
   (RSA-OAEP + AES-GCM), dispatches a `SetCredential` command synchronously (**never** persisted as a durable
   job, never logged), and the agent unseals it with its keystore private key before writing its vault
-  (encrypted at rest). The gateway holds no plaintext.
+  (encrypted at rest). The gateway holds no plaintext. **Minted PPSK keys take the same path**: a
+  `ManagePpskUser` command carries the key sealed to the agent (`EnvelopeCipher`), the agent unseals it locally
+  into its at-rest-encrypted PPSK store, and the cloud persists only a reference — never the usable key.
 - Enrollment: one-time token (scoped `tenantId`/`siteId`) → agent generates a keypair **locally** →
   mTLS client cert (CA-pinned, short-lived, auto-renewed). `tenantId` is derived server-side from the
   agent record, never trusted from the client.

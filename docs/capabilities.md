@@ -75,7 +75,7 @@ Per device, via the web UI ([device configuration](/device-configuration/) expla
 - **Restore** — re-apply a saved running-config (additive replay, then `save config`). In the web UI it lives
   under **Power → Maintenance**; on the CLI it is `restore`.
 - **Firmware upgrade** — pull an image from a URL the AP can reach (TFTP/FTP/HTTP) and reboot to activate it
-  (`save image`). ⚠️ **Lab / untested in v0.1** — validate it against your hardware before relying on it.
+  (`save image`). ⚠️ **Lab / untested** — validate it against your hardware before relying on it.
 
 ## Fleet & multi-org
 

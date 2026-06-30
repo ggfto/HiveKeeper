@@ -24,7 +24,7 @@ powershell -ExecutionPolicy Bypass -File scripts/run-solo.ps1   # full stack
 
 No login screen, no organizations — the gateway authorizes every request as the owner of an implicit
 `local` tenant, and the web app learns this at boot from `/api/mode` and skips the sign-in gate entirely.
-Best for a single local AP (the v0.1 scope: inventory + git backup).
+Best for managing a single local AP without standing up an IdP.
 
 :::caution
 Solo mode disables authentication. Run it only on a trusted machine and keep the gateway bound to

@@ -27,9 +27,11 @@ inventory, config backup/restore, firmware, SSID/VLAN, and Hive/mesh — all wit
 HiveKeeper turns that CLI into a clean, scriptable, eventually-GUI tool.
 
 :::note[Status]
-**Early development (v0.1).** The first milestone is a CLI that inventories and git-backs-up a single AP
-over SSH, validated against a live AP230. A web control panel, an on-prem agent, and a multi-tenant
-gateway are also built and run locally today — see [Capabilities](/capabilities/).
+**Active development.** Well past the first milestone (a CLI that inventories and git-backs-up an AP): a full
+web control panel, an on-prem agent, and a multi-tenant gateway run locally today, covering credentials, the
+complete Wi-Fi/security surface, network policy, RF tuning, and operations (scheduling, config templates,
+alerting) — every HiveOS line confirmed live on an AP230. A few paths ship **lab/untested** (firmware upgrade;
+admin-minted PPSK via RADIUS). See [Capabilities](/capabilities/) and the [Roadmap](/roadmap/).
 :::
 
 ## Why
