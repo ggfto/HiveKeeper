@@ -403,5 +403,18 @@ export function createDemoGateway() {
       logOp(op, target?.kind || 'org', `${okCount}/${results.length} ok`)
       return ok({ op, total: results.length, ok: okCount, failed: results.length - okCount, results })
     },
+    bulkApplyConfig: (target, commands, save) => {
+      let pool = db.devices
+      if (target?.kind === 'site') pool = pool.filter((d) => d.siteId === target.id)
+      if (target?.kind === 'group') pool = pool.filter((d) => (d.groups || []).includes(target.id))
+      const results = pool.map((d) =>
+        connected(d.agentId)
+          ? { deviceId: d.deviceId, host: d.mgmtIp, serial: d.serial, status: 'ok' }
+          : { deviceId: d.deviceId, host: d.mgmtIp, serial: d.serial, status: 'agent_offline', detail: 'agent not connected' },
+      )
+      const okCount = results.filter((r) => r.status === 'ok').length
+      logOp('apply-config', target?.kind || 'org', `${(commands || []).length} line(s) · ${okCount}/${results.length} ok${save ? ' · saved' : ''}`)
+      return ok({ op: 'apply-config', total: results.length, ok: okCount, failed: results.length - okCount, results })
+    },
   }
 }

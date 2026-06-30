@@ -66,6 +66,16 @@ describe('createGateway', () => {
     expect(opts.headers['Content-Type']).toBe('application/json')
   })
 
+  it('POSTs a bulk apply-config with the target, commands and save flag', async () => {
+    const fetchImpl = okFetch({ op: 'apply-config', total: 1, ok: 1, failed: 0, results: [] })
+    const gw = createGateway({ getAuth: () => ({ tenantKey: 'acme-key' }), fetchImpl })
+    await gw.bulkApplyConfig({ kind: 'site', id: 's1' }, ['hostname X'], true)
+    const [url, opts] = fetchImpl.mock.calls[0]
+    expect(url).toBe('/gw/api/fleet/bulk/apply-config')
+    expect(opts.method).toBe('POST')
+    expect(JSON.parse(opts.body)).toEqual({ siteId: 's1', commands: ['hostname X'], save: true })
+  })
+
   it('throws a structured error (status + message) on a non-ok response', async () => {
     const fetchImpl = okFetch({ error: 'forbidden', detail: 'requires VIEWER' }, { ok: false, status: 403 })
     const gw = createGateway({ getAuth: () => ({ tenantKey: 'k' }), fetchImpl })

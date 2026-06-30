@@ -97,5 +97,8 @@ export function createGateway({ getAuth = () => ({}), fetchImpl = fetch, baseUrl
     setCredential: (agentId, body) => req(`/api/agents/${agentId}/set-credential`, { method: 'POST', body }),
     // bulk read ops across a scope
     bulk: (op, target) => req(`/api/fleet/bulk/${op}`, { method: 'POST', body: bulkBody(target) }),
+    // bulk WRITE: apply the same CLI lines (a config template) across a scope; `save` persists with `save config`.
+    bulkApplyConfig: (target, commands, save = true) =>
+      req('/api/fleet/bulk/apply-config', { method: 'POST', body: { ...bulkBody(target), commands, save } }),
   }
 }

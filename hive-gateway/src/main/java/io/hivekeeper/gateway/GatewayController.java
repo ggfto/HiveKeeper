@@ -120,6 +120,11 @@ public class GatewayController {
     public record BulkRequest(String siteId, String groupId) {
     }
 
+    /** Apply the same CLI lines (a config template) to every registered device in a group, a site, or (both
+     *  null) the whole org, optionally persisting with {@code save config}. */
+    public record BulkApplyConfigRequest(String siteId, String groupId, List<String> commands, boolean save) {
+    }
+
     public record BulkOutcome(String deviceId, String serial, String host, String status, String detail) {
     }
 
@@ -551,12 +556,29 @@ public class GatewayController {
         return () -> doBulk(p, op, req);
     }
 
+    /** Bulk WRITE: apply the same HiveOS CLI lines (a config template) to every registered device in a
+     *  group/site/org. Each device is reached through ITS agent with ITS credential reference; results are
+     *  reported per device. Operator-level on the target scope (a write), then EACH device is re-authorized
+     *  against its OWN lineage before it is touched. */
+    @PostMapping("/api/fleet/bulk/apply-config")
+    public Callable<ResponseEntity<String>> bulkApplyConfig(@RequestBody BulkApplyConfigRequest req) {
+        Principal p = guard.authenticate();
+        String siteId = req == null ? null : req.siteId();
+        String groupId = req == null ? null : req.groupId();
+        guard.require(p, Role.OPERATOR, bulkScope(p.tenantId(), siteId, groupId));
+        return () -> doBulkApplyConfig(p, req);
+    }
+
     private ResourceScope bulkScope(String tenantId, BulkRequest req) {
-        if (req != null && req.groupId() != null && !req.groupId().isBlank()) {
-            return fleet.flatMap(f -> f.groupScope(tenantId, req.groupId().trim())).orElseGet(ResourceScope::org);
+        return bulkScope(tenantId, req == null ? null : req.siteId(), req == null ? null : req.groupId());
+    }
+
+    private ResourceScope bulkScope(String tenantId, String siteId, String groupId) {
+        if (groupId != null && !groupId.isBlank()) {
+            return fleet.flatMap(f -> f.groupScope(tenantId, groupId.trim())).orElseGet(ResourceScope::org);
         }
-        if (req != null && req.siteId() != null && !req.siteId().isBlank()) {
-            return ResourceScope.site(req.siteId().trim());
+        if (siteId != null && !siteId.isBlank()) {
+            return ResourceScope.site(siteId.trim());
         }
         return ResourceScope.org();
     }
@@ -622,6 +644,65 @@ public class GatewayController {
         // their real status.
         int failed = (int) results.stream().filter(o -> "failed".equals(o.status())).count();
         return json(new BulkResponse(op, devices.size(), ok, failed, results));
+    }
+
+    private ResponseEntity<String> doBulkApplyConfig(Principal p, BulkApplyConfigRequest req) {
+        if (fleet.isEmpty()) {
+            return status(501, new ApiError("not_supported", "the fleet registry requires the 'postgres' profile"));
+        }
+        // Validate + normalize server-side (same as the single-device apply-config): strip blanks, require >=1.
+        List<String> commands = (req == null || req.commands() == null) ? List.of()
+                : req.commands().stream().map(String::strip).filter(s -> !s.isEmpty()).toList();
+        if (commands.isEmpty()) {
+            return status(400, new ApiError("bad_request", "at least one CLI command is required"));
+        }
+        String siteId = req.siteId();
+        String groupId = req.groupId();
+        boolean save = req.save();
+        List<FleetService.Device> devices = fleet.get().devicesFor(p.tenantId(), siteId, groupId);
+        List<BulkOutcome> results = new ArrayList<>(devices.size());
+        int ok = 0;
+        // Re-authorize each device against its OWN lineage at OPERATOR (a write) — a cross-site group can carry a
+        // device pinned to another site — and cap the fan-out to the same wall-clock budget as the read path so a
+        // slow/large fleet returns the partial results gathered so far rather than being discarded by a timeout.
+        long deadline = System.nanoTime() + BULK_BUDGET.toNanos();
+        for (int i = 0; i < devices.size(); i++) {
+            FleetService.Device d = devices.get(i);
+            if (System.nanoTime() > deadline) {
+                for (FleetService.Device pending : devices.subList(i, devices.size())) {
+                    results.add(new BulkOutcome(pending.deviceId(), pending.serial(), pending.mgmtIp(),
+                            "timeout", "bulk time budget exceeded before this device was reached"));
+                }
+                break;
+            }
+            if (!guard.allows(p, Role.OPERATOR, ResourceScope.device(d.siteId(), Set.copyOf(d.groups())))) {
+                results.add(new BulkOutcome(d.deviceId(), d.serial(), d.mgmtIp(), "forbidden",
+                        "not authorized to configure this device"));
+                continue;
+            }
+            if (d.agentId() == null || d.mgmtIp() == null) {
+                results.add(new BulkOutcome(d.deviceId(), d.serial(), d.mgmtIp(), "skipped", "no agent or host"));
+                continue;
+            }
+            Optional<RemoteEngine> engine = registry.engine(p.tenantId(), d.agentId());
+            if (engine.isEmpty()) {
+                results.add(new BulkOutcome(d.deviceId(), d.serial(), d.mgmtIp(), "agent_offline", d.agentId()));
+                continue;
+            }
+            try {
+                // The device row's OWN credential reference — never a re-lookup by mgmt_ip (not unique).
+                DeviceRef ref = DeviceRef.ssh(d.mgmtIp(), 22, d.credRef());
+                Result result = engine.get().execute(Command.ApplyConfig.of(ref, commands, save), EventSink.NOOP);
+                record(p.tenantId(), d.agentId(), "bulk-apply-config", d.mgmtIp(), result.getClass().getSimpleName());
+                results.add(new BulkOutcome(d.deviceId(), d.serial(), d.mgmtIp(), "ok", null));
+                ok++;
+            } catch (Exception e) {
+                results.add(new BulkOutcome(d.deviceId(), d.serial(), d.mgmtIp(), "failed",
+                        e.getMessage() == null ? "" : e.getMessage()));
+            }
+        }
+        int failed = (int) results.stream().filter(o -> "failed".equals(o.status())).count();
+        return json(new BulkResponse("apply-config", devices.size(), ok, failed, results));
     }
 
     private ResponseEntity<String> doDiscover(Principal p, String agentId, DiscoverRequest req) {

@@ -75,14 +75,16 @@ The gateway:
 
 - **Discover** APs on a subnet (SSH banner sweep), then **adopt** them into a managed fleet.
 - Organize devices into **sites** and **groups**; run **bulk** inventory/backup across org/site/group scopes.
+- **Config templates** — apply a set of HiveOS CLI lines to every device in a scope in one bulk write
+  (operator-level, each device re-authorized server-side, per-device outcomes); named templates saved locally.
 - **Members & roles** (viewer / operator / admin / owner) and **agent enrollment** — under the OIDC profile.
 - Durable, persisted **jobs** under the `postgres` profile.
 
 ## Not yet
 
-Alerting / thresholds, config templates, PPSK admin-driven key minting, and any non-HiveOS vendor (the driver
-SPI is ready for them). Firmware upgrade ships but is **lab/untested** until validated on real hardware. The
-project README's Roadmap tracks the current plan.
+Alerting / thresholds, PPSK admin-driven key minting, and any non-HiveOS vendor (the driver SPI is ready for
+them). Firmware upgrade ships but is **lab/untested** until validated on real hardware. The project README's
+Roadmap tracks the current plan.
 
 A few HiveOS features are **not exposed because the AP230 has no running-config grammar for them** (confirmed
 live, so they can't be driven through the SSH/apply-config path HiveKeeper uses):

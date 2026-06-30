@@ -27,3 +27,19 @@ if (!window.matchMedia) {
 if (!Element.prototype.scrollIntoView) {
   Element.prototype.scrollIntoView = () => {}
 }
+
+// jsdom does not always provide a working localStorage; supply a minimal in-memory implementation so components
+// that persist UI state (e.g. saved config templates) can read/write it under test.
+if (!window.localStorage || typeof window.localStorage.clear !== 'function') {
+  const store = new Map()
+  window.localStorage = {
+    getItem: (k) => (store.has(k) ? store.get(k) : null),
+    setItem: (k, v) => store.set(k, String(v)),
+    removeItem: (k) => store.delete(k),
+    clear: () => store.clear(),
+    key: (i) => [...store.keys()][i] ?? null,
+    get length() {
+      return store.size
+    },
+  }
+}

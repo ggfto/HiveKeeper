@@ -238,6 +238,75 @@ class GatewayControllerSecurityTest {
         assertEquals("cred-x", ref.credRef());
     }
 
+    // -- bulk apply-config: a WRITE, so operator-level, validated, and re-authorized per device --------------
+
+    @Test
+    void bulkApplyConfigRequiresOperatorOnTheTargetScope() throws Exception {
+        mvc.perform(post("/api/fleet/bulk/apply-config").contentType(JSON).content("{\"commands\":[\"hostname X\"]}"));
+        verify(guard).require(eq(principal), eq(Role.OPERATOR), eq(ResourceScope.org()));
+    }
+
+    @Test
+    void bulkApplyConfigSiteTargetAuthorizesAgainstTheSiteScope() throws Exception {
+        mvc.perform(post("/api/fleet/bulk/apply-config").contentType(JSON)
+                .content("{\"siteId\":\"s1\",\"commands\":[\"hostname X\"]}"));
+        verify(guard).require(eq(principal), eq(Role.OPERATOR), eq(ResourceScope.site("s1")));
+    }
+
+    @Test
+    void bulkApplyConfigRejectsEmptyCommands() throws Exception {
+        MvcResult result = mvc.perform(post("/api/fleet/bulk/apply-config").contentType(JSON).content("{}")).andReturn();
+        mvc.perform(asyncDispatch(result))
+                .andExpect(status().isBadRequest())
+                .andExpect(content().string(org.hamcrest.Matchers.containsString("at least one CLI command is required")));
+    }
+
+    @Test
+    void bulkApplyConfigReAuthorizesEachDeviceAtOperatorAndSkipsForbidden() throws Exception {
+        // A cross-site group can carry a device pinned to another site; bulk apply-config must re-check each
+        // device at OPERATOR against its OWN lineage and never configure a forbidden one.
+        FleetService.Device writable = new FleetService.Device(
+                "dev-A", "site-1", "lab-agent", "SER-A", "AP230", "A", "10.0.0.1", null, List.of());
+        FleetService.Device foreign = new FleetService.Device(
+                "dev-B", "site-2", "lab-agent", "SER-B", "AP230", "B", "10.0.0.2", null, List.of());
+        when(fleet.devicesFor("acme", null, null)).thenReturn(List.of(writable, foreign));
+        when(guard.allows(eq(principal), eq(Role.OPERATOR), eq(ResourceScope.device("site-1", Set.of())))).thenReturn(true);
+        // the site-2 device: guard.allows defaults to false -> "forbidden", never dispatched
+        when(registry.engine("acme", "lab-agent")).thenReturn(Optional.empty());   // writable -> agent_offline
+
+        MvcResult result = mvc.perform(post("/api/fleet/bulk/apply-config").contentType(JSON)
+                .content("{\"commands\":[\"hostname X\"]}")).andReturn();
+        mvc.perform(asyncDispatch(result))
+                .andExpect(status().isOk())
+                .andExpect(content().string(org.hamcrest.Matchers.containsString("dev-B")))
+                .andExpect(content().string(org.hamcrest.Matchers.containsString("forbidden")))
+                .andExpect(content().string(org.hamcrest.Matchers.containsString("agent_offline")));
+        verify(registry, times(1)).engine("acme", "lab-agent");
+    }
+
+    @Test
+    void bulkApplyConfigDispatchesApplyConfigWithTheDevicesOwnCredRefAndSaveFlag() throws Exception {
+        FleetService.Device d = new FleetService.Device(
+                "dev-A", "site-1", "lab-agent", "SER-A", "AP230", "A", "10.0.0.1", "cred-x", List.of());
+        when(fleet.devicesFor("acme", null, null)).thenReturn(List.of(d));
+        when(guard.allows(eq(principal), eq(Role.OPERATOR), any())).thenReturn(true);
+        RemoteEngine engine = mock(RemoteEngine.class);
+        when(registry.engine("acme", "lab-agent")).thenReturn(Optional.of(engine));
+        when(engine.execute(any(), any()))
+                .thenReturn(new Result.ConfigApplied(UUID.randomUUID(), DeviceId.of("10.0.0.1"), List.of("hostname X"), List.of(), true));
+
+        MvcResult result = mvc.perform(post("/api/fleet/bulk/apply-config").contentType(JSON)
+                .content("{\"commands\":[\" hostname X \",\"\"],\"save\":true}")).andReturn();
+        mvc.perform(asyncDispatch(result)).andExpect(status().isOk());
+
+        ArgumentCaptor<Command> cmd = ArgumentCaptor.forClass(Command.class);
+        verify(engine).execute(cmd.capture(), any());
+        Command.ApplyConfig applied = (Command.ApplyConfig) cmd.getValue();
+        assertEquals("cred-x", applied.device().credRef());
+        assertEquals(List.of("hostname X"), applied.commands());   // blanks stripped server-side
+        org.junit.jupiter.api.Assertions.assertTrue(applied.save());
+    }
+
     // -- set-credential: admin-only, sealed to the agent key, never persisted -------------------------------
 
     private static final String CRED_BODY =

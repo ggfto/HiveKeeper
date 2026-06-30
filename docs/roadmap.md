@@ -217,8 +217,18 @@ where knobs live: **interface-level** (`interface wifiN radio …`) vs **profile
   scheduling a future reboot, confirming via `show`, then cancelling, with no actual reboot), but `reboot date`
   and `reboot offset` prompt **"Do you really want to reboot? (Y/N)"** which would hang the exec channel — so
   only the recurring forms are exposed. The schedule is not part of the running-config (`save: false`).
-- **Alerting / thresholds** and **config templates** (apply a profile across a site/group) — both currently
-  in the "Not yet" list; they build naturally on the policy and bulk-ops foundations.
+- **Config templates — SHIPPED.** Apply a set of HiveOS CLI lines (a template) to every device in a scope
+  (org / site / group) in one bulk **write**. New gateway endpoint `POST /api/fleet/bulk/apply-config`
+  (`BulkApplyConfigRequest` → `doBulkApplyConfig`) mirrors the read-only bulk path but requires **OPERATOR**,
+  validates/normalizes the command list server-side, and **re-authorizes each device at operator level against
+  its own lineage** before touching it (a cross-site group can carry a foreign-site device) — reusing the same
+  per-device outcome model (ok / failed / agent_offline / skipped / forbidden / timeout) and wall-clock budget.
+  UI: a **Config templates** section on the Bulk ops page (`ConfigTemplatePanel`) with a scope picker, a CLI
+  editor, a `save config` toggle, a confirm gate (it writes to many APs), and the per-device outcomes table;
+  named templates are saved locally (`configTemplate.js` — `parseTemplateCommands` + localStorage CRUD). All
+  unit-tested (gateway security slice + web lib/organism/client).
+- **Alerting / thresholds** — currently in the "Not yet" list; builds naturally on the monitoring + bulk-ops
+  foundations (a metric threshold model plus a delivery channel).
 - **PPSK admin-driven key management (Caminho B)** — let an operator mint per-user private PSKs from HiveKeeper
   itself, rather than relying on end-user self-registration (Phase 2's Caminho A). HiveOS exposes **no
   running-config grammar to create an individual key over SSH** (confirmed live on the AP230: `security-object
