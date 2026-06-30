@@ -162,6 +162,16 @@ export function parseSchedules(config) {
 }
 
 /**
+ * Parse `show reboot schedule`. When a reboot is scheduled the AP prints
+ * `Next reboot Scheduled At:<date>  <time>  <weekday>` (followed by a countdown line); when nothing is scheduled
+ * the command echoes with no data row. -> { scheduledAt: '<date> <time>', weekday } or null.
+ */
+export function parseRebootSchedule(output) {
+  const m = (output || '').match(/Next reboot Scheduled At:\s*(\S+)\s+(\S+)\s+(\S+)/)
+  return m ? { scheduledAt: `${m[1]} ${m[2]}`, weekday: m[3] } : null
+}
+
+/**
  * Parse the hives (mesh profiles) from `show hive`. Each row starts with the hive name followed by its native
  * VLAN, so a name + a number anchors a data row (skipping the header/separator/prompt). -> [{ name, nativeVlan }].
  */

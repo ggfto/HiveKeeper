@@ -45,7 +45,10 @@ Per device, via the web UI ([device configuration](/device-configuration/) expla
   and remove it. Referenced by name from the Wi-Fi (Hardening) and Policy sections.
 - **Network** — the mgt0 interface (IP / VLAN / routing / DHCP-client / DNS / NTP), plus **static routes**
   (net / host, list + add + remove) and **LLDP/CDP** neighbor discovery (enable, timers, receive-only, cache size).
-- **Captive portal**, **Mesh/Hive** join, **Client mode**, **Monitoring** (SNMP, syslog), **Power & LED**, **Reboot**.
+- **Captive portal**, **Mesh/Hive** join, **Client mode**, **Monitoring** (SNMP, syslog), **Power & LED**, **Reboot**
+  (immediate, plus a **scheduled reboot** — recurring daily/weekly `reboot schedule` with the next reboot read
+  from `show reboot schedule` and cancel; one-shot date/offset reboots are intentionally not exposed, as they
+  prompt an interactive Y/N the agent can't answer).
 - **Radio** — per-interface channel, Tx power, operational mode, and **client target power**
   (`tx-power-control`); plus the named **radio profile** that interfaces reference: **channel width**
   (20/40/80 MHz), **band-steering**, **client load-balancing**, and a per-profile **max-clients** cap.
@@ -77,9 +80,9 @@ The gateway:
 
 ## Not yet
 
-Alerting / thresholds, config templates, scheduled reboot, PPSK admin-driven key minting, and any non-HiveOS
-vendor (the driver SPI is ready for them). Firmware upgrade ships but is **lab/untested** until validated on
-real hardware. The project README's Roadmap tracks the current plan.
+Alerting / thresholds, config templates, PPSK admin-driven key minting, and any non-HiveOS vendor (the driver
+SPI is ready for them). Firmware upgrade ships but is **lab/untested** until validated on real hardware. The
+project README's Roadmap tracks the current plan.
 
 A few HiveOS features are **not exposed because the AP230 has no running-config grammar for them** (confirmed
 live, so they can't be driven through the SSH/apply-config path HiveKeeper uses):

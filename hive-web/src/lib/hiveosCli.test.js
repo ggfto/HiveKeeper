@@ -26,6 +26,8 @@ import {
   staticRouteCommands,
   scheduleCommands,
   removeScheduleCommands,
+  rebootScheduleCommands,
+  cancelRebootScheduleCommands,
 } from './hiveosCli'
 
 // Syntax confirmed live on an AP230 (HiveOS 10.6r1a) via `?` context help:
@@ -656,5 +658,32 @@ describe('scheduleCommands', () => {
   it('removes a schedule by name', () => {
     expect(removeScheduleCommands('work-hours')).toEqual(['no schedule work-hours'])
     expect(removeScheduleCommands('  ')).toEqual([])
+  })
+})
+
+// Scheduled reboot. Grammar confirmed live on an AP230 (applied → `show reboot schedule` → `no reboot schedule`):
+//   reboot schedule daily every <1-365> day(s) time <hh:mm:ss>
+//   reboot schedule weekly every <1-52> week(s) <Weekday> time <hh:mm:ss>
+// LIVE QUIRK: the daily/weekly `reboot schedule` forms are NON-interactive (apply-config safe), but `reboot date`
+// and `reboot offset` prompt "Do you really want to reboot? (Y/N)" — which would hang the exec channel — so only
+// the recurring forms are built here.
+describe('rebootScheduleCommands', () => {
+  it('builds a daily reboot schedule (time padded to hh:mm:ss)', () => {
+    expect(rebootScheduleCommands({ type: 'daily', interval: 1, time: '04:30' })).toEqual([
+      'reboot schedule daily every 1 day(s) time 04:30:00',
+    ])
+  })
+  it('builds a weekly reboot schedule with a weekday', () => {
+    expect(rebootScheduleCommands({ type: 'weekly', interval: 2, weekday: 'Sunday', time: '03:00:00' })).toEqual([
+      'reboot schedule weekly every 2 week(s) Sunday time 03:00:00',
+    ])
+  })
+  it('needs a positive interval, a time, and (weekly) a weekday', () => {
+    expect(rebootScheduleCommands({ type: 'daily', interval: 0, time: '04:30' })).toEqual([])
+    expect(rebootScheduleCommands({ type: 'daily', interval: 1, time: '' })).toEqual([])
+    expect(rebootScheduleCommands({ type: 'weekly', interval: 1, time: '03:00', weekday: '' })).toEqual([])
+  })
+  it('cancels a scheduled reboot', () => {
+    expect(cancelRebootScheduleCommands()).toEqual(['no reboot schedule'])
   })
 })

@@ -207,10 +207,16 @@ where knobs live: **interface-level** (`interface wifiN radio …`) vs **profile
   `ScheduleSection` organism, all unit-tested) creates/lists/removes **recurrent** (`weekday-range` and/or
   `time-range`, optional `date-range`) and **one-time** (`once <date> <time> to <date> <time>`) schedules; both
   forms were **applied to the running-config and reverted live on the AP230**. SSID hardening (Phase 2) and
-  user-profiles (Phase 3) already reference these by name. **Still open:** *scheduled reboot* — the grammar is
-  confirmed live (`reboot date <d> time <t>` / `reboot offset <hh:mm:ss>` / `reboot schedule daily|weekly every
-  <n> …`), but it is an imperative action (not in the running-config) with a connectivity-dropping blast radius,
-  so it lands as a separate confirm-gated control rather than in the schedule-objects form.
+  user-profiles (Phase 3) already reference these by name.
+- **Scheduled reboot — SHIPPED.** A confirm-gated **Scheduled reboot** control in the Power section
+  (`rebootScheduleCommands` / `cancelRebootScheduleCommands` builders + `parseRebootSchedule` + the
+  `ScheduledRebootForm` organism, all unit-tested) sets a recurring `reboot schedule daily every <n> day(s) time
+  <hh:mm:ss>` / `weekly every <n> week(s) <Weekday> time <hh:mm:ss>`, reads the next reboot from `show reboot
+  schedule`, and cancels with `no reboot schedule`. **A decisive live quirk justified probing over `?`-help:**
+  the recurring `reboot schedule` forms are **non-interactive** (apply-config can drive them — validated by
+  scheduling a future reboot, confirming via `show`, then cancelling, with no actual reboot), but `reboot date`
+  and `reboot offset` prompt **"Do you really want to reboot? (Y/N)"** which would hang the exec channel — so
+  only the recurring forms are exposed. The schedule is not part of the running-config (`save: false`).
 - **Alerting / thresholds** and **config templates** (apply a profile across a site/group) — both currently
   in the "Not yet" list; they build naturally on the policy and bulk-ops foundations.
 - **PPSK admin-driven key management (Caminho B)** — let an operator mint per-user private PSKs from HiveKeeper

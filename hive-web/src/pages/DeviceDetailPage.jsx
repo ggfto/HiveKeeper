@@ -13,6 +13,7 @@ import { RadioProfileForm } from '../components/organisms/RadioProfileForm'
 import { NetworkSection } from '../components/organisms/NetworkSection'
 import { PolicySection } from '../components/organisms/PolicySection'
 import { ScheduleSection } from '../components/organisms/ScheduleSection'
+import { ScheduledRebootForm } from '../components/organisms/ScheduledRebootForm'
 import { ClientModeForm } from '../components/organisms/ClientModeForm'
 import { AdvancedConfigForm } from '../components/organisms/AdvancedConfigForm'
 import { PowerForm } from '../components/organisms/PowerForm'
@@ -33,6 +34,7 @@ import {
   parseQosPolicies,
   parseStaticRoutes,
   parseSchedules,
+  parseRebootSchedule,
 } from '../lib/hiveosParse'
 import { meshCommands } from '../lib/hiveosCli'
 import { groupNamesFor, siteName } from '../lib/fleet'
@@ -183,6 +185,19 @@ export function DeviceDetailPage() {
           save: false,
         })
         .then((r) => parseSchedules((r.outputs || []).join('\n'))),
+    [gateway],
+  )
+  // Read the next scheduled reboot from the AP for the Power section's scheduled-reboot control.
+  const loadRebootSchedule = useCallback(
+    (d) =>
+      gateway
+        .agentOp(d.agentId, 'apply-config', {
+          host: d.mgmtIp,
+          port: 22,
+          commands: ['show reboot schedule'],
+          save: false,
+        })
+        .then((r) => parseRebootSchedule((r.outputs || [])[0] || '')),
     [gateway],
   )
   // Read the static routes from the AP for the Network section's routes editor.
@@ -438,6 +453,12 @@ export function DeviceDetailPage() {
           {section === 'power' && (
             <div className="space-y-8">
               <PowerForm device={device} onApply={onApplyConfig} onReboot={onReboot} busy={busy} />
+              <ScheduledRebootForm
+                device={device}
+                loadRebootSchedule={loadRebootSchedule}
+                onApply={onApplyConfig}
+                busy={busy}
+              />
               <LedForm device={device} onApply={onApplyConfig} busy={busy} />
               <div className="space-y-3 rounded-lg border border-border bg-card p-4">
                 <div className="text-sm font-medium">Maintenance</div>

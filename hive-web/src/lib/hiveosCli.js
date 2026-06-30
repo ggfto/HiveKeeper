@@ -257,6 +257,40 @@ export function removeScheduleCommands(name) {
   return n ? [`no schedule ${n}`] : []
 }
 
+// hh:mm -> hh:mm:ss (HiveOS reboot times take seconds); pass hh:mm:ss through unchanged.
+function padTime(t) {
+  const s = (t || '').trim()
+  return /^\d{1,2}:\d{2}$/.test(s) ? `${s}:00` : s
+}
+
+/**
+ * Schedule a recurring system reboot. Grammar confirmed live on an AP230 (applied → `show reboot schedule` →
+ * cancelled with `no reboot schedule`):
+ *   `reboot schedule daily every <1-365> day(s) time <hh:mm:ss>`
+ *   `reboot schedule weekly every <1-52> week(s) <Weekday> time <hh:mm:ss>`
+ * IMPORTANT (confirmed live): only these recurring `reboot schedule` forms are non-interactive and so safe for
+ * the apply-config exec channel. `reboot date …` and `reboot offset …` prompt "Do you really want to reboot?
+ * (Y/N)" which would hang the channel — they are deliberately NOT built here. A non-positive interval, a missing
+ * time, or (weekly) a missing weekday yields nothing. The reboot schedule is NOT part of the running-config, so
+ * callers should apply it with `save: false`.
+ */
+export function rebootScheduleCommands({ type = 'daily', interval, weekday, time } = {}) {
+  const n = Number(interval)
+  const t = padTime(time)
+  if (!Number.isInteger(n) || n < 1 || !/^\d{1,2}:\d{2}:\d{2}$/.test(t)) return []
+  if (type === 'weekly') {
+    const day = (weekday || '').trim()
+    if (!day) return []
+    return [`reboot schedule weekly every ${n} week(s) ${day} time ${t}`]
+  }
+  return [`reboot schedule daily every ${n} day(s) time ${t}`]
+}
+
+/** Cancel any scheduled reboot. Confirmed live: `no reboot schedule` (non-interactive; clears `show reboot schedule`). */
+export function cancelRebootScheduleCommands() {
+  return ['no reboot schedule']
+}
+
 /** Remove a user profile entirely. Confirmed live: `no user-profile <name>` (clears it from running-config). */
 export function removeUserProfileCommands(name) {
   const n = (name || '').trim()

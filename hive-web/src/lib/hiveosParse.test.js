@@ -11,6 +11,7 @@ import {
   parseFirewallPolicies,
   parseQosPolicies,
   parseSchedules,
+  parseRebootSchedule,
 } from './hiveosParse'
 
 // A real running-config excerpt captured from the AP230 (secrets already masked by the gateway).
@@ -263,5 +264,19 @@ ssid HK-JOB schedule work-hours
   it('is safe on empty/missing input', () => {
     expect(parseSchedules('')).toEqual([])
     expect(parseSchedules(null)).toEqual([])
+  })
+})
+
+describe('parseRebootSchedule', () => {
+  it('parses the next scheduled reboot from `show reboot schedule`', () => {
+    const out = `show reboot schedule
+Next reboot Scheduled At:2026-07-12  02:59:12  Sunday
+11 Days 13 Hours 0 Minutes 0 Seconds Left`
+    expect(parseRebootSchedule(out)).toEqual({ scheduledAt: '2026-07-12 02:59:12', weekday: 'Sunday' })
+  })
+  it('returns null when no reboot is scheduled (empty output)', () => {
+    expect(parseRebootSchedule('show reboot schedule')).toBeNull()
+    expect(parseRebootSchedule('')).toBeNull()
+    expect(parseRebootSchedule(null)).toBeNull()
   })
 })
