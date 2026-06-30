@@ -10,6 +10,8 @@ dependencies {
     implementation(platform("org.springframework.boot:spring-boot-dependencies:3.4.1"))
     implementation("org.springframework.boot:spring-boot-starter-web")
     implementation("org.springframework.boot:spring-boot-starter-websocket")
+    // Email alert delivery (JavaMailSender / SMTP). Webhook delivery reuses the web starter's RestTemplate.
+    implementation("org.springframework.boot:spring-boot-starter-mail")
     // Persistence (active only under the 'postgres' profile)
     implementation("org.springframework.boot:spring-boot-starter-jdbc")
     runtimeOnly("org.postgresql:postgresql")

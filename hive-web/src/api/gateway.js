@@ -101,6 +101,15 @@ export function createGateway({ getAuth = () => ({}), fetchImpl = fetch, baseUrl
     createPpskUser: (agentId, body) => req(`/api/agents/${agentId}/ppsk-users`, { method: 'POST', body }),
     rotatePpskUser: (agentId, id) => req(`/api/agents/${agentId}/ppsk-users/${id}/rotate`, { method: 'POST' }),
     revokePpskUser: (agentId, id) => req(`/api/agents/${agentId}/ppsk-users/${id}`, { method: 'DELETE' }),
+    // fleet alerting: notification channels + thresholds for the background poller, and the current firing set.
+    alertSettings: () => req('/api/alerts/settings'),
+    saveAlertSettings: (body) => req('/api/alerts/settings', { method: 'POST', body }),
+    alertChannels: () => req('/api/alerts/channels'),
+    addAlertChannel: (body) => req('/api/alerts/channels', { method: 'POST', body }),
+    setAlertChannelEnabled: (id, enabled) =>
+      req(`/api/alerts/channels/${id}`, { method: 'POST', body: { enabled } }),
+    removeAlertChannel: (id) => req(`/api/alerts/channels/${id}`, { method: 'DELETE' }),
+    firingAlerts: () => req('/api/alerts/firing'),
     // bulk read ops across a scope
     bulk: (op, target) => req(`/api/fleet/bulk/${op}`, { method: 'POST', body: bulkBody(target) }),
     // bulk WRITE: apply the same CLI lines (a config template) across a scope; `save` persists with `save config`.

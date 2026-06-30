@@ -75,6 +75,12 @@ public class PostgresTenantStore implements TenantStore {
                 .stream().filter(java.util.Objects::nonNull).findFirst();
     }
 
+    @Override
+    public List<Tenant> listAllTenants() {
+        return jdbc.query("select tenant_id, name, operator_api_key, operator_role from tenant order by tenant_id",
+                TENANT);
+    }
+
     private static <T> Optional<T> first(List<T> rows) {
         return rows.isEmpty() ? Optional.empty() : Optional.of(rows.get(0));
     }

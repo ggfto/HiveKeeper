@@ -4,6 +4,7 @@ import { BellRing } from 'lucide-react'
 import { useAuth } from '../context/AuthProvider'
 import { useToast } from '../context/ToastProvider'
 import { FleetAlertsPanel } from '../components/organisms/FleetAlertsPanel'
+import { NotificationsSection } from '../components/organisms/NotificationsSection'
 import { loadThresholds, saveThresholds } from '../lib/alerts'
 
 /**
@@ -69,6 +70,14 @@ export function AlertsPage() {
         onScan={onScan}
         thresholds={thresholds}
         onThresholds={onThresholds}
+      />
+      <NotificationsSection
+        loadSettings={() => gateway.alertSettings()}
+        onSaveSettings={(body) => gateway.saveAlertSettings(body)}
+        loadChannels={() => gateway.alertChannels().then((r) => r.channels || [])}
+        onAddChannel={(body) => gateway.addAlertChannel(body)}
+        onToggleChannel={(id, enabled) => gateway.setAlertChannelEnabled(id, enabled)}
+        onRemoveChannel={(id) => gateway.removeAlertChannel(id)}
       />
     </div>
   )

@@ -233,9 +233,18 @@ where knobs live: **interface-level** (`interface wifiN radio …`) vs **profile
   client load (a configurable per-AP cap), and radios outside best practice (reusing `radioAdvisories`). A pure
   `alerts.js` rules engine (`evaluateAlerts` + `worstSeverity` + locally-persisted thresholds) feeds both the
   fleet scan (`FleetAlertsPanel`, which re-evaluates the held snapshots live as you edit a threshold) and can
-  feed the device Monitoring tab. All unit-tested. **Deliberately deferred:** a background poller and an
-  external **delivery channel** (email / webhook) — those need a server-side scheduler + notifier subsystem;
-  today alerting is an on-demand, in-console view.
+  feed the device Monitoring tab. All unit-tested. **Background poller + delivery — SHIPPED (postgres profile).**
+  The rules were ported to Java (`hive-core` `AlertRules` + `RadioAdvisories`, faithful to the web engine and
+  unit-tested) and a `FleetPoller` (`@Scheduled`, `@EnableScheduling`) scans every tenant on an interval
+  (`HIVEKEEPER_ALERT_POLL_INTERVAL_MS`, default 5 min), reaching each device through its agent exactly like bulk
+  inventory. It diffs results against a `fleet_alert` state table (Flyway `V10`, RLS) so each alert is delivered
+  on **onset** and again on **resolution**, never every poll, and adds an `inventory-failed` signal when a
+  connected agent can't read its AP. Delivery goes through `AlertNotifier` to per-tenant **webhook**
+  (`RestClient`) and **email** (`JavaMailSender`/SMTP) channels, each with a minimum-severity floor; one failing
+  channel never blocks the others. Channels + thresholds persist per tenant (`alert_channel` / `alert_settings`,
+  `PostgresAlertService` + `InMemoryAlertService`) behind REST (`/api/alerts/...`: viewer to read, admin to
+  mutate) and an **Alert delivery** section on the Alerts page. The PSK/secret-free alert payload carries only
+  fleet metadata. All unit-tested (rules, notifier gating, poller dedup/resolution, REST authz, web organism).
 - **PPSK admin-driven key management (Caminho B)** — let an operator mint per-user private PSKs from HiveKeeper
   itself, rather than relying on end-user self-registration (Phase 2's Caminho A). HiveOS exposes **no
   running-config grammar to create an individual key over SSH** (confirmed live on the AP230: `security-object

@@ -1,5 +1,6 @@
 package io.hivekeeper.gateway.tenant;
 
+import java.util.List;
 import java.util.Optional;
 
 /**
@@ -21,5 +22,11 @@ public interface TenantStore {
      *  it. Empty if the agent has no site or the store does not track sites (the in-memory default). */
     default Optional<String> agentSiteId(String agentId) {
         return Optional.empty();
+    }
+
+    /** Every tenant — used by the background fleet poller to scan each org in turn. Cross-tenant by nature
+     *  (the poller runs unattended, not on behalf of one caller). The in-memory default returns none. */
+    default List<Tenant> listAllTenants() {
+        return List.of();
     }
 }

@@ -16,6 +16,7 @@ import io.hivekeeper.gateway.access.Principal;
 import io.hivekeeper.gateway.access.ResourceScope;
 import io.hivekeeper.gateway.access.Role;
 import io.hivekeeper.core.crypto.Secrets;
+import io.hivekeeper.gateway.alerts.AlertService;
 import io.hivekeeper.gateway.fleet.FleetService;
 import io.hivekeeper.gateway.ppsk.PpskUserService;
 import io.hivekeeper.gateway.tenant.TenantStore;
@@ -160,6 +161,34 @@ public class GatewayController {
     public record ApiError(String error, String detail) {
     }
 
+    /** A notification channel as the UI sees it. */
+    public record AlertChannelView(String id, String type, String target, String minSeverity, boolean enabled,
+                                   java.time.Instant createdAt) {
+    }
+
+    /** Add a webhook or email channel. {@code minSeverity} (critical|warning|info) is the least-severe alert it
+     *  receives; defaults to warning. */
+    public record CreateChannelRequest(String type, String target, String minSeverity) {
+    }
+
+    public record ChannelEnabledRequest(boolean enabled) {
+    }
+
+    /** Per-tenant alert poller settings. */
+    public record AlertSettingsView(int maxStations, boolean pollEnabled) {
+    }
+
+    /** A currently-firing alert, for the console's active-alerts view. */
+    public record FiringAlertView(String deviceId, String agentId, String alertId, String severity, String message,
+                                  java.time.Instant firstSeen, java.time.Instant lastSeen) {
+    }
+
+    public record AlertChannelList(List<AlertChannelView> channels) {
+    }
+
+    public record FiringAlertList(List<FiringAlertView> alerts) {
+    }
+
     /** Wall-clock budget for a bulk op's device loop. Kept under the MVC async timeout (120s, see AsyncConfig)
      *  minus one worst-case agent round-trip (60s, see RemoteEngine) so the LAST device we start still finishes
      *  before Spring would abort the request and discard the partial BulkResponse. */
@@ -175,6 +204,7 @@ public class GatewayController {
     private final Optional<JobGateway> jobGateway;
     private final Optional<FleetService> fleet;
     private final Optional<PpskUserService> ppskUsers;
+    private final Optional<AlertService> alerts;
     private final ExecutorService sseExecutor = Executors.newFixedThreadPool(8, runnable -> {
         Thread thread = new Thread(runnable, "gw-sse");
         thread.setDaemon(true);
@@ -183,7 +213,8 @@ public class GatewayController {
 
     public GatewayController(AgentRegistry registry, AccessGuard guard, TenantStore tenants,
                              Optional<OperationLog> operationLog, Optional<JobGateway> jobGateway,
-                             Optional<FleetService> fleet, Optional<PpskUserService> ppskUsers) {
+                             Optional<FleetService> fleet, Optional<PpskUserService> ppskUsers,
+                             Optional<AlertService> alerts) {
         this.registry = registry;
         this.guard = guard;
         this.tenants = tenants;
@@ -191,6 +222,7 @@ public class GatewayController {
         this.jobGateway = jobGateway;
         this.fleet = fleet;
         this.ppskUsers = ppskUsers;
+        this.alerts = alerts;
     }
 
     /** Submit a DURABLE job: persisted, dispatched if the agent is connected, and redelivered on reconnect.
@@ -729,6 +761,123 @@ public class GatewayController {
     private PpskUserView toView(PpskUserService.PpskUser u) {
         return new PpskUserView(u.id(), u.securityObject(), u.userGroup(), u.username(), u.userProfileAttr(),
                 u.vlanId(), u.scheduleName(), u.macBindings(), u.status(), u.createdAt(), u.rotatedAt());
+    }
+
+    // -- Fleet alerting: notification channels, thresholds, and the current firing set (org-scoped) ---------
+
+    private static final Set<String> SEVERITIES = Set.of("critical", "warning", "info");
+
+    /** Read alert poller settings (thresholds + on/off). Viewer on the org. */
+    @GetMapping("/api/alerts/settings")
+    public ResponseEntity<String> alertSettings() {
+        Principal p = guard.authenticate();
+        guard.require(p, Role.VIEWER, ResourceScope.org());
+        if (alerts.isEmpty()) {
+            return status(501, new ApiError("not_supported", "alerting is not configured"));
+        }
+        AlertService.Settings s = alerts.get().settings(p.tenantId());
+        return json(new AlertSettingsView(s.maxStations(), s.pollEnabled()));
+    }
+
+    /** Update alert poller settings. Admin on the org. */
+    @PostMapping("/api/alerts/settings")
+    public ResponseEntity<String> saveAlertSettings(@RequestBody AlertSettingsView req) {
+        Principal p = guard.authenticate();
+        guard.require(p, Role.ADMIN, ResourceScope.org());
+        if (alerts.isEmpty()) {
+            return status(501, new ApiError("not_supported", "alerting is not configured"));
+        }
+        if (req == null || req.maxStations() < 1) {
+            return status(400, new ApiError("bad_request", "maxStations must be >= 1"));
+        }
+        alerts.get().saveSettings(p.tenantId(), req.maxStations(), req.pollEnabled());
+        AlertService.Settings s = alerts.get().settings(p.tenantId());
+        return json(new AlertSettingsView(s.maxStations(), s.pollEnabled()));
+    }
+
+    /** List notification channels. Viewer on the org. */
+    @GetMapping("/api/alerts/channels")
+    public ResponseEntity<String> listAlertChannels() {
+        Principal p = guard.authenticate();
+        guard.require(p, Role.VIEWER, ResourceScope.org());
+        if (alerts.isEmpty()) {
+            return status(501, new ApiError("not_supported", "alerting is not configured"));
+        }
+        List<AlertChannelView> views = alerts.get().channels(p.tenantId()).stream().map(this::toChannelView).toList();
+        return json(new AlertChannelList(views));
+    }
+
+    /** Add a webhook or email channel. Admin on the org. */
+    @PostMapping("/api/alerts/channels")
+    public ResponseEntity<String> addAlertChannel(@RequestBody CreateChannelRequest req) {
+        Principal p = guard.authenticate();
+        guard.require(p, Role.ADMIN, ResourceScope.org());
+        if (alerts.isEmpty()) {
+            return status(501, new ApiError("not_supported", "alerting is not configured"));
+        }
+        if (req == null || req.type() == null || !("webhook".equals(req.type()) || "email".equals(req.type()))) {
+            return status(400, new ApiError("bad_request", "type must be webhook or email"));
+        }
+        if (req.target() == null || req.target().isBlank()) {
+            return status(400, new ApiError("bad_request", "target is required"));
+        }
+        String minSeverity = req.minSeverity() == null || req.minSeverity().isBlank() ? "warning"
+                : req.minSeverity().trim();
+        if (!SEVERITIES.contains(minSeverity)) {
+            return status(400, new ApiError("bad_request", "minSeverity must be critical, warning or info"));
+        }
+        try {
+            String id = alerts.get().addChannel(p.tenantId(), req.type(), req.target().trim(), minSeverity);
+            return alerts.get().channels(p.tenantId()).stream().filter(c -> c.id().equals(id)).findFirst()
+                    .map(c -> json(toChannelView(c)))
+                    .orElseGet(() -> status(500, new ApiError("error", "channel not found after create")));
+        } catch (org.springframework.dao.DataAccessException e) {
+            return status(409, new ApiError("conflict", "a channel for that target already exists"));
+        }
+    }
+
+    /** Enable/disable a channel. Admin on the org. */
+    @PostMapping("/api/alerts/channels/{id}")
+    public ResponseEntity<String> setAlertChannelEnabled(@PathVariable String id,
+                                                         @RequestBody ChannelEnabledRequest req) {
+        Principal p = guard.authenticate();
+        guard.require(p, Role.ADMIN, ResourceScope.org());
+        if (alerts.isEmpty()) {
+            return status(501, new ApiError("not_supported", "alerting is not configured"));
+        }
+        alerts.get().setChannelEnabled(p.tenantId(), id, req != null && req.enabled());
+        return json(new ApiError("ok", id));
+    }
+
+    /** Remove a channel. Admin on the org. */
+    @DeleteMapping("/api/alerts/channels/{id}")
+    public ResponseEntity<String> removeAlertChannel(@PathVariable String id) {
+        Principal p = guard.authenticate();
+        guard.require(p, Role.ADMIN, ResourceScope.org());
+        if (alerts.isEmpty()) {
+            return status(501, new ApiError("not_supported", "alerting is not configured"));
+        }
+        alerts.get().removeChannel(p.tenantId(), id);
+        return json(new ApiError("ok", id));
+    }
+
+    /** The currently-firing alerts the poller is tracking. Viewer on the org. */
+    @GetMapping("/api/alerts/firing")
+    public ResponseEntity<String> firingAlerts() {
+        Principal p = guard.authenticate();
+        guard.require(p, Role.VIEWER, ResourceScope.org());
+        if (alerts.isEmpty()) {
+            return status(501, new ApiError("not_supported", "alerting is not configured"));
+        }
+        List<FiringAlertView> views = alerts.get().firing(p.tenantId()).stream()
+                .map(a -> new FiringAlertView(a.deviceId(), a.agentId(), a.alertId(), a.severity(), a.message(),
+                        a.firstSeen(), a.lastSeen()))
+                .toList();
+        return json(new FiringAlertList(views));
+    }
+
+    private AlertChannelView toChannelView(AlertService.Channel c) {
+        return new AlertChannelView(c.id(), c.type(), c.target(), c.minSeverity(), c.enabled(), c.createdAt());
     }
 
     /** Bulk read op (backup|inventory) over every registered device in a group/site/org. Each device is

@@ -424,6 +424,35 @@ export function createDemoGateway() {
       u.status = 'revoked'
       return ok(u)
     },
+    alertSettings: () => ok(db.alertSettings || { maxStations: 30, pollEnabled: true }),
+    saveAlertSettings: (body) => {
+      db.alertSettings = { maxStations: Math.max(1, body?.maxStations ?? 30), pollEnabled: !!body?.pollEnabled }
+      return ok(db.alertSettings)
+    },
+    alertChannels: () => ok({ channels: db.alertChannels || [] }),
+    addAlertChannel: (body) => {
+      db.alertChannels = db.alertChannels || []
+      const ch = {
+        id: uid('ch'),
+        type: body?.type,
+        target: body?.target,
+        minSeverity: body?.minSeverity || 'warning',
+        enabled: true,
+        createdAt: new Date().toISOString(),
+      }
+      db.alertChannels.push(ch)
+      return ok(ch)
+    },
+    setAlertChannelEnabled: (id, enabled) => {
+      const ch = (db.alertChannels || []).find((c) => c.id === id)
+      if (ch) ch.enabled = enabled
+      return ok({ error: 'ok', detail: id })
+    },
+    removeAlertChannel: (id) => {
+      db.alertChannels = (db.alertChannels || []).filter((c) => c.id !== id)
+      return ok({ error: 'ok', detail: id })
+    },
+    firingAlerts: () => ok({ alerts: db.firingAlerts || [] }),
     bulk: (op, target) => {
       let pool = db.devices
       if (target?.kind === 'site') pool = pool.filter((d) => d.siteId === target.id)

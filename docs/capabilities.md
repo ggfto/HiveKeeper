@@ -86,15 +86,16 @@ The gateway:
 - **Config templates** — apply a set of HiveOS CLI lines to every device in a scope in one bulk write
   (operator-level, each device re-authorized server-side, per-device outcomes); named templates saved locally.
 - **Alerts** — an on-demand fleet **scan** flags APs that breach a threshold (agent offline, still cloud-managed,
-  high client load, radios outside best practice), with a locally-persisted client cap. In-console only — no
-  background poller or email/webhook delivery yet.
+  high client load, radios outside best practice). On the `postgres` profile a **background poller** also scans
+  every tenant on a schedule and **delivers** breaches to configured **webhook** and **email** channels, with
+  per-channel minimum-severity gating and onset/resolution dedup (it notifies when an alert starts and when it
+  clears, not every poll). Channels + thresholds are managed under **Alerts → Alert delivery** (admin-gated).
 - **Members & roles** (viewer / operator / admin / owner) and **agent enrollment** — under the OIDC profile.
 - Durable, persisted **jobs** under the `postgres` profile.
 
 ## Not yet
 
-Alert **delivery** (email / webhook) and a background poller (alerting is on-demand, in-console for now), and any
-non-HiveOS vendor (the driver SPI is ready for them). Firmware upgrade and **PPSK admin-driven key minting**
+Any non-HiveOS vendor (the driver SPI is ready for them). Firmware upgrade and **PPSK admin-driven key minting**
 (Caminho B) both ship but are **lab/untested** until validated on real hardware — PPSK-via-RADIUS has a dedicated
 [runbook](/ppsk-radius-runbook/). The project README's Roadmap tracks the current plan.
 
