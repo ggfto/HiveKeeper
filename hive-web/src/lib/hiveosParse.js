@@ -147,6 +147,21 @@ export function parseQosPolicies(config) {
 }
 
 /**
+ * Parse the named schedule objects from a `show running-config`. A schedule line is
+ * `schedule <name> recurrent …` or `schedule <name> once …`; an `ssid <n> schedule <name>` reference is NOT a
+ * schedule definition and is skipped (the `recurrent|once` keyword anchors a real definition). ->
+ * [{ name, type: 'recurrent'|'once', detail }] in config order, where `detail` is the trailing range text.
+ */
+export function parseSchedules(config) {
+  const out = []
+  for (const raw of (config || '').split('\n')) {
+    const m = raw.trim().match(/^schedule (\S+) (recurrent|once)\b\s*(.*)$/)
+    if (m) out.push({ name: m[1], type: m[2], detail: m[3].trim() })
+  }
+  return out
+}
+
+/**
  * Parse the hives (mesh profiles) from `show hive`. Each row starts with the hive name followed by its native
  * VLAN, so a name + a number anchors a data row (skipping the header/separator/prompt). -> [{ name, nativeVlan }].
  */

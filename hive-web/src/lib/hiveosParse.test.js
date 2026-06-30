@@ -10,6 +10,7 @@ import {
   parseStaticRoutes,
   parseFirewallPolicies,
   parseQosPolicies,
+  parseSchedules,
 } from './hiveosParse'
 
 // A real running-config excerpt captured from the AP230 (secrets already masked by the gateway).
@@ -239,5 +240,28 @@ describe('filterLog', () => {
   it('is safe on empty/missing input', () => {
     expect(filterLog([], 'all')).toEqual([])
     expect(filterLog(null, 'error')).toEqual([])
+  })
+})
+
+describe('parseSchedules', () => {
+  const cfg = `
+hostname AH-827200
+schedule work-hours recurrent weekday-range Monday to Friday time-range 08:00 to 17:00
+schedule xmas once 2026-12-25 08:00 to 2026-12-26 17:00
+ssid HK-JOB schedule work-hours
+`
+  it('parses recurrent and one-time schedules with their type and detail', () => {
+    const s = parseSchedules(cfg)
+    expect(s).toEqual([
+      { name: 'work-hours', type: 'recurrent', detail: 'weekday-range Monday to Friday time-range 08:00 to 17:00' },
+      { name: 'xmas', type: 'once', detail: '2026-12-25 08:00 to 2026-12-26 17:00' },
+    ])
+  })
+  it('ignores ssid lines that merely reference a schedule', () => {
+    expect(parseSchedules(cfg).map((s) => s.name)).not.toContain('HK-JOB')
+  })
+  it('is safe on empty/missing input', () => {
+    expect(parseSchedules('')).toEqual([])
+    expect(parseSchedules(null)).toEqual([])
   })
 })

@@ -202,7 +202,15 @@ where knobs live: **interface-level** (`interface wifiN radio …`) vs **profile
 ## Phase 5 — Operations & lifecycle
 
 - **Firmware upgrade GA** — validate the `save image` path on real hardware, move it out of lab/untested.
-- **Scheduling** — global `schedule <name>` objects reused by SSIDs and user-profiles; scheduled reboot.
+- **Scheduling** — global `schedule <name>` objects reused by SSIDs and user-profiles. **SHIPPED (objects):** a
+  **Schedules** section (`scheduleCommands` / `removeScheduleCommands` builders + `parseSchedules` + the
+  `ScheduleSection` organism, all unit-tested) creates/lists/removes **recurrent** (`weekday-range` and/or
+  `time-range`, optional `date-range`) and **one-time** (`once <date> <time> to <date> <time>`) schedules; both
+  forms were **applied to the running-config and reverted live on the AP230**. SSID hardening (Phase 2) and
+  user-profiles (Phase 3) already reference these by name. **Still open:** *scheduled reboot* — the grammar is
+  confirmed live (`reboot date <d> time <t>` / `reboot offset <hh:mm:ss>` / `reboot schedule daily|weekly every
+  <n> …`), but it is an imperative action (not in the running-config) with a connectivity-dropping blast radius,
+  so it lands as a separate confirm-gated control rather than in the schedule-objects form.
 - **Alerting / thresholds** and **config templates** (apply a profile across a site/group) — both currently
   in the "Not yet" list; they build naturally on the policy and bulk-ops foundations.
 - **PPSK admin-driven key management (Caminho B)** — let an operator mint per-user private PSKs from HiveKeeper

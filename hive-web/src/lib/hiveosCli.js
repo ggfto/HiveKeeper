@@ -214,6 +214,49 @@ export function bindUserProfileCommands(securityObject, attribute) {
   return [`security-object ${so} default-user-profile-attr ${attr}`]
 }
 
+/**
+ * A named schedule object (reused by an SSID's `schedule <name>` and a user-profile's `schedule <name>` to gate
+ * when each applies). Grammar confirmed live on an AP230 (HiveOS 10.6r1a) — both forms applied to the
+ * running-config and reverted:
+ *   `schedule <name> recurrent [date-range <d> [to <d>]] [weekday-range <Day> [to <Day>]] [time-range <hh:mm> to <hh:mm>]`
+ *   `schedule <name> once <date> <time> to <date> <time>`
+ * Weekdays are capitalised (Monday…Sunday), dates yyyy-mm-dd, times hh:mm. A recurrent schedule needs at least
+ * one sub-range to be meaningful (a bare `schedule <n> recurrent` would mean "always", which we refuse). A
+ * one-time schedule needs all four of start date/time + end date/time. A half time-range (only one bound) is
+ * dropped — HiveOS requires `time-range <start> to <end>`. No name → nothing. Dispatched through apply-config.
+ */
+export function scheduleCommands(
+  name,
+  { type = 'recurrent', dateStart, dateEnd, weekdayStart, weekdayEnd, timeStart, timeEnd } = {},
+) {
+  const n = (name || '').trim()
+  if (!n) return []
+  const ds = (dateStart || '').trim()
+  const de = (dateEnd || '').trim()
+  const ts = (timeStart || '').trim()
+  const te = (timeEnd || '').trim()
+
+  if (type === 'once') {
+    if (!ds || !ts || !de || !te) return []
+    return [`schedule ${n} once ${ds} ${ts} to ${de} ${te}`]
+  }
+
+  const parts = []
+  if (ds) parts.push(`date-range ${ds}${de ? ` to ${de}` : ''}`)
+  const ws = (weekdayStart || '').trim()
+  const we = (weekdayEnd || '').trim()
+  if (ws) parts.push(`weekday-range ${ws}${we ? ` to ${we}` : ''}`)
+  if (ts && te) parts.push(`time-range ${ts} to ${te}`)
+  if (parts.length === 0) return []
+  return [`schedule ${n} recurrent ${parts.join(' ')}`]
+}
+
+/** Remove a schedule object. Confirmed live: `no schedule <name>` (clears it from running-config). */
+export function removeScheduleCommands(name) {
+  const n = (name || '').trim()
+  return n ? [`no schedule ${n}`] : []
+}
+
 /** Remove a user profile entirely. Confirmed live: `no user-profile <name>` (clears it from running-config). */
 export function removeUserProfileCommands(name) {
   const n = (name || '').trim()

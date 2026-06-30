@@ -39,6 +39,10 @@ Per device, via the web UI ([device configuration](/device-configuration/) expla
   from/to client + default action) and a **QoS marker-map**. Plus the objects those reference — **IP firewall
   policies** (create + a permit/deny/NAT/redirect rule on a service), **MAC firewall policies** (create), and
   **QoS rate-limit policies** (`qos policy` capping a user profile's kbps) — created and listed here.
+- **Schedules** — named **schedule objects** (`schedule <name> recurrent | once`) that gate *when* an SSID or
+  user profile is active. List the schedules read from the AP, create a **recurrent** one (by weekday and/or
+  time of day, with an optional active date window) or a **one-time** one (between a start and end date+time),
+  and remove it. Referenced by name from the Wi-Fi (Hardening) and Policy sections.
 - **Network** — the mgt0 interface (IP / VLAN / routing / DHCP-client / DNS / NTP), plus **static routes**
   (net / host, list + add + remove) and **LLDP/CDP** neighbor discovery (enable, timers, receive-only, cache size).
 - **Captive portal**, **Mesh/Hive** join, **Client mode**, **Monitoring** (SNMP, syslog), **Power & LED**, **Reboot**.
@@ -73,9 +77,9 @@ The gateway:
 
 ## Not yet
 
-Alerting / thresholds, config templates, scheduling, and any non-HiveOS vendor (the driver SPI is ready for
-them). Firmware upgrade ships but is **lab/untested** until validated on real hardware. The project README's
-Roadmap tracks the current plan.
+Alerting / thresholds, config templates, scheduled reboot, PPSK admin-driven key minting, and any non-HiveOS
+vendor (the driver SPI is ready for them). Firmware upgrade ships but is **lab/untested** until validated on
+real hardware. The project README's Roadmap tracks the current plan.
 
 A few HiveOS features are **not exposed because the AP230 has no running-config grammar for them** (confirmed
 live, so they can't be driven through the SSH/apply-config path HiveKeeper uses):

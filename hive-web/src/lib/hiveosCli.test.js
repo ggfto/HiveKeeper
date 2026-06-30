@@ -24,6 +24,8 @@ import {
   ssidQosCommands,
   lldpCommands,
   staticRouteCommands,
+  scheduleCommands,
+  removeScheduleCommands,
 } from './hiveosCli'
 
 // Syntax confirmed live on an AP230 (HiveOS 10.6r1a) via `?` context help:
@@ -613,5 +615,46 @@ describe('staticRouteCommands', () => {
     expect(staticRouteCommands({ type: 'net', dest: '10.9.9.0', gateway: '192.168.1.1' })).toEqual([])
     expect(staticRouteCommands({ type: 'host', dest: '', gateway: '192.168.1.1' })).toEqual([])
     expect(staticRouteCommands({ type: 'host', dest: '10.9.9.9' })).toEqual([])
+  })
+})
+
+// Schedule objects. Grammar confirmed live on an AP230 (HiveOS 10.6r1a) — applied to the running-config and
+// reverted (`no schedule <name>`):
+//   schedule <name> recurrent [date-range <d> [to <d>]] [weekday-range <Day> [to <Day>]] [time-range <hh:mm> to <hh:mm>]
+//   schedule <name> once <date> <time> to <date> <time>
+describe('scheduleCommands', () => {
+  it('builds a recurrent weekday + time schedule', () => {
+    expect(
+      scheduleCommands('work-hours', { type: 'recurrent', weekdayStart: 'Monday', weekdayEnd: 'Friday', timeStart: '08:00', timeEnd: '17:00' }),
+    ).toEqual(['schedule work-hours recurrent weekday-range Monday to Friday time-range 08:00 to 17:00'])
+  })
+  it('builds a single-weekday recurrent schedule (no end weekday)', () => {
+    expect(scheduleCommands('sun', { type: 'recurrent', weekdayStart: 'Sunday', timeStart: '00:00', timeEnd: '06:00' })).toEqual([
+      'schedule sun recurrent weekday-range Sunday time-range 00:00 to 06:00',
+    ])
+  })
+  it('includes an optional date range when a start date is given', () => {
+    expect(
+      scheduleCommands('promo', { type: 'recurrent', dateStart: '2026-01-01', dateEnd: '2026-03-31', timeStart: '09:00', timeEnd: '12:00' }),
+    ).toEqual(['schedule promo recurrent date-range 2026-01-01 to 2026-03-31 time-range 09:00 to 12:00'])
+  })
+  it('builds a one-time schedule (date + time start, to date + time end)', () => {
+    expect(
+      scheduleCommands('xmas', { type: 'once', dateStart: '2026-12-25', timeStart: '08:00', dateEnd: '2026-12-26', timeEnd: '17:00' }),
+    ).toEqual(['schedule xmas once 2026-12-25 08:00 to 2026-12-26 17:00'])
+  })
+  it('drops a half time-range (only one of start/end) but keeps the weekday', () => {
+    expect(scheduleCommands('w', { type: 'recurrent', weekdayStart: 'Monday', timeStart: '08:00' })).toEqual([
+      'schedule w recurrent weekday-range Monday',
+    ])
+  })
+  it('emits nothing without a name, with no recurrent sub-range, or with an incomplete one-time', () => {
+    expect(scheduleCommands('', { type: 'recurrent', weekdayStart: 'Monday' })).toEqual([])
+    expect(scheduleCommands('empty', { type: 'recurrent' })).toEqual([])
+    expect(scheduleCommands('half', { type: 'once', dateStart: '2026-12-25', timeStart: '08:00' })).toEqual([])
+  })
+  it('removes a schedule by name', () => {
+    expect(removeScheduleCommands('work-hours')).toEqual(['no schedule work-hours'])
+    expect(removeScheduleCommands('  ')).toEqual([])
   })
 })

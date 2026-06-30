@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { MriPageHeader, MriButton, MriStatusBadge } from '@mriqbox/ui-kit'
-import { Boxes, Wifi, Network, Radio, Globe, Terminal, Power, ArrowLeft, Router, Activity, DoorOpen, KeyRound, ShieldUser } from 'lucide-react'
+import { Boxes, Wifi, Network, Radio, Globe, Terminal, Power, ArrowLeft, Router, Activity, DoorOpen, KeyRound, ShieldUser, CalendarClock } from 'lucide-react'
 import { useAuth } from '../context/AuthProvider'
 import { useToast } from '../context/ToastProvider'
 import { ConfigNav } from '../components/molecules/ConfigNav'
@@ -12,6 +12,7 @@ import { RadioForm } from '../components/organisms/RadioForm'
 import { RadioProfileForm } from '../components/organisms/RadioProfileForm'
 import { NetworkSection } from '../components/organisms/NetworkSection'
 import { PolicySection } from '../components/organisms/PolicySection'
+import { ScheduleSection } from '../components/organisms/ScheduleSection'
 import { ClientModeForm } from '../components/organisms/ClientModeForm'
 import { AdvancedConfigForm } from '../components/organisms/AdvancedConfigForm'
 import { PowerForm } from '../components/organisms/PowerForm'
@@ -31,6 +32,7 @@ import {
   parseFirewallPolicies,
   parseQosPolicies,
   parseStaticRoutes,
+  parseSchedules,
 } from '../lib/hiveosParse'
 import { meshCommands } from '../lib/hiveosCli'
 import { groupNamesFor, siteName } from '../lib/fleet'
@@ -46,6 +48,7 @@ const SECTIONS = [
   { id: 'clientmode', label: 'Client mode', icon: Router },
   { id: 'network', label: 'Network', icon: Globe },
   { id: 'policy', label: 'Policy', icon: ShieldUser },
+  { id: 'schedules', label: 'Schedules', icon: CalendarClock },
   { id: 'monitoring', label: 'Monitoring', icon: Activity },
   { id: 'advanced', label: 'Advanced', icon: Terminal },
   { id: 'power', label: 'Power', icon: Power },
@@ -167,6 +170,19 @@ export function DeviceDetailPage() {
             qos: parseQosPolicies(cfg),
           }
         }),
+    [gateway],
+  )
+  // Read the named schedule objects from the AP for the Schedules section's list.
+  const loadSchedules = useCallback(
+    (d) =>
+      gateway
+        .agentOp(d.agentId, 'apply-config', {
+          host: d.mgmtIp,
+          port: 22,
+          commands: ['show running-config'],
+          save: false,
+        })
+        .then((r) => parseSchedules((r.outputs || []).join('\n'))),
     [gateway],
   )
   // Read the static routes from the AP for the Network section's routes editor.
@@ -400,6 +416,9 @@ export function DeviceDetailPage() {
           )}
           {section === 'policy' && (
             <PolicySection device={device} loadPolicy={loadPolicy} onApply={onApplyConfig} busy={busy} />
+          )}
+          {section === 'schedules' && (
+            <ScheduleSection device={device} loadSchedules={loadSchedules} onApply={onApplyConfig} busy={busy} />
           )}
           {section === 'monitoring' && (
             <MonitoringSection
