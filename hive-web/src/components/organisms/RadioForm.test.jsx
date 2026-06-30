@@ -54,4 +54,21 @@ describe('RadioForm', () => {
       save: true,
     })
   })
+
+  it('applies the advanced RF knobs (rx-sop / ed-threshold / dfs-backup-channel)', () => {
+    const onApply = vi.fn()
+    render(<RadioForm device={device} onApply={onApply} />)
+    fireEvent.change(screen.getByPlaceholderText('high or -78'), { target: { value: 'high' } })
+    fireEvent.change(screen.getByPlaceholderText('-62'), { target: { value: '-62' } })
+    fireEvent.change(screen.getByPlaceholderText('36 or 5180M'), { target: { value: '36' } })
+    fireEvent.click(screen.getByRole('button', { name: /apply radio/i }))
+    expect(onApply).toHaveBeenCalledWith(device, {
+      commands: [
+        'interface wifi0 radio rx-sop high',
+        'interface wifi0 radio ed-threshold -62',
+        'interface wifi0 radio dfs-backup-channel 36',
+      ],
+      save: true,
+    })
+  })
 })

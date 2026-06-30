@@ -17,6 +17,27 @@ const TOGGLE = [
   { label: 'Enable', value: 'enable' },
   { label: 'Disable', value: 'disable' },
 ]
+// Phase 4 advanced RF tuning, all confirmed live on the AP230. Beamforming and phymode are not plain toggles.
+const BEAMFORMING = [
+  { label: '(unchanged)', value: '' },
+  { label: 'Auto', value: 'auto' },
+  { label: 'Explicit only', value: 'explicit-only' },
+  { label: 'Disable', value: 'disable' },
+]
+const PHYMODES = [
+  { label: '(unchanged)', value: '' },
+  { label: '11a', value: '11a' },
+  { label: '11ac', value: '11ac' },
+  { label: '11b/g', value: '11b/g' },
+  { label: '11na', value: '11na' },
+  { label: '11ng', value: '11ng' },
+]
+const CHAINS = [
+  { label: '(unchanged)', value: '' },
+  { label: '1', value: '1' },
+  { label: '2', value: '2' },
+  { label: '3', value: '3' },
+]
 
 // Infer the band from the profile name so the channel-width advisory knows which band it is judging. radio_ng0
 // is 2.4 GHz (wifi0), radio_ac0 / radio_ax0 are 5 GHz (wifi1). Unknown names get no advisory rather than a guess.
@@ -38,6 +59,18 @@ export function RadioProfileForm({ device, onApply, busy }) {
   const [bandSteering, setBandSteering] = useState('')
   const [clientLoadBalance, setClientLoadBalance] = useState('')
   const [maxClient, setMaxClient] = useState('')
+  // Phase 4 advanced RF tuning (disclosed below; all default to unchanged).
+  const [dfs, setDfs] = useState('')
+  const [shortGuardInterval, setShortGuardInterval] = useState('')
+  const [ampdu, setAmpdu] = useState('')
+  const [amsdu, setAmsdu] = useState('')
+  const [frameburst, setFrameburst] = useState('')
+  const [highDensity, setHighDensity] = useState('')
+  const [weakSnrSuppress, setWeakSnrSuppress] = useState('')
+  const [txBeamforming, setTxBeamforming] = useState('')
+  const [phymode, setPhymode] = useState('')
+  const [receiveChain, setReceiveChain] = useState('')
+  const [transmitChain, setTransmitChain] = useState('')
 
   const apply = () => {
     const commands = radioProfileCommands(profile.trim(), {
@@ -45,6 +78,17 @@ export function RadioProfileForm({ device, onApply, busy }) {
       bandSteering,
       clientLoadBalance,
       maxClient: maxClient.trim(),
+      dfs,
+      shortGuardInterval,
+      ampdu,
+      amsdu,
+      frameburst,
+      highDensity,
+      weakSnrSuppress,
+      txBeamforming,
+      phymode,
+      receiveChain,
+      transmitChain,
     })
     if (commands.length === 0) return
     onApply(device, { commands, save: true })
@@ -134,6 +178,169 @@ export function RadioProfileForm({ device, onApply, busy }) {
           ))}
         </ul>
       )}
+      <details className="rounded-md border border-border">
+        <summary className="cursor-pointer px-3 py-2 text-xs font-medium text-muted-foreground">
+          Advanced RF tuning
+        </summary>
+        <div className="space-y-3 px-3 pb-3">
+          <p className="text-xs text-muted-foreground">
+            High-density and dense-RF knobs. Defaults are sensible — change these only when tuning a busy
+            environment. All confirmed on HiveOS; leave a control on <em>(unchanged)</em> to keep the current value.
+          </p>
+          <div className="grid gap-2 sm:grid-cols-2">
+            <label className="flex flex-col gap-1" htmlFor="rp-dfs">
+              <span className="text-xs text-muted-foreground">DFS (radar avoidance, 5 GHz)</span>
+              <select id="rp-dfs" className={selectClass} value={dfs} onChange={(e) => setDfs(e.target.value)}>
+                {TOGGLE.map((o) => (
+                  <option key={o.value} value={o.value}>
+                    {o.label}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label className="flex flex-col gap-1" htmlFor="rp-high-density">
+              <span className="text-xs text-muted-foreground">High-density optimizations</span>
+              <select
+                id="rp-high-density"
+                className={selectClass}
+                value={highDensity}
+                onChange={(e) => setHighDensity(e.target.value)}
+              >
+                {TOGGLE.map((o) => (
+                  <option key={o.value} value={o.value}>
+                    {o.label}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label className="flex flex-col gap-1" htmlFor="rp-weak-snr">
+              <span className="text-xs text-muted-foreground">Weak-SNR suppression</span>
+              <select
+                id="rp-weak-snr"
+                className={selectClass}
+                value={weakSnrSuppress}
+                onChange={(e) => setWeakSnrSuppress(e.target.value)}
+              >
+                {TOGGLE.map((o) => (
+                  <option key={o.value} value={o.value}>
+                    {o.label}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label className="flex flex-col gap-1" htmlFor="rp-sgi">
+              <span className="text-xs text-muted-foreground">Short guard interval (400ns, 40 MHz)</span>
+              <select
+                id="rp-sgi"
+                className={selectClass}
+                value={shortGuardInterval}
+                onChange={(e) => setShortGuardInterval(e.target.value)}
+              >
+                {TOGGLE.map((o) => (
+                  <option key={o.value} value={o.value}>
+                    {o.label}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label className="flex flex-col gap-1" htmlFor="rp-ampdu">
+              <span className="text-xs text-muted-foreground">AMPDU aggregation</span>
+              <select id="rp-ampdu" className={selectClass} value={ampdu} onChange={(e) => setAmpdu(e.target.value)}>
+                {TOGGLE.map((o) => (
+                  <option key={o.value} value={o.value}>
+                    {o.label}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label className="flex flex-col gap-1" htmlFor="rp-amsdu">
+              <span className="text-xs text-muted-foreground">AMSDU aggregation</span>
+              <select id="rp-amsdu" className={selectClass} value={amsdu} onChange={(e) => setAmsdu(e.target.value)}>
+                {TOGGLE.map((o) => (
+                  <option key={o.value} value={o.value}>
+                    {o.label}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label className="flex flex-col gap-1" htmlFor="rp-frameburst">
+              <span className="text-xs text-muted-foreground">Frame bursting</span>
+              <select
+                id="rp-frameburst"
+                className={selectClass}
+                value={frameburst}
+                onChange={(e) => setFrameburst(e.target.value)}
+              >
+                {TOGGLE.map((o) => (
+                  <option key={o.value} value={o.value}>
+                    {o.label}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label className="flex flex-col gap-1" htmlFor="rp-beamforming">
+              <span className="text-xs text-muted-foreground">TX beamforming</span>
+              <select
+                id="rp-beamforming"
+                className={selectClass}
+                value={txBeamforming}
+                onChange={(e) => setTxBeamforming(e.target.value)}
+              >
+                {BEAMFORMING.map((o) => (
+                  <option key={o.value} value={o.value}>
+                    {o.label}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label className="flex flex-col gap-1" htmlFor="rp-phymode">
+              <span className="text-xs text-muted-foreground">PHY mode</span>
+              <select
+                id="rp-phymode"
+                className={selectClass}
+                value={phymode}
+                onChange={(e) => setPhymode(e.target.value)}
+              >
+                {PHYMODES.map((o) => (
+                  <option key={o.value} value={o.value}>
+                    {o.label}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label className="flex flex-col gap-1" htmlFor="rp-rx-chain">
+              <span className="text-xs text-muted-foreground">Receive chains</span>
+              <select
+                id="rp-rx-chain"
+                className={selectClass}
+                value={receiveChain}
+                onChange={(e) => setReceiveChain(e.target.value)}
+              >
+                {CHAINS.map((o) => (
+                  <option key={o.value} value={o.value}>
+                    {o.label}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label className="flex flex-col gap-1" htmlFor="rp-tx-chain">
+              <span className="text-xs text-muted-foreground">Transmit chains</span>
+              <select
+                id="rp-tx-chain"
+                className={selectClass}
+                value={transmitChain}
+                onChange={(e) => setTransmitChain(e.target.value)}
+              >
+                {CHAINS.map((o) => (
+                  <option key={o.value} value={o.value}>
+                    {o.label}
+                  </option>
+                ))}
+              </select>
+            </label>
+          </div>
+        </div>
+      </details>
       <MriButton size="sm" disabled={busy} onClick={apply}>
         Apply profile
       </MriButton>

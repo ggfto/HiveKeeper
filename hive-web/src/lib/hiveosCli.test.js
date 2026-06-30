@@ -53,6 +53,18 @@ describe('radioCommands', () => {
       'interface wifi1 radio tx-power-control auto',
     ])
   })
+  // Phase 4 advanced interface knobs, confirmed live on the AP230:
+  //   rx-sop <number|high|low|medium> ; ed-threshold <-70..-50> ; dfs-backup-channel <freq|channel>
+  it('builds the advanced rx-sop / ed-threshold / dfs-backup-channel lines', () => {
+    expect(
+      radioCommands('wifi1', { rxSop: 'high', edThreshold: '-62', dfsBackupChannel: '36' }),
+    ).toEqual([
+      'interface wifi1 radio rx-sop high',
+      'interface wifi1 radio ed-threshold -62',
+      'interface wifi1 radio dfs-backup-channel 36',
+    ])
+    expect(radioCommands('wifi0', { rxSop: '-82' })).toEqual(['interface wifi0 radio rx-sop -82'])
+  })
 })
 
 // Confirmed via `?`: radio profile <name> channel-width 20|40|80 ; band-steering ; client-load-balance ;
@@ -83,6 +95,62 @@ describe('radioProfileCommands', () => {
     expect(radioProfileCommands('radio_ac0', {})).toEqual([])
     expect(radioProfileCommands('', { channelWidth: '80' })).toEqual([])
     expect(radioProfileCommands('  ', { channelWidth: '80' })).toEqual([])
+  })
+  // Phase 4 advanced profile knobs, confirmed live on the AP230. Bare-line toggles (dfs, short-guard-interval,
+  // ampdu, amsdu, frameburst) negate with `no ...`; high-density / weak-snr-suppress carry an `enable` sub-word.
+  it('builds the advanced bare-line toggles and their negations', () => {
+    expect(
+      radioProfileCommands('radio_ac0', {
+        dfs: 'enable',
+        shortGuardInterval: 'enable',
+        ampdu: 'enable',
+        amsdu: 'enable',
+        frameburst: 'enable',
+      }),
+    ).toEqual([
+      'radio profile radio_ac0 dfs',
+      'radio profile radio_ac0 short-guard-interval',
+      'radio profile radio_ac0 ampdu',
+      'radio profile radio_ac0 amsdu',
+      'radio profile radio_ac0 frameburst',
+    ])
+    expect(radioProfileCommands('radio_ng0', { dfs: 'disable', ampdu: 'disable' })).toEqual([
+      'no radio profile radio_ng0 dfs',
+      'no radio profile radio_ng0 ampdu',
+    ])
+  })
+  it('builds high-density / weak-snr-suppress with the enable sub-word and their negations', () => {
+    expect(radioProfileCommands('radio_ac0', { highDensity: 'enable', weakSnrSuppress: 'enable' })).toEqual([
+      'radio profile radio_ac0 high-density enable',
+      'radio profile radio_ac0 weak-snr-suppress enable',
+    ])
+    expect(radioProfileCommands('radio_ac0', { highDensity: 'disable', weakSnrSuppress: 'disable' })).toEqual([
+      'no radio profile radio_ac0 high-density enable',
+      'no radio profile radio_ac0 weak-snr-suppress enable',
+    ])
+  })
+  // tx-beamforming auto|explicit-only (no ... to disable) ; phymode <11a|11ac|11b/g|11na|11ng> ;
+  // receive-chain / transmit-chain <1-3>.
+  it('builds tx-beamforming, phymode and chain counts', () => {
+    expect(
+      radioProfileCommands('radio_ac0', {
+        txBeamforming: 'explicit-only',
+        phymode: '11ac',
+        receiveChain: '2',
+        transmitChain: '3',
+      }),
+    ).toEqual([
+      'radio profile radio_ac0 tx-beamforming explicit-only',
+      'radio profile radio_ac0 phymode 11ac',
+      'radio profile radio_ac0 receive-chain 2',
+      'radio profile radio_ac0 transmit-chain 3',
+    ])
+    expect(radioProfileCommands('radio_ac0', { txBeamforming: 'auto' })).toEqual([
+      'radio profile radio_ac0 tx-beamforming auto',
+    ])
+    expect(radioProfileCommands('radio_ac0', { txBeamforming: 'disable' })).toEqual([
+      'no radio profile radio_ac0 tx-beamforming',
+    ])
   })
 })
 

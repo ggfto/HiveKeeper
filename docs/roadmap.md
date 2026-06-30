@@ -165,13 +165,22 @@ coalescing them; and firewall/QoS objects must be **created before** they take a
 
 ---
 
-## Phase 4 — RF tuning & high-density (advanced)
+## Phase 4 — RF tuning & high-density (advanced) — **SHIPPED**
 
-Radio-profile knobs for dense RF environments, behind an "advanced" disclosure:
+Radio knobs for dense RF environments, behind an **Advanced RF tuning** disclosure in each radio form. All
+grammar was **confirmed live on the AP230** via `?` context help — and it caught the HiveOS split between
+where knobs live: **interface-level** (`interface wifiN radio …`) vs **profile-level** (`radio profile <name> …`).
 
-- `dfs` (+ `dfs-backup-channel`) to unlock clean DFS channels in 5 GHz.
-- `short-guard-interval`, `ampdu` / `amsdu`, `tx-beamforming`, `frameburst`, `high-density`,
-  `rx-sop` / `ed-threshold`, `phymode`, `receive-chain` / `transmit-chain`, `weak-snr-suppress`.
+- ✅ **Interface-level** (added to `radioCommands`, surfaced in `RadioForm`): `rx-sop <number|high|low|medium>`
+  (receiver start-of-packet detection — dBm or a density preset), `ed-threshold <-70..-50>` (energy-detect
+  threshold), `dfs-backup-channel <freq|channel>` (the 5 GHz fallback when radar forces a channel switch).
+- ✅ **Profile-level** (added to `radioProfileCommands`, surfaced in `RadioProfileForm`): `dfs`,
+  `short-guard-interval`, `ampdu`, `amsdu`, `frameburst` (bare-line toggles, `no …` to disable);
+  `high-density enable` and `weak-snr-suppress enable` (toggles whose positive form carries the `enable`
+  sub-word, so the negation is `no … enable`); `tx-beamforming auto|explicit-only` (`no …` to disable);
+  `phymode 11a|11ac|11b/g|11na|11ng`; and `receive-chain` / `transmit-chain <1-3>`.
+- **Acceptance met** offline (the two builders and both organisms are unit-tested) and every knob's grammar
+  was confirmed live on the AP230. `capabilities.md` updated.
 
 ---
 

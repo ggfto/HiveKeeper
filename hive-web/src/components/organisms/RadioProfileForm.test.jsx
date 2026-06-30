@@ -41,4 +41,25 @@ describe('RadioProfileForm', () => {
       save: true,
     })
   })
+
+  it('applies the advanced RF tuning knobs from the disclosure', () => {
+    const onApply = vi.fn()
+    render(<RadioProfileForm device={device} onApply={onApply} />)
+    fireEvent.change(screen.getByLabelText(/^DFS/i), { target: { value: 'enable' } })
+    fireEvent.change(screen.getByLabelText(/high-density optimizations/i), { target: { value: 'enable' } })
+    fireEvent.change(screen.getByLabelText(/tx beamforming/i), { target: { value: 'explicit-only' } })
+    fireEvent.change(screen.getByLabelText(/phy mode/i), { target: { value: '11ac' } })
+    fireEvent.change(screen.getByLabelText(/receive chains/i), { target: { value: '2' } })
+    fireEvent.click(screen.getByRole('button', { name: /apply profile/i }))
+    expect(onApply).toHaveBeenCalledWith(device, {
+      commands: [
+        'radio profile radio_ac0 dfs',
+        'radio profile radio_ac0 high-density enable',
+        'radio profile radio_ac0 tx-beamforming explicit-only',
+        'radio profile radio_ac0 phymode 11ac',
+        'radio profile radio_ac0 receive-chain 2',
+      ],
+      save: true,
+    })
+  })
 })

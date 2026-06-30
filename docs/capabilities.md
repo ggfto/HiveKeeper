@@ -47,7 +47,10 @@ Per device, via the web UI ([device configuration](/device-configuration/) expla
   (20/40/80 MHz), **band-steering**, **client load-balancing**, and a per-profile **max-clients** cap.
   Best-practice advisories (channel overlap, wide channels, high power) flag settings likely to hurt latency
   under client density, right next to the control that fixes them. A profile can be shared across interfaces
-  and APs, so a profile change has a wider blast radius than a per-interface tweak.
+  and APs, so a profile change has a wider blast radius than a per-interface tweak. An **Advanced RF tuning**
+  disclosure exposes the dense-RF knobs: per-radio `rx-sop` / `ed-threshold` / `dfs-backup-channel`, and on the
+  profile `dfs`, `short-guard-interval`, `ampdu` / `amsdu`, `frameburst`, `tx-beamforming`, `high-density`,
+  `weak-snr-suppress`, `phymode`, and receive/transmit chain counts.
 - **Advanced** — a raw HiveOS CLI escape hatch (send arbitrary commands, optionally `save config`).
 - **Backup** — capture the running-config to a git-versioned store, with optional secrets and PPSK users.
 - **Restore** — re-apply a saved running-config (additive replay, then `save config`). In the web UI it lives

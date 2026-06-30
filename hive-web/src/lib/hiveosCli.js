@@ -10,13 +10,24 @@
  * `tx-power-control` is the client target power (1-20|auto) — distinct from `power` (the AP's own TX power); it
  * addresses AP<->client asymmetry / sticky clients. Channel width and the density knobs are NOT here — they live
  * on the named radio profile (see radioProfileCommands).
+ *
+ * Advanced (Phase 4) interface-level knobs, all confirmed live on the AP230:
+ *   `rx-sop <number|high|low|medium>` — receiver start-of-packet detection threshold (dBm or a density preset).
+ *   `ed-threshold <-70..-50>` — energy-detect threshold in dBm.
+ *   `dfs-backup-channel <freq|channel>` — fallback channel when DFS forces a radar avoidance switch (5 GHz).
  */
-export function radioCommands(iface, { channel, power, mode, txPowerControl } = {}) {
+export function radioCommands(
+  iface,
+  { channel, power, mode, txPowerControl, rxSop, edThreshold, dfsBackupChannel } = {},
+) {
   const cmds = []
   if (channel) cmds.push(`interface ${iface} radio channel ${channel}`)
   if (power) cmds.push(`interface ${iface} radio power ${power}`)
   if (txPowerControl) cmds.push(`interface ${iface} radio tx-power-control ${txPowerControl}`)
   if (mode) cmds.push(`interface ${iface} mode ${mode}`)
+  if (rxSop) cmds.push(`interface ${iface} radio rx-sop ${rxSop}`)
+  if (edThreshold) cmds.push(`interface ${iface} radio ed-threshold ${edThreshold}`)
+  if (dfsBackupChannel) cmds.push(`interface ${iface} radio dfs-backup-channel ${dfsBackupChannel}`)
   return cmds
 }
 
@@ -28,8 +39,35 @@ export function radioCommands(iface, { channel, power, mode, txPowerControl } = 
  * client-load-balance are toggles ('enable'|'disable'|'' unchanged), the latter emitting the `no ...` negation.
  * BLAST RADIUS: a profile may be shared across interfaces/APs, so a change here is wider than a per-interface
  * channel/power tweak — the caller should surface which profile a radio uses.
+ *
+ * Advanced (Phase 4) profile-level knobs for dense RF, all confirmed live on the AP230. Toggles take
+ * 'enable'|'disable'|'' (unchanged), 'disable' emitting the `no ...` negation:
+ *   `dfs`, `short-guard-interval`, `ampdu`, `amsdu`, `frameburst` — bare-line toggles.
+ *   `high-density` / `weak-snr-suppress` — toggles whose positive form carries the `enable` sub-word, so the
+ *     negation is `no radio profile <p> <knob> enable`.
+ *   `tx-beamforming auto|explicit-only` (with `no ...` to disable), `phymode 11a|11ac|11b/g|11na|11ng`,
+ *   `receive-chain`/`transmit-chain <1-3>`.
  */
-export function radioProfileCommands(profile, { channelWidth, bandSteering, clientLoadBalance, maxClient } = {}) {
+export function radioProfileCommands(
+  profile,
+  {
+    channelWidth,
+    bandSteering,
+    clientLoadBalance,
+    maxClient,
+    dfs,
+    shortGuardInterval,
+    ampdu,
+    amsdu,
+    frameburst,
+    txBeamforming,
+    highDensity,
+    weakSnrSuppress,
+    phymode,
+    receiveChain,
+    transmitChain,
+  } = {},
+) {
   const p = (profile || '').trim()
   if (!p) return []
   const cmds = []
@@ -39,6 +77,31 @@ export function radioProfileCommands(profile, { channelWidth, bandSteering, clie
   if (clientLoadBalance === 'enable') cmds.push(`radio profile ${p} client-load-balance`)
   if (clientLoadBalance === 'disable') cmds.push(`no radio profile ${p} client-load-balance`)
   if (maxClient) cmds.push(`radio profile ${p} max-client ${maxClient}`)
+  // Bare-line toggles: positive enables, `no ...` disables.
+  for (const [val, knob] of [
+    [dfs, 'dfs'],
+    [shortGuardInterval, 'short-guard-interval'],
+    [ampdu, 'ampdu'],
+    [amsdu, 'amsdu'],
+    [frameburst, 'frameburst'],
+  ]) {
+    if (val === 'enable') cmds.push(`radio profile ${p} ${knob}`)
+    if (val === 'disable') cmds.push(`no radio profile ${p} ${knob}`)
+  }
+  // Toggles whose positive form carries an `enable` sub-word (so does its negation).
+  for (const [val, knob] of [
+    [highDensity, 'high-density'],
+    [weakSnrSuppress, 'weak-snr-suppress'],
+  ]) {
+    if (val === 'enable') cmds.push(`radio profile ${p} ${knob} enable`)
+    if (val === 'disable') cmds.push(`no radio profile ${p} ${knob} enable`)
+  }
+  if (txBeamforming === 'auto' || txBeamforming === 'explicit-only')
+    cmds.push(`radio profile ${p} tx-beamforming ${txBeamforming}`)
+  if (txBeamforming === 'disable') cmds.push(`no radio profile ${p} tx-beamforming`)
+  if (phymode) cmds.push(`radio profile ${p} phymode ${phymode}`)
+  if (receiveChain) cmds.push(`radio profile ${p} receive-chain ${receiveChain}`)
+  if (transmitChain) cmds.push(`radio profile ${p} transmit-chain ${transmitChain}`)
   return cmds
 }
 

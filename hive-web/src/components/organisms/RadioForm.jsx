@@ -25,6 +25,10 @@ export function RadioForm({ device, onApply, busy }) {
   const [power, setPower] = useState('')
   const [txPowerControl, setTxPowerControl] = useState('')
   const [mode, setMode] = useState('')
+  // Phase 4 advanced interface-level knobs (disclosed below; blank keeps the current value).
+  const [rxSop, setRxSop] = useState('')
+  const [edThreshold, setEdThreshold] = useState('')
+  const [dfsBackupChannel, setDfsBackupChannel] = useState('')
 
   const apply = () => {
     const commands = radioCommands(iface, {
@@ -32,6 +36,9 @@ export function RadioForm({ device, onApply, busy }) {
       power: power.trim(),
       txPowerControl: txPowerControl.trim(),
       mode,
+      rxSop: rxSop.trim(),
+      edThreshold: edThreshold.trim(),
+      dfsBackupChannel: dfsBackupChannel.trim(),
     })
     if (commands.length === 0) return
     onApply(device, { commands, save: true })
@@ -92,6 +99,41 @@ export function RadioForm({ device, onApply, busy }) {
           ))}
         </ul>
       )}
+      <details className="rounded-md border border-border">
+        <summary className="cursor-pointer px-3 py-2 text-xs font-medium text-muted-foreground">
+          Advanced RF tuning
+        </summary>
+        <div className="space-y-3 px-3 pb-3">
+          <p className="text-xs text-muted-foreground">
+            Per-radio dense-RF knobs. <code className="font-mono">rx-sop</code> takes a dBm value or a density
+            preset (<code className="font-mono">high</code>/<code className="font-mono">medium</code>/
+            <code className="font-mono">low</code>); <code className="font-mono">ed-threshold</code> is −70…−50 dBm;
+            the DFS backup channel is the 5 GHz fallback when radar forces a channel change. Leave blank to keep.
+          </p>
+          <div className="grid gap-2 sm:grid-cols-2">
+            <label className="flex flex-col gap-1">
+              <span className="text-xs text-muted-foreground">RX-SOP threshold</span>
+              <MriInput value={rxSop} onChange={(e) => setRxSop(e.target.value)} placeholder="high or -78" />
+            </label>
+            <label className="flex flex-col gap-1">
+              <span className="text-xs text-muted-foreground">ED threshold (dBm)</span>
+              <MriInput
+                value={edThreshold}
+                onChange={(e) => setEdThreshold(e.target.value)}
+                placeholder="-62"
+              />
+            </label>
+            <label className="flex flex-col gap-1">
+              <span className="text-xs text-muted-foreground">DFS backup channel (5 GHz)</span>
+              <MriInput
+                value={dfsBackupChannel}
+                onChange={(e) => setDfsBackupChannel(e.target.value)}
+                placeholder="36 or 5180M"
+              />
+            </label>
+          </div>
+        </div>
+      </details>
       <MriButton size="sm" disabled={busy} onClick={apply}>
         Apply radio
       </MriButton>
