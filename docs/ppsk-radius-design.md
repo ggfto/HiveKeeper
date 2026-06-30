@@ -157,7 +157,13 @@ REST under the existing `GatewayController`, mirroring the agent-op authz model
 
 ## Milestones
 
-1. AP→RADIUS wiring builder (`ppskRadiusCommands`) + guided form — **shippable now**, independent of the runtime.
+1. AP→RADIUS wiring builder (`ppskRadiusCommands`) + guided form — **SHIPPED**. A `ppskRadiusCommands` builder and
+   a **PPSK via RADIUS** block in the Wi-Fi section emit `aaa ppsk-server radius-server primary <ip> [shared-secret
+   <s>] [auth-port <n>]`, `aaa ppsk-server auto-save-interval <60-3600>`, and `[no] security-object <so> security
+   private-psk radius-auth [pap|chap|ms-chap-v2]` via apply-config. The `radius-auth <method>` placeholder is now
+   resolved: `?`-help on the AP230 offers **pap** (default), **chap**, **ms-chap-v2**, and a bare `radius-auth`
+   enables it with PAP. All lines were applied to the running-config, confirmed, and reverted live on the AP230
+   (non-persistent). The shared secret is masked by `Secrets` server-side. Unit-tested.
 2. `PpskUser` model + key CRUD API + sealed `ManagePpskUser` pipeline (no live RADIUS yet; unit-tested).
 3. Agent RADIUS runtime (FreeRADIUS integration) + provisioning.
 4. Live lab validation (the plan above) → leave "untested".

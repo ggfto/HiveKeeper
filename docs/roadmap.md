@@ -252,7 +252,17 @@ where knobs live: **interface-level** (`interface wifiN radio …`) vs **profile
   confirmed live (`aaa ppsk-server radius-server primary …`, `security-object <so> security private-psk
   radius-auth`); the remaining work is the RADIUS runtime on the agent, a sealed key store, and the
   `ManagePpskUser` CRUD pipeline. It stays its **own phase** because the RADIUS runtime is infrastructure that
-  must be stood up and validated end-to-end (a guided form alone cannot deliver it).
+  must be stood up and validated end-to-end (a guided form alone cannot deliver it). **Milestone 1 (AP→RADIUS
+  wiring) — SHIPPED.** A `ppskRadiusCommands` builder + a **PPSK via RADIUS** block in the Wi-Fi section point the
+  AP's local PPSK server at an external RADIUS backend (`aaa ppsk-server radius-server primary <ip>` with optional
+  `shared-secret` / `auth-port`, plus `aaa ppsk-server auto-save-interval <60-3600>`) and forward a security
+  object's private-PSK auth to it (`security-object <so> security private-psk radius-auth pap|chap|ms-chap-v2`; a
+  bare `radius-auth` defaults to PAP). The shared secret is masked by `Secrets` server-side. All grammar — including
+  the `radius-auth` methods left as `<method>` in the design — was **confirmed live on the AP230**: applied to the
+  running-config against a throwaway security object, confirmed via `show running-config`, then reverted clean
+  (non-persistent, no `save`). `auth-port 1812` / `auto-save-interval 600` are RADIUS defaults the AP omits from the
+  running-config. Unit-tested (builder + organism). **Milestones 2-4 (the `PpskUser` model, key CRUD, and the agent
+  RADIUS runtime) remain** — that is the subsystem the design calls out as its own work.
 
 ---
 

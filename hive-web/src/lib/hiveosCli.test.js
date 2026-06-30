@@ -6,6 +6,7 @@ import {
   hostnameCommands,
   ssidHardeningCommands,
   ppskCommands,
+  ppskRadiusCommands,
   meshCommands,
   hiveTuningCommands,
   captivePortalCommands,
@@ -285,6 +286,51 @@ describe('ppskCommands', () => {
   it('returns nothing without a security object or fields', () => {
     expect(ppskCommands('', { enable: 'enable' })).toEqual([])
     expect(ppskCommands('Corp', {})).toEqual([])
+  })
+})
+
+// Confirmed live on an AP230 (HiveOS 10.6r1a): aaa ppsk-server radius-server primary <ip> [shared-secret <s>]
+// [auth-port <n>]; aaa ppsk-server auto-save-interval <60-3600>; [no] security-object <so> security private-psk
+// radius-auth [pap|chap|ms-chap-v2] (bare = enable with the default PAP method). PPSK Caminho B wiring only —
+// minting per-user keys needs the RADIUS runtime (a future phase).
+describe('ppskRadiusCommands', () => {
+  it('wires the local PPSK server at a RADIUS backend and forwards a security object to it', () => {
+    expect(
+      ppskRadiusCommands('Corp', {
+        radiusServer: '10.0.0.5',
+        sharedSecret: 'topsecret',
+        authPort: 1812,
+        autoSaveInterval: 600,
+        radiusAuth: 'chap',
+      }),
+    ).toEqual([
+      'aaa ppsk-server radius-server primary 10.0.0.5 shared-secret topsecret auth-port 1812',
+      'aaa ppsk-server auto-save-interval 600',
+      'security-object Corp security private-psk radius-auth chap',
+    ])
+  })
+  it('emits the RADIUS server without an optional shared secret or auth port', () => {
+    expect(ppskRadiusCommands('Corp', { radiusServer: '10.0.0.5', radiusAuth: 'pap' })).toEqual([
+      'aaa ppsk-server radius-server primary 10.0.0.5',
+      'security-object Corp security private-psk radius-auth pap',
+    ])
+  })
+  it('enables radius-auth bare (default PAP) and disables it with the no-form', () => {
+    expect(ppskRadiusCommands('Corp', { radiusAuth: 'enable' })).toEqual([
+      'security-object Corp security private-psk radius-auth',
+    ])
+    expect(ppskRadiusCommands('Corp', { radiusAuth: 'disable' })).toEqual([
+      'no security-object Corp security private-psk radius-auth',
+    ])
+  })
+  it('leaves the security object alone when only the device-wide server is set', () => {
+    expect(ppskRadiusCommands('', { radiusServer: '10.0.0.5', sharedSecret: 's' })).toEqual([
+      'aaa ppsk-server radius-server primary 10.0.0.5 shared-secret s',
+    ])
+  })
+  it('returns nothing without any fields', () => {
+    expect(ppskRadiusCommands('Corp', {})).toEqual([])
+    expect(ppskRadiusCommands('', {})).toEqual([])
   })
 })
 

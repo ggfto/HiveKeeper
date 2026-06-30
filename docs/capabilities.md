@@ -31,7 +31,11 @@ Per device, via the web UI ([device configuration](/device-configuration/) expla
   802.11b basic rates (1/2/5.5/11 Mbps) to reclaim airtime, per-SSID **QoS** (bind a **classifier** / **marker**
   profile and toggle **WMM** for voice/video priority), and **PPSK** (per-user PSK) with the **self-registration**
   model — a HiveAP serves PPSK and hosts the enrolment portal (optionally RADIUS-authenticated) so users register and
-  the AP issues keys locally. HiveKeeper configures the model; it does not mint individual keys.
+  the AP issues keys locally. A separate **PPSK via RADIUS** block wires the AP's local PPSK server at an external
+  RADIUS backend (`aaa ppsk-server radius-server primary <ip>` + `shared-secret` / `auth-port` / `auto-save-interval`)
+  and forwards a security object's private-PSK auth to it (`security-object <so> security private-psk radius-auth
+  pap|chap|ms-chap-v2`) — the AP→RADIUS wiring for admin-driven keys. HiveKeeper configures these models; it does not
+  yet mint individual keys (that needs the RADIUS runtime — see the roadmap).
 - **Policy** — **user profiles**: the policy a client lands in (default **VLAN** id or VLAN group, optional
   **QoS policy** and **schedule**), keyed by a numeric attribute (0–4095). List the profiles read from the AP,
   create / overwrite one, **bind** it to an SSID's security object as the default profile, and remove it. Per

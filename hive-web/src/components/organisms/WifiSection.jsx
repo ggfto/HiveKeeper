@@ -10,7 +10,13 @@ import {
   MriSectionHeader,
 } from '@mriqbox/ui-kit'
 import { Wifi, Lock, LockOpen, ShieldCheck, KeyRound, Gauge } from 'lucide-react'
-import { minRateCommands, ssidHardeningCommands, ppskCommands, ssidQosCommands } from '../../lib/hiveosCli'
+import {
+  minRateCommands,
+  ssidHardeningCommands,
+  ppskCommands,
+  ppskRadiusCommands,
+  ssidQosCommands,
+} from '../../lib/hiveosCli'
 
 // Data-rate ladders (Mbps) per band, for the minimum-data-rate picker. 2.4 GHz (11g) carries the slow 802.11b
 // rates that hog airtime; 5 GHz (11a) starts at 6.
@@ -327,6 +333,103 @@ function PpskBlock({ ssids, onApply, busy }) {
   )
 }
 
+// radius-auth method options (confirmed live on the AP230). A bare `radius-auth` enables it with the default PAP
+// method; the explicit tokens pick CHAP / MS-CHAP-v2. 'disable' emits the `no` form.
+const PPSK_RADIUS_AUTH_OPTS = [
+  { value: '', label: 'Leave unchanged' },
+  { value: 'pap', label: 'PAP (default)' },
+  { value: 'chap', label: 'CHAP' },
+  { value: 'ms-chap-v2', label: 'MS-CHAP-v2' },
+  { value: 'disable', label: 'Disable' },
+]
+
+/**
+ * PPSK via RADIUS — the AP→RADIUS wiring ("Caminho B"). Points the local HiveAP's PPSK server at an external
+ * RADIUS backend (device-wide) and forwards a chosen security object's private-PSK auth to it. This wires the AP;
+ * minting per-user keys needs the RADIUS runtime + a key store, a future phase (docs/ppsk-radius-design.md).
+ * Grammar confirmed live on an AP230; the shared secret is masked server-side and encrypted at rest in jobs.
+ */
+function PpskRadiusBlock({ ssids, onApply, busy }) {
+  const empty = { radiusServer: '', sharedSecret: '', authPort: '', autoSaveInterval: '', radiusAuth: '' }
+  const [name, setName] = useState(ssids[0]?.name || '')
+  const [form, setForm] = useState(empty)
+  const set = (k) => (v) => setForm((f) => ({ ...f, [k]: v }))
+
+  const apply = () => {
+    const commands = ppskRadiusCommands(name, form)
+    if (commands.length === 0 || !onApply) return
+    onApply({ commands, save: true })
+    setForm(empty)
+  }
+
+  return (
+    <div className="space-y-2 rounded-md border border-border p-3">
+      <span className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground">
+        <KeyRound className="h-3.5 w-3.5" /> PPSK via RADIUS
+      </span>
+      <p className="text-xs text-muted-foreground">
+        Point the AP&apos;s local PPSK server at an external RADIUS backend and forward a security object&apos;s
+        private-PSK authentication to it. This wires the AP only — minting per-user keys needs the RADIUS runtime
+        (a future phase). The RADIUS server setting is device-wide.
+      </p>
+      <div className="grid gap-2 sm:grid-cols-3">
+        <label className="flex flex-col gap-1" htmlFor="ppsk-radius-ssid">
+          <span className="text-xs text-muted-foreground">Forward SSID</span>
+          <select
+            id="ppsk-radius-ssid"
+            className={SELECT_CLASS}
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+          >
+            {ssids.map((s) => (
+              <option key={s.name} value={s.name}>
+                {s.name}
+              </option>
+            ))}
+          </select>
+        </label>
+        <Field
+          label="RADIUS server (IP/host)"
+          value={form.radiusServer}
+          onChange={set('radiusServer')}
+          placeholder="10.0.0.5"
+        />
+        <Field
+          label="Shared secret"
+          value={form.sharedSecret}
+          onChange={set('sharedSecret')}
+          placeholder="—"
+        />
+        <Field label="Auth port" value={form.authPort} onChange={set('authPort')} placeholder="1812" />
+        <Field
+          label="Auto-save interval (s)"
+          value={form.autoSaveInterval}
+          onChange={set('autoSaveInterval')}
+          placeholder="60–3600"
+        />
+        <label className="flex flex-col gap-1" htmlFor="ppsk-radius-auth">
+          <span className="text-xs text-muted-foreground">Forward auth method</span>
+          <select
+            id="ppsk-radius-auth"
+            className={SELECT_CLASS}
+            value={form.radiusAuth}
+            onChange={(e) => set('radiusAuth')(e.target.value)}
+          >
+            {PPSK_RADIUS_AUTH_OPTS.map((o) => (
+              <option key={o.value} value={o.value}>
+                {o.label}
+              </option>
+            ))}
+          </select>
+        </label>
+      </div>
+      <MriButton size="sm" disabled={busy} onClick={apply}>
+        Apply PPSK RADIUS
+      </MriButton>
+    </div>
+  )
+}
+
 /**
  * Per-SSID QoS: bind a QoS classifier profile (classify incoming traffic) and a marker profile (mark outgoing),
  * and toggle WMM (Wi-Fi Multimedia — on by default; needed for voice/video priority). Grammar confirmed live on
@@ -535,6 +638,7 @@ export function WifiSection({ device, loadSsids, configureSsid, onApply, busy })
           <HardeningBlock ssids={ssids} busy={busy} onApply={(body) => onApply(device, body)} />
           <QosBlock ssids={ssids} busy={busy} onApply={(body) => onApply(device, body)} />
           <PpskBlock ssids={ssids} busy={busy} onApply={(body) => onApply(device, body)} />
+          <PpskRadiusBlock ssids={ssids} busy={busy} onApply={(body) => onApply(device, body)} />
         </>
       )}
     </div>

@@ -499,6 +499,45 @@ export function ppskCommands(
   return cmds
 }
 
+/**
+ * PPSK via RADIUS — the AP→RADIUS wiring ("Caminho B"). Points the local HiveAP's PPSK server at an external
+ * RADIUS backend and forwards a security object's private-PSK authentication to it. This is the wiring ONLY:
+ * minting per-user keys needs the RADIUS runtime + a key store, a future phase (see docs/ppsk-radius-design.md).
+ * All grammar confirmed live on an AP230 (HiveOS 10.6r1a) via `?` context help:
+ *   `aaa ppsk-server radius-server primary <ip> [shared-secret <s>] [auth-port <n>]` (device-wide; the RADIUS
+ *     backend the local PPSK server queries — `<ip>` may be a domain name too; backup1..3 are a later tuning pass),
+ *   `aaa ppsk-server auto-save-interval <60-3600>` (how often PPSK↔MAC bindings flush to flash),
+ *   `[no] security-object <so> security private-psk radius-auth [pap|chap|ms-chap-v2]` (forward this security
+ *     object's PPSK auth to RADIUS; a bare `radius-auth` enables it with the default PAP method).
+ * The shared secret is masked by `Secrets` server-side and encrypted at rest in durable jobs, like the Phase-2
+ * RADIUS suite. `radiusAuth` takes ''(unchanged) | 'enable'(bare/default PAP) | 'pap'|'chap'|'ms-chap-v2' |
+ * 'disable'(the `no` form). The aaa lines are device-wide (no security object); the radius-auth line needs one.
+ * Blanks emit nothing.
+ */
+export function ppskRadiusCommands(
+  securityObject,
+  { radiusServer, sharedSecret, authPort, autoSaveInterval, radiusAuth } = {},
+) {
+  const cmds = []
+  const ip = (radiusServer || '').trim()
+  if (ip) {
+    let line = `aaa ppsk-server radius-server primary ${ip}`
+    if (sharedSecret && sharedSecret.trim()) line += ` shared-secret ${sharedSecret.trim()}`
+    if (authPort && String(authPort).trim()) line += ` auth-port ${String(authPort).trim()}`
+    cmds.push(line)
+  }
+  if (autoSaveInterval && String(autoSaveInterval).trim()) {
+    cmds.push(`aaa ppsk-server auto-save-interval ${String(autoSaveInterval).trim()}`)
+  }
+  const so = (securityObject || '').trim()
+  if (so && radiusAuth) {
+    if (radiusAuth === 'disable') cmds.push(`no security-object ${so} security private-psk radius-auth`)
+    else if (radiusAuth === 'enable') cmds.push(`security-object ${so} security private-psk radius-auth`)
+    else cmds.push(`security-object ${so} security private-psk radius-auth ${radiusAuth}`)
+  }
+  return cmds
+}
+
 /** Set the AP hostname (1-32 chars). */
 export function hostnameCommands(name) {
   return [`hostname ${name}`]

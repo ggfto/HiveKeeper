@@ -142,12 +142,30 @@ describe('WifiSection', () => {
     const loadSsids = vi.fn().mockResolvedValue(ssids)
     const onApply = vi.fn()
     render(<WifiSection device={device} loadSsids={loadSsids} configureSsid={vi.fn()} onApply={onApply} />)
-    await screen.findByRole('button', { name: /apply ppsk/i })
+    await screen.findByRole('button', { name: /^apply ppsk$/i })
     fireEvent.change(screen.getByLabelText(/ppsk mode/i), { target: { value: 'enable' } })
     fireEvent.change(screen.getByLabelText(/user-group/i), { target: { value: 'staff' } })
-    fireEvent.click(screen.getByRole('button', { name: /apply ppsk/i }))
+    fireEvent.click(screen.getByRole('button', { name: /^apply ppsk$/i }))
     expect(onApply).toHaveBeenCalledWith(device, {
       commands: ['security-object TESTE security private-psk', 'ssid TESTE user-group staff'],
+      save: true,
+    })
+  })
+
+  it('wires PPSK via RADIUS (server + forward auth) via apply-config', async () => {
+    const loadSsids = vi.fn().mockResolvedValue(ssids)
+    const onApply = vi.fn()
+    render(<WifiSection device={device} loadSsids={loadSsids} configureSsid={vi.fn()} onApply={onApply} />)
+    await screen.findByRole('button', { name: /apply ppsk radius/i })
+    fireEvent.change(screen.getByLabelText(/radius server/i), { target: { value: '10.0.0.5' } })
+    fireEvent.change(screen.getByLabelText(/shared secret/i), { target: { value: 'topsecret' } })
+    fireEvent.change(screen.getByLabelText(/forward auth method/i), { target: { value: 'chap' } })
+    fireEvent.click(screen.getByRole('button', { name: /apply ppsk radius/i }))
+    expect(onApply).toHaveBeenCalledWith(device, {
+      commands: [
+        'aaa ppsk-server radius-server primary 10.0.0.5 shared-secret topsecret',
+        'security-object TESTE security private-psk radius-auth chap',
+      ],
       save: true,
     })
   })
