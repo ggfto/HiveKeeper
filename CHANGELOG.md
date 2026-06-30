@@ -1,3 +1,10 @@
+# [0.7.0](https://github.com/ggfto/HiveKeeper/compare/v0.6.0...v0.7.0) (2026-06-30)
+
+
+### Features
+
+* **enroll:** agent certificate auto-renewal + revocation (slice 2) ([dbf7687](https://github.com/ggfto/HiveKeeper/commit/dbf76879910901662c50bbea2a9dfef4d5527183))
+
 # [0.6.0](https://github.com/ggfto/HiveKeeper/compare/v0.5.1...v0.6.0) (2026-06-30)
 
 
