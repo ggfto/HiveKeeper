@@ -34,8 +34,27 @@ $env:HIVEKEEPER_VAULT_KEY  = "<base64 AES-256>"   # encrypts the PPSK store at r
 ```
 
 The agent's `FilePpskUserStore` writes `<RadiusDir>\authorize` (FreeRADIUS files module) on every
-create/rotate/revoke; `FreeRadiusFilesProvisioner` renders it. After a change, reload FreeRADIUS:
-`podman kill -s HUP hivekeeper-radius`.
+create/rotate/revoke; `FreeRadiusFilesProvisioner` renders it. On the Windows dev box re-sync after a mutation
+with `scripts/dev-radius.ps1 -Reload` (re-copies the file and HUPs the server); on Linux bind-mount the dir and
+just `podman kill -s HUP hivekeeper-radius`.
+
+> **Confirmed live (server side):** the `authorize` format `FreeRadiusFilesProvisioner` emits was validated
+> against FreeRADIUS 3.2 — `radtest <user> <psk> 127.0.0.1 0 <secret>` returns **Access-Accept** with
+> `Tunnel-Type=VLAN` / `Tunnel-Medium-Type=IEEE-802` / `Tunnel-Private-Group-Id=<vlan>`, and a wrong PSK
+> returns **Access-Reject**. So PAP-match-of-the-PSK + the RFC-2868 VLAN reply work end-to-end on the RADIUS
+> server; what step 4 still confirms is the AP↔RADIUS half and the Aerohive VSA.
+>
+> Gotchas the dev script already handles (don't hand-roll the container): the daemon binary is
+> `/usr/sbin/freeradius` (not `radiusd`); FreeRADIUS refuses a **globally-writable** config (Windows
+> bind-mounts are 0777 — the script `cp`s + `chmod o-w`s instead); and config/authorize files must be written
+> **without a UTF-8 BOM** (PowerShell's `Set-Content -Encoding utf8` adds one and FreeRADIUS won't parse it —
+> the agent writes BOM-free).
+
+> **Networking note (Windows + Podman):** the AP must reach the host's `1812/udp`. Find the host's LAN IP with
+> `Find-NetRoute -RemoteIPAddress <ap-ip>`. With a WSL2-backed Podman, inbound LAN traffic to a published port
+> is not reachable by default — allow `1812/udp` through Windows Firewall and confirm the port is forwarded into
+> the Podman machine (or run FreeRADIUS where the AP can route to it). `radtest` from the host validates the
+> server regardless of this.
 
 ## 2. Point the throwaway security-object at RADIUS (apply + revert, non-persistent)
 
