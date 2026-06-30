@@ -1,3 +1,31 @@
+# [0.6.0](https://github.com/ggfto/HiveKeeper/compare/v0.5.1...v0.6.0) (2026-06-30)
+
+
+### Bug Fixes
+
+* **scripts:** dev-radius.ps1 — make it actually start FreeRADIUS ([6920e6d](https://github.com/ggfto/HiveKeeper/commit/6920e6d44962dc3b0531474d1122606ab296cb9b))
+* **web:** Phase 4 live-validated — default-profile lock & phymode ordering ([0375def](https://github.com/ggfto/HiveKeeper/commit/0375def9e840c7f8a8df3005c5956e9c163d4d34))
+
+
+### Features
+
+* complete Phase 2 — Wi-Fi security suites, RADIUS, hardening, PPSK ([36a5def](https://github.com/ggfto/HiveKeeper/commit/36a5def4475a44c53d807f5b85a78091a310f176))
+* complete Phase 3 — network policy, firewall, QoS, LLDP & static routes ([2b48d3e](https://github.com/ggfto/HiveKeeper/commit/2b48d3e1a5b4352a872a47af2e2792302619a43f))
+* **enroll:** automated agent certificate enrollment (slice 1: token -> CSR -> signed cert) ([b48c3ba](https://github.com/ggfto/HiveKeeper/commit/b48c3ba163626dc78b19aa143dfd1b5b83a0d067)), closes [PKCS#10](https://github.com/PKCS/issues/10)
+* Phase 5 — config templates (bulk apply-config across a scope) ([a7c68ee](https://github.com/ggfto/HiveKeeper/commit/a7c68ee03003aefa050374529c8d0fba59e25407))
+* Phase 5 — fleet alert delivery (background poller + webhook/email) ([2c96b85](https://github.com/ggfto/HiveKeeper/commit/2c96b85e55a195d6ed7d798aa8c5bb200d841b2f)), closes [hi#clients](https://github.com/hi/issues/clients) [hi#power](https://github.com/hi/issues/power)
+* Phase 5 — PPSK admin-minted keys via RADIUS (Caminho B, M2-M3) ([49dc2ff](https://github.com/ggfto/HiveKeeper/commit/49dc2ffa1f271575dfe4df062f36d692ef02c9f2))
+* seal secret-bearing durable jobs to the agent (end-to-end at rest) ([063530e](https://github.com/ggfto/HiveKeeper/commit/063530e082f1851fa5f7a858c0f4cd9f85723672))
+* **ssh:** TOFU host-key verification (default), no more promiscuous SSH ([9ebe523](https://github.com/ggfto/HiveKeeper/commit/9ebe52395ed383c31c7033203e8ad0b868d570bf))
+* **web:** alert polish — single-source thresholds + active-alerts panel ([f101f67](https://github.com/ggfto/HiveKeeper/commit/f101f671be56bba9b84064c3e5575948991f0d63))
+* **web:** complete Phase 1 radio completeness ([e552a1c](https://github.com/ggfto/HiveKeeper/commit/e552a1cdab19c57da998d0fd183519aaf36dc527))
+* **web:** complete Phase 4 — advanced RF tuning & high-density knobs ([98a0953](https://github.com/ggfto/HiveKeeper/commit/98a09531a776aaaebb40c6906abeb9c5d555d78f)), closes [hi#density](https://github.com/hi/issues/density) [hi#density](https://github.com/hi/issues/density)
+* **web:** Phase 4 bind flow — apply a custom radio profile to a radio ([42f7a18](https://github.com/ggfto/HiveKeeper/commit/42f7a1863a0b23c767cc74d85abf68330c3f2b54))
+* **web:** Phase 5 — fleet alerts (threshold scan, in-console) ([749038d](https://github.com/ggfto/HiveKeeper/commit/749038df7f6c1e55d26a677364fb76a7b39e7b25))
+* **web:** Phase 5 — named schedule objects (recurrent & one-time) ([2c0fc9f](https://github.com/ggfto/HiveKeeper/commit/2c0fc9fef3c9f282a84e221711a28389058bb68d))
+* **web:** Phase 5 — PPSK via RADIUS wiring (Caminho B, Milestone 1) ([62ce643](https://github.com/ggfto/HiveKeeper/commit/62ce6439479a786420bf43e215e8c79de4190776))
+* **web:** Phase 5 — scheduled (recurring) reboot ([53d4251](https://github.com/ggfto/HiveKeeper/commit/53d4251a79ad88ef37587460bc6d8e4ddd4b348b))
+
 ## [0.5.1](https://github.com/ggfto/HiveKeeper/compare/v0.5.0...v0.5.1) (2026-06-29)
 
 
