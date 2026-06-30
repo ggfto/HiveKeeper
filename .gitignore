@@ -39,6 +39,7 @@ node_modules/
 *.csr
 secrets.properties
 hivekeeper-backups/
+hivekeeper-known_hosts
 captures/local/
 dev-pki/
 test-restore/

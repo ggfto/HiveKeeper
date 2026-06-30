@@ -21,6 +21,8 @@ backoff + jitter) that re-announces on every connect.
 | `HIVEKEEPER_PPSK_STORE` | _(unset)_ | path to the on-prem PPSK user store (properties). When set (with mTLS for unsealing), HiveKeeper can **mint/rotate/revoke Private PSKs** from the UI; the store feeds a co-located RADIUS server. See `docs/ppsk-radius-runbook.md`. |
 | `HIVEKEEPER_RADIUS_DIR` | _(unset)_ | directory the RADIUS provisioner writes its FreeRADIUS `authorize` file to (omit to store PPSK keys without pushing them to a RADIUS server) |
 | `HIVEKEEPER_BACKUP_DIR` | `hivekeeper-backups` | local git backup directory |
+| `HIVEKEEPER_SSH_HOSTKEY` | `tofu` | SSH host-key policy: `tofu` (trust-on-first-use), `strict` (key must be pre-seeded), or `accept-all` (lab escape hatch, no verification) |
+| `HIVEKEEPER_KNOWN_HOSTS` | `hivekeeper-known_hosts` | managed known_hosts file for `tofu`/`strict` (recorded on first trust; a later mismatch is refused) |
 
 > Resolution always happens on the agent — the cloud never sees device secrets, only an opaque `credRef`.
 > With a vault configured, each device's `credRef` maps to its own local secret (encrypted at rest), and the

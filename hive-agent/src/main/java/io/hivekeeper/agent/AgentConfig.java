@@ -1,5 +1,7 @@
 package io.hivekeeper.agent;
 
+import io.hivekeeper.core.transport.HostKeyPolicy;
+
 import java.net.URI;
 
 /**
@@ -22,13 +24,18 @@ import java.net.URI;
  *   <li>{@code HIVEKEEPER_BACKUP_DIR} — local git backup directory</li>
  *   <li>{@code HIVEKEEPER_TLS_KEYSTORE} (+ {@code _PASSWORD}) — client keystore for mTLS (PKCS12)</li>
  *   <li>{@code HIVEKEEPER_TLS_TRUSTSTORE} (+ {@code _PASSWORD}) — CA truststore (PKCS12)</li>
+ *   <li>{@code HIVEKEEPER_SSH_HOSTKEY} — SSH host-key policy: {@code tofu} (default, trust-on-first-use),
+ *       {@code strict} (keys must be pre-seeded), or {@code accept-all} (lab escape hatch, no verification)</li>
+ *   <li>{@code HIVEKEEPER_KNOWN_HOSTS} — path to the managed known_hosts file (default
+ *       {@code ./hivekeeper-known_hosts}); used by {@code tofu}/{@code strict}</li>
  * </ul>
  * mTLS is enabled when a keystore is configured (use a {@code wss://} gateway URL).
  */
 public record AgentConfig(URI gatewayUri, String agentId, String defaultUser, String defaultPassword,
                           String credentialVault, String vaultKey, String ppskStore, String radiusDir,
                           String backupDir, String tlsKeystore, String tlsKeystorePassword,
-                          String tlsTruststore, String tlsTruststorePassword) {
+                          String tlsTruststore, String tlsTruststorePassword,
+                          HostKeyPolicy sshHostKeyPolicy, String knownHostsPath) {
 
     public boolean mtlsEnabled() {
         return tlsKeystore != null && !tlsKeystore.isBlank();
@@ -48,7 +55,18 @@ public record AgentConfig(URI gatewayUri, String agentId, String defaultUser, St
                 env("HIVEKEEPER_TLS_KEYSTORE", null),
                 env("HIVEKEEPER_TLS_KEYSTORE_PASSWORD", "changeit"),
                 env("HIVEKEEPER_TLS_TRUSTSTORE", null),
-                env("HIVEKEEPER_TLS_TRUSTSTORE_PASSWORD", "changeit"));
+                env("HIVEKEEPER_TLS_TRUSTSTORE_PASSWORD", "changeit"),
+                hostKeyPolicy(env("HIVEKEEPER_SSH_HOSTKEY", "tofu")),
+                env("HIVEKEEPER_KNOWN_HOSTS", "hivekeeper-known_hosts"));
+    }
+
+    /** Map the {@code HIVEKEEPER_SSH_HOSTKEY} value to a {@link HostKeyPolicy} (unknown values fall back to TOFU). */
+    private static HostKeyPolicy hostKeyPolicy(String value) {
+        return switch (value.trim().toLowerCase()) {
+            case "accept-all", "accept_all", "promiscuous" -> HostKeyPolicy.ACCEPT_ALL;
+            case "strict", "known-hosts", "known_hosts" -> HostKeyPolicy.KNOWN_HOSTS;
+            default -> HostKeyPolicy.TOFU;
+        };
     }
 
     private static String env(String key, String fallback) {

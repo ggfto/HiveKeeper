@@ -45,7 +45,17 @@ public final class HiveCore {
     public static Engine localEngine(CredentialProvider credentials, BackupStore backupStore,
                                      WritableCredentialProvider writableCredentials, SecretUnsealer unsealer,
                                      PpskUserStore ppskUsers) {
-        SshTransport transport = new SshjTransport();
+        return localEngine(new SshjTransport(), credentials, backupStore, writableCredentials, unsealer, ppskUsers);
+    }
+
+    /**
+     * Build a local engine over a caller-supplied {@link SshTransport}. The agent uses this to choose the SSH
+     * host-key policy (TOFU / strict / accept-all) and its managed {@code known_hosts} path; other front-ends
+     * use the {@code SshjTransport} default (TOFU against the per-user managed store).
+     */
+    public static Engine localEngine(SshTransport transport, CredentialProvider credentials, BackupStore backupStore,
+                                     WritableCredentialProvider writableCredentials, SecretUnsealer unsealer,
+                                     PpskUserStore ppskUsers) {
         DriverRegistry drivers = DriverRegistry.fromServiceLoader();
         Scanner scanner = new TcpBannerScanner();
         return new LocalEngine(transport, credentials, drivers, backupStore, scanner, writableCredentials,

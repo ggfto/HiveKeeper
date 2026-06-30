@@ -247,9 +247,12 @@ The full, phased plan — every item's HiveOS CLI grammar confirmed live on an A
 Cross-cutting, not phase-bound (see [`docs/agent-protocol.md`](docs/agent-protocol.md) for the mode-C transport
 details):
 
-- **Production security** — SSH host-key verification (today `ACCEPT_ALL`; switch to known-hosts / TOFU before
-  any non-lab use), automated agent enrollment (one-time token → CSR → issued/auto-renewed cert, vs today's
-  pre-provisioned dev certs), per-user authorization on every endpoint, and TLS / ingress hardening.
+- **Production security** — SSH host-key verification is **done**: the agent defaults to trust-on-first-use
+  (TOFU) against a managed `known_hosts` file (`HIVEKEEPER_SSH_HOSTKEY=tofu|strict|accept-all`,
+  `HIVEKEEPER_KNOWN_HOSTS`), so a changed AP key is refused as a possible MITM; `accept-all` remains only as an
+  explicit lab escape hatch. Still open: automated agent enrollment (one-time token → CSR → issued/auto-renewed
+  cert, vs today's pre-provisioned dev certs), per-user authorization on every endpoint, and TLS / ingress
+  hardening.
   End-to-end sealing to the agent's public key is **done for every secret HiveKeeper handles**: device
   credentials, minted PPSK keys, and secret-bearing durable jobs (SSID passphrase / hive password, wrapped in a
   `Command.Sealed`) all seal with `EnvelopeCipher`, so the gateway holds no readable secret at rest.

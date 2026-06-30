@@ -13,6 +13,8 @@ import io.hivekeeper.core.spi.PpskUserStore;
 import io.hivekeeper.core.spi.SecretUnsealer;
 import io.hivekeeper.core.spi.WritableCredentialProvider;
 import io.hivekeeper.core.tasks.storage.GitBackupStore;
+import io.hivekeeper.core.transport.SshTransport;
+import io.hivekeeper.core.transport.SshjTransport;
 import io.hivekeeper.protocol.AgentRuntime;
 import lombok.extern.slf4j.Slf4j;
 import javax.net.ssl.SSLContext;
@@ -75,8 +77,13 @@ public final class AgentMain {
                     vaultCipher != null ? "encrypted" : "PLAINTEXT", provisioner != null ? "on" : "off");
         }
 
+        // SSH host-key verification: TOFU by default (record on first use, refuse a later mismatch) against a
+        // managed known_hosts file the agent owns. 'accept-all' stays available as an explicit lab escape hatch.
+        SshTransport transport = new SshjTransport(config.sshHostKeyPolicy(), Path.of(config.knownHostsPath()));
+        log.info("SSH host-key policy: {} (known_hosts: {})", config.sshHostKeyPolicy(), config.knownHostsPath());
+
         BackupStore backupStore = new GitBackupStore(Path.of(config.backupDir()));
-        Engine engine = HiveCore.localEngine(credentials, backupStore, writableCredentials, unsealer, ppskUsers);
+        Engine engine = HiveCore.localEngine(transport, credentials, backupStore, writableCredentials, unsealer, ppskUsers);
         // Unwrap commands the gateway sealed to this agent's key (durable-job secrets) before the engine runs
         // them; plain commands pass straight through.
         engine = new UnsealingEngine(engine, agentKey, new EnvelopeCipher(), new io.hivekeeper.wire.JsonCodec());
