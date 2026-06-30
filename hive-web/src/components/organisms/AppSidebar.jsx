@@ -1,5 +1,5 @@
 import { MriSidebar } from '@mriqbox/ui-kit'
-import { LayoutDashboard, Network, Server, Boxes, Layers, Users, ListChecks, ScrollText, BookOpen } from 'lucide-react'
+import { LayoutDashboard, Network, Server, Boxes, Layers, Users, ListChecks, BellRing, ScrollText, BookOpen } from 'lucide-react'
 
 /** The console's primary navigation. Routes are the HashRouter paths the pages mount on. */
 export const NAV = [
@@ -10,6 +10,7 @@ export const NAV = [
   { label: 'Sites & Groups', route: '/sites-groups', icon: Layers },
   { label: 'Members', route: '/members', icon: Users },
   { label: 'Bulk ops', route: '/bulk', icon: ListChecks },
+  { label: 'Alerts', route: '/alerts', icon: BellRing },
   { label: 'Audit log', route: '/audit', icon: ScrollText },
   { label: 'Docs', route: '/help', icon: BookOpen },
 ]

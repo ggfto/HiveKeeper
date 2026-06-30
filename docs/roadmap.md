@@ -227,8 +227,15 @@ where knobs live: **interface-level** (`interface wifiN radio …`) vs **profile
   editor, a `save config` toggle, a confirm gate (it writes to many APs), and the per-device outcomes table;
   named templates are saved locally (`configTemplate.js` — `parseTemplateCommands` + localStorage CRUD). All
   unit-tested (gateway security slice + web lib/organism/client).
-- **Alerting / thresholds** — currently in the "Not yet" list; builds naturally on the monitoring + bulk-ops
-  foundations (a metric threshold model plus a delivery channel).
+- **Alerting / thresholds — SHIPPED (in-console).** An **Alerts** page runs an on-demand fleet scan (each
+  device's agent online-state + a live inventory read) and evaluates it against threshold rules, listing only
+  the APs that breach one: agent offline, **still cloud-managed** (CAPWAP up — HiveKeeper's signature), high
+  client load (a configurable per-AP cap), and radios outside best practice (reusing `radioAdvisories`). A pure
+  `alerts.js` rules engine (`evaluateAlerts` + `worstSeverity` + locally-persisted thresholds) feeds both the
+  fleet scan (`FleetAlertsPanel`, which re-evaluates the held snapshots live as you edit a threshold) and can
+  feed the device Monitoring tab. All unit-tested. **Deliberately deferred:** a background poller and an
+  external **delivery channel** (email / webhook) — those need a server-side scheduler + notifier subsystem;
+  today alerting is an on-demand, in-console view.
 - **PPSK admin-driven key management (Caminho B)** — let an operator mint per-user private PSKs from HiveKeeper
   itself, rather than relying on end-user self-registration (Phase 2's Caminho A). HiveOS exposes **no
   running-config grammar to create an individual key over SSH** (confirmed live on the AP230: `security-object

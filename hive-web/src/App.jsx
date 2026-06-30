@@ -14,6 +14,7 @@ import { DeviceDetailPage } from './pages/DeviceDetailPage'
 import { SitesGroupsPage } from './pages/SitesGroupsPage'
 import { MembersPage } from './pages/MembersPage'
 import { BulkPage } from './pages/BulkPage'
+import { AlertsPage } from './pages/AlertsPage'
 import { AuditPage } from './pages/AuditPage'
 import { HelpPage } from './pages/HelpPage'
 
@@ -32,6 +33,7 @@ function Console() {
         <Route path="/sites-groups" element={<SitesGroupsPage />} />
         <Route path="/members" element={<MembersPage />} />
         <Route path="/bulk" element={<BulkPage />} />
+        <Route path="/alerts" element={<AlertsPage />} />
         <Route path="/audit" element={<AuditPage />} />
         <Route path="/help" element={<HelpPage />} />
         <Route path="/help/:docId" element={<HelpPage />} />

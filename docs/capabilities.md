@@ -77,14 +77,17 @@ The gateway:
 - Organize devices into **sites** and **groups**; run **bulk** inventory/backup across org/site/group scopes.
 - **Config templates** — apply a set of HiveOS CLI lines to every device in a scope in one bulk write
   (operator-level, each device re-authorized server-side, per-device outcomes); named templates saved locally.
+- **Alerts** — an on-demand fleet **scan** flags APs that breach a threshold (agent offline, still cloud-managed,
+  high client load, radios outside best practice), with a locally-persisted client cap. In-console only — no
+  background poller or email/webhook delivery yet.
 - **Members & roles** (viewer / operator / admin / owner) and **agent enrollment** — under the OIDC profile.
 - Durable, persisted **jobs** under the `postgres` profile.
 
 ## Not yet
 
-Alerting / thresholds, PPSK admin-driven key minting, and any non-HiveOS vendor (the driver SPI is ready for
-them). Firmware upgrade ships but is **lab/untested** until validated on real hardware. The project README's
-Roadmap tracks the current plan.
+Alert **delivery** (email / webhook) and a background poller (alerting is on-demand, in-console for now), PPSK
+admin-driven key minting, and any non-HiveOS vendor (the driver SPI is ready for them). Firmware upgrade ships
+but is **lab/untested** until validated on real hardware. The project README's Roadmap tracks the current plan.
 
 A few HiveOS features are **not exposed because the AP230 has no running-config grammar for them** (confirmed
 live, so they can't be driven through the SSH/apply-config path HiveKeeper uses):
