@@ -202,6 +202,10 @@ class GatewayPostgresIT {
         AgentEnrollment enrollment = tenants.enrollmentByToken(token).orElseThrow();
         assertEquals("ci-agent", enrollment.agentId());
         assertEquals("acme", enrollment.tenantId());
+
+        // V11 UPDATE grant + atomic one-time consumption: the first consume wins, a second is refused.
+        assertTrue(tenants.markEnrollmentConsumed(token), "first consume should win");
+        assertFalse(tenants.markEnrollmentConsumed(token), "a consumed token cannot be consumed again");
     }
 
     private static Set<String> serials(List<FleetService.Device> devices) {

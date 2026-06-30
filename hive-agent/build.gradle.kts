@@ -8,6 +8,8 @@ dependencies {
     implementation(project(":hive-wire"))
     implementation(libs.java.websocket)
     implementation(libs.slf4j.api)
+    // Enrollment bootstrap: generate a keypair + build a PKCS#10 CSR to request a signed client cert.
+    implementation(libs.bcpkix)
     // Concrete logging binding for the agent runtime.
     runtimeOnly(libs.slf4j.simple)
 

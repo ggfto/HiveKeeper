@@ -250,9 +250,12 @@ details):
 - **Production security** — SSH host-key verification is **done**: the agent defaults to trust-on-first-use
   (TOFU) against a managed `known_hosts` file (`HIVEKEEPER_SSH_HOSTKEY=tofu|strict|accept-all`,
   `HIVEKEEPER_KNOWN_HOSTS`), so a changed AP key is refused as a possible MITM; `accept-all` remains only as an
-  explicit lab escape hatch. Still open: automated agent enrollment (one-time token → CSR → issued/auto-renewed
-  cert, vs today's pre-provisioned dev certs), per-user authorization on every endpoint, and TLS / ingress
-  hardening.
+  explicit lab escape hatch. Automated agent enrollment (slice 1) is **done**: a fresh agent exchanges its
+  one-time token for a signed client cert (generates a keypair, posts a CSR to
+  `POST /api/enrollments/{token}/certificate`; the gateway's file-backed CA — `HIVEKEEPER_CA_KEYSTORE`,
+  dev/self-hosted, reuse `dev-pki/ca.p12` — signs `CN=agentId`, the token is one-time), then writes its
+  keystore/truststore and connects over mTLS. Still open: cert auto-renewal + revocation, a KMS/HSM
+  intermediate CA, per-user authorization on every endpoint, and TLS / ingress hardening.
   End-to-end sealing to the agent's public key is **done for every secret HiveKeeper handles**: device
   credentials, minted PPSK keys, and secret-bearing durable jobs (SSID passphrase / hive password, wrapped in a
   `Command.Sealed`) all seal with `EnvelopeCipher`, so the gateway holds no readable secret at rest.

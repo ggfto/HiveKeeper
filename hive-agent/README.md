@@ -23,6 +23,9 @@ backoff + jitter) that re-announces on every connect.
 | `HIVEKEEPER_BACKUP_DIR` | `hivekeeper-backups` | local git backup directory |
 | `HIVEKEEPER_SSH_HOSTKEY` | `tofu` | SSH host-key policy: `tofu` (trust-on-first-use), `strict` (key must be pre-seeded), or `accept-all` (lab escape hatch, no verification) |
 | `HIVEKEEPER_KNOWN_HOSTS` | `hivekeeper-known_hosts` | managed known_hosts file for `tofu`/`strict` (recorded on first trust; a later mismatch is refused) |
+| `HIVEKEEPER_ENROLLMENT_TOKEN` | _(unset)_ | one-time enrollment token. With a keystore path set but no keystore file yet, the agent bootstraps a client cert (keypair → CSR → signed cert) before connecting. |
+| `HIVEKEEPER_ENROLLMENT_URL` | _(unset)_ | gateway base URL for the bootstrap CSR exchange (e.g. `https://gw:8443`) |
+| `HIVEKEEPER_ENROLLMENT_CACERT` | _(unset)_ | optional PEM CA bundle to trust the gateway's HTTPS server cert during bootstrap |
 
 > Resolution always happens on the agent — the cloud never sees device secrets, only an opaque `credRef`.
 > With a vault configured, each device's `credRef` maps to its own local secret (encrypted at rest), and the

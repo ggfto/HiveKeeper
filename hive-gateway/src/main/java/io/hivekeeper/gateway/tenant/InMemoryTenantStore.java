@@ -26,6 +26,7 @@ public class InMemoryTenantStore implements TenantStore {
     private final Map<String, Tenant> byApiKey;
     private final Map<String, AgentEnrollment> byToken;
     private final Map<String, AgentEnrollment> byAgentId;
+    private final java.util.Set<String> consumedTokens = java.util.concurrent.ConcurrentHashMap.newKeySet();
 
     public InMemoryTenantStore(@Value("${hivekeeper.demo-seed:false}") boolean demoSeed,
                                @Value("${hivekeeper.solo:false}") boolean solo) {
@@ -58,6 +59,12 @@ public class InMemoryTenantStore implements TenantStore {
     @Override
     public Optional<AgentEnrollment> enrollmentByAgentId(String agentId) {
         return agentId == null ? Optional.empty() : Optional.ofNullable(byAgentId.get(agentId));
+    }
+
+    @Override
+    public boolean markEnrollmentConsumed(String token) {
+        // Win only if the token is a real enrollment AND this is the first time it is consumed.
+        return token != null && byToken.containsKey(token) && consumedTokens.add(token);
     }
 
     @Override

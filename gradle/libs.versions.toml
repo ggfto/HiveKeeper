@@ -7,6 +7,7 @@ jackson = "2.18.2"
 slf4j = "2.0.16"
 junit = "5.11.4"
 javaWebsocket = "1.6.0"
+bouncycastle = "1.80"
 
 [libraries]
 # transport
@@ -19,6 +20,8 @@ jgit = { module = "org.eclipse.jgit:org.eclipse.jgit", version.ref = "jgit" }
 picocli = { module = "info.picocli:picocli", version.ref = "picocli" }
 # agent websocket transport
 java-websocket = { module = "org.java-websocket:Java-WebSocket", version.ref = "javaWebsocket" }
+# X.509 CSR parsing + signing (agent enrollment: agent builds a CSR, gateway's file CA signs it)
+bcpkix = { module = "org.bouncycastle:bcpkix-jdk18on", version.ref = "bouncycastle" }
 # wire (serialization lives ONLY in hive-wire; hive-core must not depend on jackson)
 jackson-databind = { module = "com.fasterxml.jackson.core:jackson-databind", version.ref = "jackson" }
 jackson-jsr310 = { module = "com.fasterxml.jackson.datatype:jackson-datatype-jsr310", version.ref = "jackson" }

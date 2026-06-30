@@ -14,6 +14,16 @@ public interface TenantStore {
     /** Resolve a tenant by the (mTLS-derived or pre-issued) agent identity, for cross-checking. */
     Optional<AgentEnrollment> enrollmentByAgentId(String agentId);
 
+    /**
+     * Atomically consume a one-time enrollment token: mark it used iff it was not already used. Returns
+     * {@code true} only when THIS call transitioned an unconsumed token to consumed — so the certificate
+     * bootstrap can mint exactly one cert per token and reject a reused/raced token. The default fails closed
+     * ({@code false}) for stores that do not track consumption.
+     */
+    default boolean markEnrollmentConsumed(String token) {
+        return false;
+    }
+
     Optional<Tenant> tenantByApiKey(String apiKey);
 
     Optional<Tenant> tenant(String tenantId);

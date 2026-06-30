@@ -18,6 +18,7 @@ import io.hivekeeper.core.transport.SshjTransport;
 import io.hivekeeper.protocol.AgentRuntime;
 import lombok.extern.slf4j.Slf4j;
 import javax.net.ssl.SSLContext;
+import java.nio.file.Files;
 import java.nio.file.Path;
 import java.security.PrivateKey;
 import java.util.concurrent.CountDownLatch;
@@ -38,6 +39,14 @@ public final class AgentMain {
         AgentConfig config = AgentConfig.fromEnv();
         log.info("starting HiveKeeper agent '{}' -> {} (mTLS={})",
                 config.agentId(), config.gatewayUri(), config.mtlsEnabled());
+
+        // Automated enrollment: with a keystore path configured but no keystore file yet, and an enrollment
+        // token + URL present, bootstrap a client cert (generate keypair -> CSR -> signed cert) and write the
+        // keystore/truststore before connecting. An existing keystore is left untouched (already enrolled).
+        if (config.mtlsEnabled() && config.enrollmentConfigured()
+                && !Files.exists(Path.of(config.tlsKeystore()))) {
+            EnrollmentBootstrap.run(config);
+        }
 
         // Credentials are resolved HERE, on the agent. With a vault configured, each device's credRef maps
         // to its own secret locally; otherwise one default credential covers the fleet. Either way the cloud

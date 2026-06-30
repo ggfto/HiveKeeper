@@ -28,6 +28,12 @@ import java.net.URI;
  *       {@code strict} (keys must be pre-seeded), or {@code accept-all} (lab escape hatch, no verification)</li>
  *   <li>{@code HIVEKEEPER_KNOWN_HOSTS} — path to the managed known_hosts file (default
  *       {@code ./hivekeeper-known_hosts}); used by {@code tofu}/{@code strict}</li>
+ *   <li>{@code HIVEKEEPER_ENROLLMENT_TOKEN} / {@code HIVEKEEPER_ENROLLMENT_URL} — one-time token + gateway base
+ *       URL for automated certificate bootstrap: when set and no keystore file exists yet, the agent generates
+ *       a keypair, posts a CSR, and writes the issued keystore/truststore before connecting (see
+ *       {@link EnrollmentBootstrap})</li>
+ *   <li>{@code HIVEKEEPER_ENROLLMENT_CACERT} — optional PEM CA bundle to trust the gateway's HTTPS server cert
+ *       during bootstrap (needed when the enrollment URL is {@code https://} and the CA is private)</li>
  * </ul>
  * mTLS is enabled when a keystore is configured (use a {@code wss://} gateway URL).
  */
@@ -35,10 +41,17 @@ public record AgentConfig(URI gatewayUri, String agentId, String defaultUser, St
                           String credentialVault, String vaultKey, String ppskStore, String radiusDir,
                           String backupDir, String tlsKeystore, String tlsKeystorePassword,
                           String tlsTruststore, String tlsTruststorePassword,
-                          HostKeyPolicy sshHostKeyPolicy, String knownHostsPath) {
+                          HostKeyPolicy sshHostKeyPolicy, String knownHostsPath,
+                          String enrollmentToken, String enrollmentUrl, String enrollmentCaCert) {
 
     public boolean mtlsEnabled() {
         return tlsKeystore != null && !tlsKeystore.isBlank();
+    }
+
+    /** True when an enrollment token + URL are configured, so the agent can bootstrap a cert if it lacks one. */
+    public boolean enrollmentConfigured() {
+        return enrollmentToken != null && !enrollmentToken.isBlank()
+                && enrollmentUrl != null && !enrollmentUrl.isBlank();
     }
 
     public static AgentConfig fromEnv() {
@@ -57,7 +70,10 @@ public record AgentConfig(URI gatewayUri, String agentId, String defaultUser, St
                 env("HIVEKEEPER_TLS_TRUSTSTORE", null),
                 env("HIVEKEEPER_TLS_TRUSTSTORE_PASSWORD", "changeit"),
                 hostKeyPolicy(env("HIVEKEEPER_SSH_HOSTKEY", "tofu")),
-                env("HIVEKEEPER_KNOWN_HOSTS", "hivekeeper-known_hosts"));
+                env("HIVEKEEPER_KNOWN_HOSTS", "hivekeeper-known_hosts"),
+                env("HIVEKEEPER_ENROLLMENT_TOKEN", null),
+                env("HIVEKEEPER_ENROLLMENT_URL", null),
+                env("HIVEKEEPER_ENROLLMENT_CACERT", null));
     }
 
     /** Map the {@code HIVEKEEPER_SSH_HOSTKEY} value to a {@link HostKeyPolicy} (unknown values fall back to TOFU). */

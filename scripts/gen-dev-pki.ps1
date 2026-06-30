@@ -4,9 +4,14 @@
 #   powershell -File scripts/gen-dev-pki.ps1
 #
 # Produces:
+#   dev-pki/ca.p12         CA key+cert -> gateway file CA for agent enrollment (HIVEKEEPER_CA_KEYSTORE)
 #   dev-pki/gateway.p12    server key+cert (CN=localhost) -> gateway server.ssl.key-store
 #   dev-pki/agent.p12      client key+cert (CN=lab-agent) -> agent keystore
 #   dev-pki/truststore.p12 the CA only -> both sides' trust-store
+#
+# For automated enrollment (agent has no agent.p12 yet), point the gateway at the CA:
+#   HIVEKEEPER_CA_KEYSTORE=dev-pki/ca.p12  (alias 'ca', password 'changeit')
+# and the agent at HIVEKEEPER_ENROLLMENT_TOKEN + HIVEKEEPER_ENROLLMENT_URL.
 $ErrorActionPreference = 'Stop'
 $pass = 'changeit'
 $pki = Join-Path (Split-Path $PSScriptRoot -Parent) 'dev-pki'

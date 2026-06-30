@@ -81,6 +81,15 @@ channel — no socket.)
   cert CN and the tenant from the enrollment record (server-side, never from `Hello`). A bearer
   enrollment token is the fallback/bootstrap. Dev PKI: `scripts/gen-dev-pki.ps1`; gateway TLS via the
   `mtls` Spring profile (`application-mtls.properties`, `client-auth=want`).
+- **Automated certificate enrollment (slice 1)** — a fresh agent with no keystore exchanges its one-time
+  token for a signed client cert: it generates a keypair locally, posts a PKCS#10 CSR to
+  `POST /api/enrollments/{token}/certificate`, and the gateway's CA signs a leaf with **server-assigned**
+  `CN = agentId` (the CSR subject is ignored), EKU `clientAuth`, 90-day validity. The token is consumed
+  atomically (one cert per token). The agent writes the PKCS12 keystore + truststore and connects over mTLS.
+  CA custody is a **file-backed** keystore (`HIVEKEEPER_CA_KEYSTORE`, dev/self-hosted only — reuse
+  `dev-pki/ca.p12`) behind a `CertificateAuthority` interface, so a KMS/HSM intermediate CA can replace it
+  later. Agent env: `HIVEKEEPER_ENROLLMENT_TOKEN` / `HIVEKEEPER_ENROLLMENT_URL` (+ `HIVEKEEPER_ENROLLMENT_CACERT`
+  for an https bootstrap). **Deferred to slice 2:** auto-renewal, revocation/CRL, intermediate CA, KMS/HSM.
 - **Multi-tenancy** — `(tenantId, agentId)`-keyed registry; REST scoped by `X-Tenant-Key`; cross-tenant
   lookups 404 with no existence leakage.
 - **Postgres + RLS** — the `postgres` profile backs tenants/enrollments/fleet/jobs with PostgreSQL (Flyway);
@@ -100,9 +109,10 @@ including submit-while-agent-offline → reconnect → redelivered → succeeded
 
 ## Not yet implemented
 
-- **Automated certificate enrollment** — the one-time token exists (`POST /api/enrollments`), but the
-  token → CSR → issued/auto-renewed cert flow is not built; mTLS certs are still pre-provisioned via
-  `scripts/gen-dev-pki.ps1`.
+- **Certificate auto-renewal & revocation (enrollment slice 2)** — bootstrap (token → CSR → signed cert) is
+  built (see Implemented); what remains is the agent re-issuing before expiry over its current mTLS, a
+  revocation story (short-lived certs + re-bootstrap, or CRL/OCSP), an intermediate CA, and KMS/HSM custody
+  of the CA key (slice 1's CA key is a file on the gateway — dev/self-hosted only).
 - **End-to-end secret encryption to the agent's public key** — **done**. Credential management
   (`SetCredential`), minted PPSK keys (`ManagePpskUser`), and now **secret-bearing durable jobs** all seal to
   the agent's key with `EnvelopeCipher`: a `configure-ssid` / `configure-hive` job is wrapped in a

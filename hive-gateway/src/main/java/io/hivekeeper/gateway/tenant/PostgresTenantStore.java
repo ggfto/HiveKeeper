@@ -47,6 +47,17 @@ public class PostgresTenantStore implements TenantStore {
     }
 
     @Override
+    public boolean markEnrollmentConsumed(String token) {
+        if (token == null) {
+            return false;
+        }
+        // Atomic one-time consumption: only the call that flips consumed_at from NULL wins (rows == 1).
+        int rows = jdbc.update(
+                "update agent_enrollment set consumed_at = now() where token = ? and consumed_at is null", token);
+        return rows == 1;
+    }
+
+    @Override
     public Optional<Tenant> tenantByApiKey(String apiKey) {
         if (apiKey == null) {
             return Optional.empty();

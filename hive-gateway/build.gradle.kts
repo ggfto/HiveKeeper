@@ -7,6 +7,9 @@ dependencies {
     implementation(project(":hive-protocol"))
     implementation(project(":hive-wire"))
 
+    // Agent enrollment: parse the agent's PKCS#10 CSR and sign a leaf cert with the file-backed CA.
+    implementation(libs.bcpkix)
+
     implementation(platform("org.springframework.boot:spring-boot-dependencies:3.4.1"))
     implementation("org.springframework.boot:spring-boot-starter-web")
     implementation("org.springframework.boot:spring-boot-starter-websocket")
