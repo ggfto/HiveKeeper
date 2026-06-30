@@ -89,7 +89,9 @@ The gateway:
   high client load, radios outside best practice). On the `postgres` profile a **background poller** also scans
   every tenant on a schedule and **delivers** breaches to configured **webhook** and **email** channels, with
   per-channel minimum-severity gating and onset/resolution dedup (it notifies when an alert starts and when it
-  clears, not every poll). Channels + thresholds are managed under **Alerts → Alert delivery** (admin-gated).
+  clears, not every poll). Channels + thresholds are managed under **Alerts → Alert delivery** (admin-gated;
+  the threshold is the single server value the on-demand scan also uses), and the Alerts page shows the poller's
+  currently-firing set.
 - **Members & roles** (viewer / operator / admin / owner) and **agent enrollment** — under the OIDC profile.
 - Durable, persisted **jobs** under the `postgres` profile.
 
