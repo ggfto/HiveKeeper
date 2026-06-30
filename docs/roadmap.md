@@ -247,7 +247,12 @@ where knobs live: **interface-level** (`interface wifiN radio …`) vs **profile
   user's PSK) in its DB and provision RADIUS — a **new subsystem (a RADIUS-managing component), not a guided
   form**, so it lands as its own phase. The agent-as-RADIUS placement keeps secrets on-prem, consistent with the
   sealed-credential model. (Writing keys directly into the AP's local `users.txt` over SSH is **not** a
-  supported/safe path — those live in a separate TPM store, not the replayable running-config.)
+  supported/safe path — those live in a separate TPM store, not the replayable running-config.) **The full
+  architecture is now specified** in [PPSK via RADIUS — design](ppsk-radius-design.md): the AP→RADIUS wiring is
+  confirmed live (`aaa ppsk-server radius-server primary …`, `security-object <so> security private-psk
+  radius-auth`); the remaining work is the RADIUS runtime on the agent, a sealed key store, and the
+  `ManagePpskUser` CRUD pipeline. It stays its **own phase** because the RADIUS runtime is infrastructure that
+  must be stood up and validated end-to-end (a guided form alone cannot deliver it).
 
 ---
 

@@ -15,6 +15,7 @@ const ORDER = [
   'deployment',
   'architecture',
   'agent-protocol',
+  'ppsk-radius-design',
 ]
 
 const TITLE_FALLBACK = { index: 'Introduction' }
