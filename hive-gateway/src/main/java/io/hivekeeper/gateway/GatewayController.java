@@ -240,8 +240,26 @@ public class GatewayController {
         } catch (IllegalArgumentException e) {
             return status(400, new ApiError("bad_request", e.getMessage()));
         }
-        String jobId = jobGateway.get().submit(p.tenantId(), agentId, req.type(), command);
+        String jobId = jobGateway.get().submit(p.tenantId(), agentId, req.type(),
+                sealForJob(p, agentId, req.type(), command));
         return json(new JobSubmitted(jobId, "submitted"));
+    }
+
+    /** Seals a secret-bearing durable-job command (SSID passphrase / hive password) to the agent's public key
+     *  so the persisted job row is unreadable by the gateway at rest — only the agent can unwrap it. Non-secret
+     *  job types pass through unchanged. Without an agent key (dev, no mTLS) it falls back to the INSECURE
+     *  plain1: form, logged loudly, mirroring the set-credential path. */
+    private Command sealForJob(Principal p, String agentId, String type, Command command) {
+        if (!"configure-ssid".equals(type) && !"configure-hive".equals(type)) {
+            return command;
+        }
+        PublicKey agentKey = registry.publicKey(p.tenantId(), agentId).orElse(null);
+        if (agentKey == null) {
+            log.warn("agent '{}' has no public key (no mTLS cert); sealing the durable '{}' job with the INSECURE "
+                    + "plain1: dev fallback — enable mTLS so job secrets are unreadable at rest", agentId, type);
+        }
+        String sealed = envelope.seal(agentKey, codec.toJson(command).getBytes(java.nio.charset.StandardCharsets.UTF_8));
+        return Command.Sealed.of(sealed);
     }
 
     @GetMapping("/api/jobs/{jobId}")

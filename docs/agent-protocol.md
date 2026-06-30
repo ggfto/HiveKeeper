@@ -103,10 +103,13 @@ including submit-while-agent-offline → reconnect → redelivered → succeeded
 - **Automated certificate enrollment** — the one-time token exists (`POST /api/enrollments`), but the
   token → CSR → issued/auto-renewed cert flow is not built; mTLS certs are still pre-provisioned via
   `scripts/gen-dev-pki.ps1`.
-- **End-to-end secret encryption to the agent's public key** — **done for credential management** (the
-  `SetCredential` flow seals to the agent key with `EnvelopeCipher`; the gateway holds no plaintext).
-  Durable-job secrets (SSID passphrase, hive password) are still encrypted *at rest* by the gateway's
-  symmetric `SecretCipher`; sealing those to the agent too is the remaining hardening.
+- **End-to-end secret encryption to the agent's public key** — **done**. Credential management
+  (`SetCredential`), minted PPSK keys (`ManagePpskUser`), and now **secret-bearing durable jobs** all seal to
+  the agent's key with `EnvelopeCipher`: a `configure-ssid` / `configure-hive` job is wrapped in a
+  `Command.Sealed` (the inner command's JSON sealed to the agent) before it is persisted, so the gateway can no
+  longer read the SSID passphrase / hive password at rest — only the agent unwraps it (the symmetric
+  `SecretCipher` at-rest layer remains underneath as defense-in-depth). Job *results* are still symmetric at
+  rest and field-redacted on read.
 - **Per-user authorization on every endpoint** — the bearer filter runs on `/api/me`; extending per-user
   enforcement (vs the controller-level checks) across the rest of the API is the next phase.
 - **TLS / ingress hardening** for a real cloud deployment (the WSS:443 single-port story is by design;

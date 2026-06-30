@@ -16,7 +16,7 @@ public sealed interface Command
         permits Command.Inventory, Command.BackupConfig, Command.RunRaw, Command.Discover,
                 Command.ApplyConfig, Command.ConfigureSsid, Command.ConfigureHive, Command.Reboot,
                 Command.RestoreConfig, Command.FirmwareUpgrade, Command.SetCredential,
-                Command.ManagePpskUser {
+                Command.ManagePpskUser, Command.Sealed {
 
     UUID commandId();
 
@@ -161,6 +161,20 @@ public sealed interface Command
         public static ManagePpskUser revoke(String securityObject, String username) {
             return new ManagePpskUser(UUID.randomUUID(), "revoke", securityObject, null, username, null,
                     null, null, null, List.of());
+        }
+    }
+
+    /**
+     * An envelope around another command whose payload is sealed to the on-prem agent's public key. The cloud
+     * persists/dispatches only this wrapper, so a secret-bearing command (an SSID passphrase, a hive password)
+     * is unreadable by the gateway at rest — only the agent, holding the private key, can recover the inner
+     * command. {@code sealedCommand} is an {@link io.hivekeeper.core.crypto.EnvelopeCipher} token (RSA-OAEP +
+     * AES-GCM; {@code plain1:} dev fallback) of the inner command's wire JSON. The agent unwraps it (unseal →
+     * deserialize) and executes the inner command; no other node ever sees the wrapper unwrapped.
+     */
+    record Sealed(UUID commandId, String sealedCommand) implements Command {
+        public static Sealed of(String sealedCommand) {
+            return new Sealed(UUID.randomUUID(), sealedCommand);
         }
     }
 }

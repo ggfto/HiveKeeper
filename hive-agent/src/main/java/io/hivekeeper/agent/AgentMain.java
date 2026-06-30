@@ -77,6 +77,9 @@ public final class AgentMain {
 
         BackupStore backupStore = new GitBackupStore(Path.of(config.backupDir()));
         Engine engine = HiveCore.localEngine(credentials, backupStore, writableCredentials, unsealer, ppskUsers);
+        // Unwrap commands the gateway sealed to this agent's key (durable-job secrets) before the engine runs
+        // them; plain commands pass straight through.
+        engine = new UnsealingEngine(engine, agentKey, new EnvelopeCipher(), new io.hivekeeper.wire.JsonCodec());
 
         SSLContext sslContext = config.mtlsEnabled()
                 ? TlsSupport.fromKeystores(config.tlsKeystore(), config.tlsKeystorePassword().toCharArray(),

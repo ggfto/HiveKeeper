@@ -250,9 +250,9 @@ details):
 - **Production security** — SSH host-key verification (today `ACCEPT_ALL`; switch to known-hosts / TOFU before
   any non-lab use), automated agent enrollment (one-time token → CSR → issued/auto-renewed cert, vs today's
   pre-provisioned dev certs), per-user authorization on every endpoint, and TLS / ingress hardening.
-  End-to-end sealing to the agent's public key is **done for the secrets that flow as intent** (device
-  credentials and minted PPSK keys, via `EnvelopeCipher`); durable-job secrets (SSID passphrase, hive password)
-  are still encrypted *at rest* by the gateway's symmetric key — sealing those too is the remaining hardening.
+  End-to-end sealing to the agent's public key is **done for every secret HiveKeeper handles**: device
+  credentials, minted PPSK keys, and secret-bearing durable jobs (SSID passphrase / hive password, wrapped in a
+  `Command.Sealed`) all seal with `EnvelopeCipher`, so the gateway holds no readable secret at rest.
 - **Multi-vendor** — the driver SPI is ready, but only `HiveOsDriver` exists today (e.g. AP410 / WiNG later).
 - **North star** — a hosted, multi-tenant cloud control plane (mode C runs locally today).
 

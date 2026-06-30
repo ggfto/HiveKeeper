@@ -308,6 +308,8 @@ public final class LocalEngine implements Engine {
                     throw new IllegalStateException("set-credential is handled before SSH dispatch");
             case Command.ManagePpskUser ignored ->
                     throw new IllegalStateException("manage-ppsk-user is handled before SSH dispatch");
+            case Command.Sealed ignored ->
+                    throw new IllegalStateException("sealed commands are unwrapped by the agent before the engine");
         };
     }
 
@@ -327,6 +329,8 @@ public final class LocalEngine implements Engine {
                     throw new IllegalStateException("set-credential is handled before deviceRefOf");
             case Command.ManagePpskUser ignored ->
                     throw new IllegalStateException("manage-ppsk-user is handled before deviceRefOf");
+            case Command.Sealed ignored ->
+                    throw new IllegalStateException("sealed commands are unwrapped by the agent before deviceRefOf");
         };
     }
 }
