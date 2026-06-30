@@ -179,8 +179,19 @@ where knobs live: **interface-level** (`interface wifiN radio …`) vs **profile
   `high-density enable` and `weak-snr-suppress enable` (toggles whose positive form carries the `enable`
   sub-word, so the negation is `no … enable`); `tx-beamforming auto|explicit-only` (`no …` to disable);
   `phymode 11a|11ac|11b/g|11na|11ng`; and `receive-chain` / `transmit-chain <1-3>`.
-- **Acceptance met** offline (the two builders and both organisms are unit-tested) and every knob's grammar
-  was confirmed live on the AP230. `capabilities.md` updated.
+- **Acceptance met**: the two builders and both organisms are unit-tested, and the knobs were **applied and
+  reverted live on the AP230** (no `save`, non-persistent) — interface knobs on `wifi1`, profile knobs on
+  throwaway custom profiles `HKTEST*` (created, confirmed in `show running-config`, removed with
+  `no radio profile …`). `capabilities.md` updated.
+- **Live write quirks the apply test caught** (and why probing beats `?`-only confirmation):
+  - **Default radio profiles are read-only.** `radio profile radio_ac0 …` (and `radio_ng0`) is rejected with
+    *“can't configure default radio profile radio_ac0!”* — this hits Phase 1's channel-width too. The knobs
+    only apply to a **custom** profile, which the first knob line **auto-creates**; the operator then binds it
+    to the radio (`interface wifiN radio profile <name>`). `RadioProfileForm` now warns when the chosen name
+    looks like a factory default.
+  - **`phymode` must precede `channel-width` and `tx-beamforming`.** A fresh profile is `11b/g`; both reject as
+    *“inconsistent with current phymode”* / *“incompatible PHY mode … configure PHY mode first”* until phymode
+    matches. `radioProfileCommands` therefore emits `phymode` first.
 
 ---
 

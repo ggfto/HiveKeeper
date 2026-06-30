@@ -50,7 +50,10 @@ Per device, via the web UI ([device configuration](/device-configuration/) expla
   and APs, so a profile change has a wider blast radius than a per-interface tweak. An **Advanced RF tuning**
   disclosure exposes the dense-RF knobs: per-radio `rx-sop` / `ed-threshold` / `dfs-backup-channel`, and on the
   profile `dfs`, `short-guard-interval`, `ampdu` / `amsdu`, `frameburst`, `tx-beamforming`, `high-density`,
-  `weak-snr-suppress`, `phymode`, and receive/transmit chain counts.
+  `weak-snr-suppress`, `phymode`, and receive/transmit chain counts. **Note (confirmed live):** HiveOS refuses
+  edits to the *default* radio profiles (`radio_ac0` / `radio_ng0`) — profile knobs must target a **custom**
+  profile (the first setting auto-creates it; the form warns on a default name), and `phymode` must be set
+  before channel width / beamforming will take.
 - **Advanced** — a raw HiveOS CLI escape hatch (send arbitrary commands, optionally `save config`).
 - **Backup** — capture the running-config to a git-versioned store, with optional secrets and PPSK users.
 - **Restore** — re-apply a saved running-config (additive replay, then `save config`). In the web UI it lives

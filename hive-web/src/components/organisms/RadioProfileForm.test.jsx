@@ -42,9 +42,11 @@ describe('RadioProfileForm', () => {
     })
   })
 
-  it('applies the advanced RF tuning knobs from the disclosure', () => {
+  it('applies the advanced RF tuning knobs from the disclosure, phymode first', () => {
     const onApply = vi.fn()
     render(<RadioProfileForm device={device} onApply={onApply} />)
+    // Use a custom profile name: HiveOS rejects edits to the default radio_ac0 (confirmed live).
+    fireEvent.change(screen.getByLabelText(/radio profile/i), { target: { value: 'hk_5g_dense' } })
     fireEvent.change(screen.getByLabelText(/^DFS/i), { target: { value: 'enable' } })
     fireEvent.change(screen.getByLabelText(/high-density optimizations/i), { target: { value: 'enable' } })
     fireEvent.change(screen.getByLabelText(/tx beamforming/i), { target: { value: 'explicit-only' } })
@@ -53,13 +55,21 @@ describe('RadioProfileForm', () => {
     fireEvent.click(screen.getByRole('button', { name: /apply profile/i }))
     expect(onApply).toHaveBeenCalledWith(device, {
       commands: [
-        'radio profile radio_ac0 dfs',
-        'radio profile radio_ac0 high-density enable',
-        'radio profile radio_ac0 tx-beamforming explicit-only',
-        'radio profile radio_ac0 phymode 11ac',
-        'radio profile radio_ac0 receive-chain 2',
+        'radio profile hk_5g_dense phymode 11ac',
+        'radio profile hk_5g_dense dfs',
+        'radio profile hk_5g_dense high-density enable',
+        'radio profile hk_5g_dense tx-beamforming explicit-only',
+        'radio profile hk_5g_dense receive-chain 2',
       ],
       save: true,
     })
+  })
+
+  it('warns when the profile is a factory default (radio_ac0), and clears the warning for a custom name', () => {
+    render(<RadioProfileForm device={device} onApply={vi.fn()} />)
+    // Default profile pre-filled → warning shown.
+    expect(screen.getByTestId('default-profile-warning')).toHaveTextContent(/default/i)
+    fireEvent.change(screen.getByLabelText(/radio profile/i), { target: { value: 'hk_5g_dense' } })
+    expect(screen.queryByTestId('default-profile-warning')).not.toBeInTheDocument()
   })
 })

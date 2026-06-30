@@ -48,6 +48,14 @@ function ifaceForProfile(name) {
   return null
 }
 
+// HiveOS REFUSES to edit a default radio profile ("can't configure default radio profile radio_ac0!" —
+// confirmed live on the AP230). The factory profiles follow a radio_<phy><digit> naming (radio_ac0, radio_ng0,
+// radio_ax0, …); a knob applied to one is rejected. The operator must use a custom profile name instead — the
+// first knob line auto-creates it. This is a heuristic, non-blocking warning.
+function isDefaultProfile(name) {
+  return /^radio_[a-z]+\d+$/i.test((name || '').trim())
+}
+
 /**
  * Guided radio-PROFILE config: channel width, band-steering, client load-balancing and a per-profile client cap.
  * BLAST RADIUS: a profile can be shared across interfaces and across APs in a hive, so a change here is wider
@@ -98,6 +106,7 @@ export function RadioProfileForm({ device, onApply, busy }) {
   const advisories = channelWidth
     ? radioAdvisories({ iface: ifaceForProfile(profile), width: channelWidth })
     : []
+  const defaultProfile = isDefaultProfile(profile)
 
   const selectClass =
     'h-9 rounded-md border border-border bg-background px-2 text-sm text-foreground'
@@ -177,6 +186,21 @@ export function RadioProfileForm({ device, onApply, busy }) {
             </li>
           ))}
         </ul>
+      )}
+      {defaultProfile && (
+        <div
+          data-testid="default-profile-warning"
+          className="flex items-start gap-2 rounded-md border border-amber-500/40 bg-amber-500/10 p-2 text-xs text-amber-700 dark:text-amber-400"
+        >
+          <TriangleAlert className="mt-0.5 h-4 w-4 shrink-0" />
+          <span>
+            <code className="font-mono">{profile.trim()}</code> looks like a factory <strong>default</strong>{' '}
+            radio profile — HiveOS rejects edits to it (<em>“can&apos;t configure default radio profile”</em>).
+            Use a custom profile name (e.g. <code className="font-mono">hk_5g_dense</code>); the first setting
+            auto-creates it, and you then bind it to the radio with{' '}
+            <code className="font-mono">interface wifiN radio profile &lt;name&gt;</code> (Advanced).
+          </span>
+        </div>
       )}
       <details className="rounded-md border border-border">
         <summary className="cursor-pointer px-3 py-2 text-xs font-medium text-muted-foreground">

@@ -130,8 +130,9 @@ describe('radioProfileCommands', () => {
     ])
   })
   // tx-beamforming auto|explicit-only (no ... to disable) ; phymode <11a|11ac|11b/g|11na|11ng> ;
-  // receive-chain / transmit-chain <1-3>.
-  it('builds tx-beamforming, phymode and chain counts', () => {
+  // receive-chain / transmit-chain <1-3>. phymode is emitted FIRST — channel-width and tx-beamforming reject
+  // until the PHY mode matches (confirmed live on the AP230).
+  it('builds tx-beamforming, phymode and chain counts with phymode first', () => {
     expect(
       radioProfileCommands('radio_ac0', {
         txBeamforming: 'explicit-only',
@@ -140,8 +141,8 @@ describe('radioProfileCommands', () => {
         transmitChain: '3',
       }),
     ).toEqual([
-      'radio profile radio_ac0 tx-beamforming explicit-only',
       'radio profile radio_ac0 phymode 11ac',
+      'radio profile radio_ac0 tx-beamforming explicit-only',
       'radio profile radio_ac0 receive-chain 2',
       'radio profile radio_ac0 transmit-chain 3',
     ])
@@ -150,6 +151,12 @@ describe('radioProfileCommands', () => {
     ])
     expect(radioProfileCommands('radio_ac0', { txBeamforming: 'disable' })).toEqual([
       'no radio profile radio_ac0 tx-beamforming',
+    ])
+  })
+  it('emits phymode before channel-width (live: width rejects until the PHY mode matches)', () => {
+    expect(radioProfileCommands('custom1', { channelWidth: '80', phymode: '11ac' })).toEqual([
+      'radio profile custom1 phymode 11ac',
+      'radio profile custom1 channel-width 80',
     ])
   })
 })

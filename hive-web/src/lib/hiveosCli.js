@@ -47,6 +47,14 @@ export function radioCommands(
  *     negation is `no radio profile <p> <knob> enable`.
  *   `tx-beamforming auto|explicit-only` (with `no ...` to disable), `phymode 11a|11ac|11b/g|11na|11ng`,
  *   `receive-chain`/`transmit-chain <1-3>`.
+ *
+ * LIVE QUIRKS confirmed on the AP230 (the order below is deliberate, not cosmetic):
+ *   - HiveOS REFUSES to edit a DEFAULT profile ("can't configure default radio profile radio_ac0!") — these
+ *     knobs only apply to a NON-default (custom) profile, which the first knob line auto-creates. The caller
+ *     warns when the chosen name is a default (see RadioProfileForm).
+ *   - `phymode` must be set BEFORE `channel-width` and `tx-beamforming` — a fresh profile is 11b/g, and both
+ *     reject as "inconsistent with current phymode" / "incompatible PHY mode" until phymode matches. So phymode
+ *     is emitted first.
  */
 export function radioProfileCommands(
   profile,
@@ -71,6 +79,8 @@ export function radioProfileCommands(
   const p = (profile || '').trim()
   if (!p) return []
   const cmds = []
+  // phymode first: channel-width and tx-beamforming reject until the PHY mode matches (confirmed live).
+  if (phymode) cmds.push(`radio profile ${p} phymode ${phymode}`)
   if (channelWidth) cmds.push(`radio profile ${p} channel-width ${channelWidth}`)
   if (bandSteering === 'enable') cmds.push(`radio profile ${p} band-steering`)
   if (bandSteering === 'disable') cmds.push(`no radio profile ${p} band-steering`)
@@ -99,7 +109,6 @@ export function radioProfileCommands(
   if (txBeamforming === 'auto' || txBeamforming === 'explicit-only')
     cmds.push(`radio profile ${p} tx-beamforming ${txBeamforming}`)
   if (txBeamforming === 'disable') cmds.push(`no radio profile ${p} tx-beamforming`)
-  if (phymode) cmds.push(`radio profile ${p} phymode ${phymode}`)
   if (receiveChain) cmds.push(`radio profile ${p} receive-chain ${receiveChain}`)
   if (transmitChain) cmds.push(`radio profile ${p} transmit-chain ${transmitChain}`)
   return cmds
