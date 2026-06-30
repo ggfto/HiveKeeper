@@ -31,7 +31,7 @@ public final class WebSocketFrameChannel implements FrameChannel {
                 return t;
             });
 
-    private final SSLContext sslContext;
+    private volatile SSLContext sslContext;
     private volatile Consumer<Frame> handler = frame -> { };
     private volatile Runnable onConnected = () -> { };
     private volatile InnerClient client;
@@ -51,6 +51,16 @@ public final class WebSocketFrameChannel implements FrameChannel {
     /** Hook invoked after each successful (re)connect — typically {@code agentRuntime::announce}. */
     public void onConnected(Runnable hook) {
         this.onConnected = hook;
+    }
+
+    /**
+     * Swap the mTLS context used for future (re)connects — called after a certificate renewal so the next
+     * reconnect presents the freshly issued cert. The live connection is left in place (it is still valid); the
+     * new context takes effect on the next natural reconnect. Renewal happens well before expiry, so there is no
+     * need to forcibly bounce a healthy connection.
+     */
+    public void useSslContext(SSLContext sslContext) {
+        this.sslContext = sslContext;
     }
 
     public void start() {

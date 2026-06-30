@@ -34,6 +34,10 @@ import java.net.URI;
  *       {@link EnrollmentBootstrap})</li>
  *   <li>{@code HIVEKEEPER_ENROLLMENT_CACERT} — optional PEM CA bundle to trust the gateway's HTTPS server cert
  *       during bootstrap (needed when the enrollment URL is {@code https://} and the CA is private)</li>
+ *   <li>{@code HIVEKEEPER_CERT_RENEW_WINDOW_DAYS} — auto-renew the mTLS cert once it is within this many days of
+ *       expiry (default 30). Renewal re-issues over the agent's CURRENT cert (mTLS) and needs
+ *       {@code HIVEKEEPER_ENROLLMENT_URL} set (see {@link EnrollmentRenewal}).</li>
+ *   <li>{@code HIVEKEEPER_CERT_RENEW_CHECK_HOURS} — how often to check the cert's expiry (default 12)</li>
  * </ul>
  * mTLS is enabled when a keystore is configured (use a {@code wss://} gateway URL).
  */
@@ -42,7 +46,8 @@ public record AgentConfig(URI gatewayUri, String agentId, String defaultUser, St
                           String backupDir, String tlsKeystore, String tlsKeystorePassword,
                           String tlsTruststore, String tlsTruststorePassword,
                           HostKeyPolicy sshHostKeyPolicy, String knownHostsPath,
-                          String enrollmentToken, String enrollmentUrl, String enrollmentCaCert) {
+                          String enrollmentToken, String enrollmentUrl, String enrollmentCaCert,
+                          int renewWindowDays, int renewCheckHours) {
 
     public boolean mtlsEnabled() {
         return tlsKeystore != null && !tlsKeystore.isBlank();
@@ -52,6 +57,12 @@ public record AgentConfig(URI gatewayUri, String agentId, String defaultUser, St
     public boolean enrollmentConfigured() {
         return enrollmentToken != null && !enrollmentToken.isBlank()
                 && enrollmentUrl != null && !enrollmentUrl.isBlank();
+    }
+
+    /** True when the agent can auto-renew its cert: mTLS is on and an enrollment URL is configured (the renewal
+     *  endpoint lives there). Unlike bootstrap, renewal needs no token — it authenticates with the current cert. */
+    public boolean renewalEnabled() {
+        return mtlsEnabled() && enrollmentUrl != null && !enrollmentUrl.isBlank();
     }
 
     public static AgentConfig fromEnv() {
@@ -73,7 +84,22 @@ public record AgentConfig(URI gatewayUri, String agentId, String defaultUser, St
                 env("HIVEKEEPER_KNOWN_HOSTS", "hivekeeper-known_hosts"),
                 env("HIVEKEEPER_ENROLLMENT_TOKEN", null),
                 env("HIVEKEEPER_ENROLLMENT_URL", null),
-                env("HIVEKEEPER_ENROLLMENT_CACERT", null));
+                env("HIVEKEEPER_ENROLLMENT_CACERT", null),
+                envInt("HIVEKEEPER_CERT_RENEW_WINDOW_DAYS", 30),
+                envInt("HIVEKEEPER_CERT_RENEW_CHECK_HOURS", 12));
+    }
+
+    private static int envInt(String key, int fallback) {
+        String v = System.getenv(key);
+        if (v == null || v.isBlank()) {
+            return fallback;
+        }
+        try {
+            int parsed = Integer.parseInt(v.trim());
+            return parsed > 0 ? parsed : fallback;
+        } catch (NumberFormatException e) {
+            return fallback;
+        }
     }
 
     /** Map the {@code HIVEKEEPER_SSH_HOSTKEY} value to a {@link HostKeyPolicy} (unknown values fall back to TOFU). */

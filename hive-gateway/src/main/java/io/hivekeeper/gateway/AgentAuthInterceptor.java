@@ -48,6 +48,11 @@ public class AgentAuthInterceptor implements HandshakeInterceptor {
             String cn = commonName(clientCert);
             Optional<AgentEnrollment> byCert = tenants.enrollmentByAgentId(cn);
             if (byCert.isPresent()) {
+                if (tenants.isAgentRevoked(cn)) {
+                    log.warn("rejecting agent handshake: client cert CN '{}' is revoked", cn);
+                    response.setStatusCode(HttpStatus.FORBIDDEN);
+                    return false;
+                }
                 stamp(attributes, byCert.get());
                 // Cache the agent's public key (from its verified cert) so the gateway can seal credentials
                 // TO this agent — end-to-end, so the cloud never holds a usable plaintext secret.
@@ -65,6 +70,11 @@ public class AgentAuthInterceptor implements HandshakeInterceptor {
         if (byToken.isEmpty()) {
             log.warn("rejecting agent handshake: no client cert and invalid/missing enrollment token");
             response.setStatusCode(HttpStatus.UNAUTHORIZED);
+            return false;
+        }
+        if (tenants.isAgentRevoked(byToken.get().agentId())) {
+            log.warn("rejecting agent handshake: token for agent '{}' is revoked", byToken.get().agentId());
+            response.setStatusCode(HttpStatus.FORBIDDEN);
             return false;
         }
         stamp(attributes, byToken.get());

@@ -143,6 +143,18 @@ public class GatewayController {
     public record AdoptResponse(String deviceId, String serial, String model) {
     }
 
+    /** Revoke an agent's enrollment (decommission/compromise). {@code reason} is optional, recorded for audit. */
+    public record RevokeAgentRequest(String reason) {
+    }
+
+    /** Acknowledges an agent lifecycle action (revoke). */
+    public record AgentActionResult(String agentId, String status) {
+    }
+
+    /** Re-enroll response: the agent and its fresh one-time enrollment token (returned ONCE). */
+    public record ReEnrollResponse(String agentId, String token) {
+    }
+
     /** Run a read op across every registered device in a group, a site, or (both null) the whole org. */
     public record BulkRequest(String siteId, String groupId) {
     }
@@ -622,6 +634,47 @@ public class GatewayController {
             // The exception message is the engine's failure text; it never carries the secret.
             log.warn("set-credential via agent '{}' failed: {}", agentId, e.getMessage());
             return status(502, new ApiError(e.getClass().getSimpleName(), e.getMessage() == null ? "" : e.getMessage()));
+        }
+    }
+
+    // -- agent certificate lifecycle: revoke / re-enroll (slice 2 of automated enrollment) -----------------
+
+    /** Revoke an agent's enrollment: the gateway then refuses its mTLS handshake AND its certificate renewals,
+     *  so a compromised or decommissioned agent is locked out. Admin-level on the agent's scope. The agent's
+     *  existing leaf cert is not magically un-trusted by TLS, but it can no longer connect or renew, and it
+     *  expires on its own (90 days). Use {@code re-enroll} to bring a replacement back online. */
+    @PostMapping("/api/agents/{agentId}/revoke")
+    public ResponseEntity<String> revokeAgent(@PathVariable String agentId,
+                                              @RequestBody(required = false) RevokeAgentRequest req) {
+        Principal p = guard.authenticate();
+        guard.require(p, Role.ADMIN, agentScope(p, agentId));
+        String reason = req == null || req.reason() == null || req.reason().isBlank() ? null : req.reason().trim();
+        try {
+            if (!tenants.revokeAgent(p.tenantId(), agentId, reason)) {
+                return status(404, new ApiError("agent_not_found", agentId));
+            }
+            record(p.tenantId(), agentId, "revoke", null, reason == null ? "revoked" : reason);
+            return json(new AgentActionResult(agentId, "revoked"));
+        } catch (UnsupportedOperationException e) {
+            return status(501, new ApiError("not_supported", e.getMessage()));
+        }
+    }
+
+    /** Re-enroll an agent: clear its revoked/consumed marks and mint a FRESH one-time enrollment token, returned
+     *  once for the operator to configure a replacement agent (which bootstraps a new certificate). Admin-level. */
+    @PostMapping("/api/agents/{agentId}/re-enroll")
+    public ResponseEntity<String> reEnrollAgent(@PathVariable String agentId) {
+        Principal p = guard.authenticate();
+        guard.require(p, Role.ADMIN, agentScope(p, agentId));
+        try {
+            Optional<String> token = tenants.reEnrollAgent(p.tenantId(), agentId);
+            if (token.isEmpty()) {
+                return status(404, new ApiError("agent_not_found", agentId));
+            }
+            record(p.tenantId(), agentId, "re-enroll", null, "new enrollment token issued");
+            return json(new ReEnrollResponse(agentId, token.get()));
+        } catch (UnsupportedOperationException e) {
+            return status(501, new ApiError("not_supported", e.getMessage()));
         }
     }
 

@@ -7,8 +7,8 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
-import java.util.function.Function;
-import java.util.stream.Collectors;
+import java.util.UUID;
+import java.util.concurrent.ConcurrentHashMap;
 
 /**
  * In-memory tenant store (the default when no database is configured). It is EMPTY unless
@@ -22,11 +22,12 @@ import java.util.stream.Collectors;
 @Profile("!postgres")
 public class InMemoryTenantStore implements TenantStore {
 
-    private final Map<String, Tenant> byId;
-    private final Map<String, Tenant> byApiKey;
-    private final Map<String, AgentEnrollment> byToken;
-    private final Map<String, AgentEnrollment> byAgentId;
-    private final java.util.Set<String> consumedTokens = java.util.concurrent.ConcurrentHashMap.newKeySet();
+    private final Map<String, Tenant> byId = new ConcurrentHashMap<>();
+    private final Map<String, Tenant> byApiKey = new ConcurrentHashMap<>();
+    private final Map<String, AgentEnrollment> byToken = new ConcurrentHashMap<>();
+    private final Map<String, AgentEnrollment> byAgentId = new ConcurrentHashMap<>();
+    private final java.util.Set<String> consumedTokens = ConcurrentHashMap.newKeySet();
+    private final java.util.Set<String> revokedAgents = ConcurrentHashMap.newKeySet();
 
     public InMemoryTenantStore(@Value("${hivekeeper.demo-seed:false}") boolean demoSeed,
                                @Value("${hivekeeper.solo:false}") boolean solo) {
@@ -45,10 +46,14 @@ public class InMemoryTenantStore implements TenantStore {
             enrollments.add(new AgentEnrollment("enroll-local", "local-agent", "local"));
         }
 
-        this.byId = tenants.stream().collect(Collectors.toMap(Tenant::tenantId, Function.identity()));
-        this.byApiKey = tenants.stream().collect(Collectors.toMap(Tenant::operatorApiKey, Function.identity()));
-        this.byToken = enrollments.stream().collect(Collectors.toMap(AgentEnrollment::token, Function.identity()));
-        this.byAgentId = enrollments.stream().collect(Collectors.toMap(AgentEnrollment::agentId, Function.identity()));
+        for (Tenant t : tenants) {
+            byId.put(t.tenantId(), t);
+            byApiKey.put(t.operatorApiKey(), t);
+        }
+        for (AgentEnrollment e : enrollments) {
+            byToken.put(e.token(), e);
+            byAgentId.put(e.agentId(), e);
+        }
     }
 
     @Override
@@ -65,6 +70,39 @@ public class InMemoryTenantStore implements TenantStore {
     public boolean markEnrollmentConsumed(String token) {
         // Win only if the token is a real enrollment AND this is the first time it is consumed.
         return token != null && byToken.containsKey(token) && consumedTokens.add(token);
+    }
+
+    @Override
+    public boolean isAgentRevoked(String agentId) {
+        return agentId != null && revokedAgents.contains(agentId);
+    }
+
+    @Override
+    public synchronized boolean revokeAgent(String tenantId, String agentId, String reason) {
+        AgentEnrollment enrollment = byAgentId.get(agentId);
+        if (enrollment == null || !enrollment.tenantId().equals(tenantId)) {
+            return false;
+        }
+        revokedAgents.add(agentId);   // idempotent
+        return true;
+    }
+
+    @Override
+    public synchronized Optional<String> reEnrollAgent(String tenantId, String agentId) {
+        AgentEnrollment enrollment = byAgentId.get(agentId);
+        if (enrollment == null || !enrollment.tenantId().equals(tenantId)) {
+            return Optional.empty();
+        }
+        // Issue a fresh one-time token (replacing the old one) and clear the revoked/consumed marks so the
+        // agent — or a replacement provisioned with this token — can bootstrap a new certificate.
+        String newToken = "enroll-" + UUID.randomUUID();
+        AgentEnrollment renewed = new AgentEnrollment(newToken, agentId, tenantId);
+        byToken.remove(enrollment.token());
+        consumedTokens.remove(enrollment.token());
+        byToken.put(newToken, renewed);
+        byAgentId.put(agentId, renewed);
+        revokedAgents.remove(agentId);
+        return Optional.of(newToken);
     }
 
     @Override

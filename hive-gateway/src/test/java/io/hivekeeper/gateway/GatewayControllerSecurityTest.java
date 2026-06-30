@@ -142,6 +142,33 @@ class GatewayControllerSecurityTest {
                 .andExpect(content().string(org.hamcrest.Matchers.containsString("agent_not_found")));
     }
 
+    // -- agent certificate lifecycle: revoke / re-enroll are admin-only ---------
+
+    @Test
+    void revokeRequiresAdminOnTheAgentSite() throws Exception {
+        when(tenants.revokeAgent("acme", "lab-agent", null)).thenReturn(true);
+        mvc.perform(post("/api/agents/lab-agent/revoke").contentType(JSON).content("{}"))
+                .andExpect(status().isOk());
+        verify(guard).require(eq(principal), eq(Role.ADMIN), eq(ResourceScope.site("site-1")));
+    }
+
+    @Test
+    void reEnrollRequiresAdminAndReturnsAFreshToken() throws Exception {
+        when(tenants.reEnrollAgent("acme", "lab-agent")).thenReturn(Optional.of("enroll-fresh"));
+        mvc.perform(post("/api/agents/lab-agent/re-enroll"))
+                .andExpect(status().isOk())
+                .andExpect(content().string(org.hamcrest.Matchers.containsString("enroll-fresh")));
+        verify(guard).require(eq(principal), eq(Role.ADMIN), eq(ResourceScope.site("site-1")));
+    }
+
+    @Test
+    void revokingAnAgentInAnotherTenantIs404() throws Exception {
+        when(tenants.enrollmentByAgentId("foreign")).thenReturn(Optional.of(new AgentEnrollment("t", "foreign", "globex")));
+        mvc.perform(post("/api/agents/foreign/revoke").contentType(JSON).content("{}"))
+                .andExpect(status().isNotFound())
+                .andExpect(content().string(org.hamcrest.Matchers.containsString("agent_not_found")));
+    }
+
     @Test
     void aDeniedWriteRendersA403() throws Exception {
         doThrow(new AccessException(403, "forbidden", "requires OPERATOR"))

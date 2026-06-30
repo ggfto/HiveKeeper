@@ -22,6 +22,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.security.PrivateKey;
 import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ScheduledExecutorService;
 
 /**
  * The on-prem agent process: wires a real {@link io.hivekeeper.core.engine.LocalEngine} (sshj transport
@@ -108,13 +109,60 @@ public final class AgentMain {
         channel.onConnected(agent::announce);   // re-announce on every (re)connect
         channel.start();
 
+        // Auto-renew the mTLS certificate before it expires (re-issue over the current cert; reuses the keypair).
+        ScheduledExecutorService renewer = startCertRenewal(config, channel);
+
         Runtime.getRuntime().addShutdownHook(new Thread(() -> {
             log.info("shutting down agent");
+            if (renewer != null) {
+                renewer.shutdownNow();
+            }
             channel.close();
             agent.close();
         }));
 
         // Run until killed (service/container lifecycle).
         new CountDownLatch(1).await();
+    }
+
+    /**
+     * Start the background certificate-renewal loop, or return {@code null} when renewal is not enabled (no mTLS,
+     * or no enrollment URL to renew against). It periodically checks the current leaf's expiry; once the cert is
+     * within the renewal window it re-issues over the agent's current mTLS identity (keeping the keypair) and
+     * swaps the channel's SSL context so the next reconnect presents the new cert.
+     */
+    private static ScheduledExecutorService startCertRenewal(AgentConfig config, WebSocketFrameChannel channel) {
+        if (!config.renewalEnabled() || !Files.exists(Path.of(config.tlsKeystore()))) {
+            return null;
+        }
+        java.time.Duration window = java.time.Duration.ofDays(config.renewWindowDays());
+        ScheduledExecutorService renewer = java.util.concurrent.Executors.newSingleThreadScheduledExecutor(r -> {
+            Thread t = new Thread(r, "cert-renewer");
+            t.setDaemon(true);
+            return t;
+        });
+        char[] ksPw = config.tlsKeystorePassword().toCharArray();
+        Runnable check = () -> {
+            try {
+                java.security.cert.X509Certificate leaf =
+                        TlsSupport.clientCertificate(config.tlsKeystore(), ksPw);
+                if (!EnrollmentRenewal.dueForRenewal(leaf, java.time.Instant.now(), window)) {
+                    return;
+                }
+                log.info("certificate for agent '{}' expires {} — renewing", config.agentId(), leaf.getNotAfter());
+                EnrollmentRenewal.renew(config);
+                // Point future reconnects at the renewed keystore (the live connection stays up until then).
+                channel.useSslContext(TlsSupport.fromKeystores(config.tlsKeystore(), ksPw,
+                        config.tlsTruststore(), config.tlsTruststorePassword().toCharArray()));
+            } catch (Exception e) {
+                log.warn("certificate renewal check failed (will retry next interval): {}", e.toString());
+            }
+        };
+        long periodHours = config.renewCheckHours();
+        // First check one minute after boot (so a near-expiry cert renews promptly), then on the configured period.
+        renewer.scheduleAtFixedRate(check, 1, periodHours * 60, java.util.concurrent.TimeUnit.MINUTES);
+        log.info("certificate auto-renewal enabled (window {} days, checking every {} h)",
+                config.renewWindowDays(), periodHours);
+        return renewer;
     }
 }

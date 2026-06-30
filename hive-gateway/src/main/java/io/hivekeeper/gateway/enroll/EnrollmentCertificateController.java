@@ -2,6 +2,7 @@ package io.hivekeeper.gateway.enroll;
 
 import io.hivekeeper.gateway.tenant.AgentEnrollment;
 import io.hivekeeper.gateway.tenant.TenantStore;
+import jakarta.servlet.http.HttpServletRequest;
 import lombok.extern.slf4j.Slf4j;
 import org.bouncycastle.pkcs.PKCS10CertificationRequest;
 import org.springframework.beans.factory.ObjectProvider;
@@ -12,6 +13,8 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RestController;
 
+import javax.naming.ldap.LdapName;
+import javax.naming.ldap.Rdn;
 import java.security.cert.X509Certificate;
 import java.time.Duration;
 import java.util.Optional;
@@ -85,5 +88,76 @@ public class EnrollmentCertificateController {
 
         log.info("issued client certificate for agent '{}' (tenant '{}')", agentId, enrollment.get().tenantId());
         return ResponseEntity.ok().contentType(PEM).body(bundle);
+    }
+
+    /**
+     * Renew an agent's client certificate before it expires. Unlike the bootstrap above, this is authenticated
+     * by the agent's CURRENT mTLS client certificate (no token — renewal is repeatable), exactly as the
+     * WebSocket handshake authenticates: the identity is the cert's CN, resolved to an enrollment server-side.
+     * The agent keeps its keypair and posts a fresh CSR; the CA issues a new leaf with the same
+     * {@code CN = agentId} and a fresh validity window. A revoked agent is refused (its handshake is too).
+     *
+     * <p>{@code server.ssl.client-auth=want} makes the client cert available here on the servlet request when
+     * the agent presents one; a request without a verified client cert is rejected.
+     */
+    @PostMapping(value = "/api/enrollments/certificate/renew",
+            consumes = {"application/x-pem-file", MediaType.TEXT_PLAIN_VALUE},
+            produces = "application/x-pem-file")
+    public ResponseEntity<?> renewCertificate(@RequestBody String csrPem, HttpServletRequest request) {
+        CertificateAuthority authority = ca.getIfAvailable();
+        if (authority == null) {
+            return ResponseEntity.status(501).contentType(MediaType.APPLICATION_JSON).body(new ApiError(
+                    "not_supported", "certificate enrollment is not enabled (no CA configured — set HIVEKEEPER_CA_KEYSTORE)"));
+        }
+
+        String agentId = clientCertCommonName(request);
+        if (agentId == null) {
+            log.warn("certificate renewal rejected: no verified client certificate on the request");
+            return ResponseEntity.status(401).contentType(MediaType.APPLICATION_JSON)
+                    .body(new ApiError("no_client_cert", "renewal requires the agent's current mTLS client certificate"));
+        }
+
+        Optional<AgentEnrollment> enrollment = tenants.enrollmentByAgentId(agentId);
+        if (enrollment.isEmpty()) {
+            log.warn("certificate renewal rejected: client cert CN '{}' is not enrolled", agentId);
+            return ResponseEntity.status(401).contentType(MediaType.APPLICATION_JSON)
+                    .body(new ApiError("not_enrolled", "the presented certificate identity is not enrolled"));
+        }
+        if (tenants.isAgentRevoked(agentId)) {
+            log.warn("certificate renewal rejected: agent '{}' is revoked", agentId);
+            return ResponseEntity.status(403).contentType(MediaType.APPLICATION_JSON)
+                    .body(new ApiError("revoked", "this agent has been revoked"));
+        }
+
+        try {
+            PKCS10CertificationRequest csr = Pem.parseCsr(csrPem);
+            X509Certificate leaf = authority.sign(csr, agentId, LEAF_VALIDITY);
+            String bundle = Pem.bundle(leaf, authority.caChain());
+            log.info("renewed client certificate for agent '{}' (tenant '{}')", agentId, enrollment.get().tenantId());
+            return ResponseEntity.ok().contentType(PEM).body(bundle);
+        } catch (Exception e) {
+            log.warn("certificate renewal failed for agent '{}': {}", agentId, e.toString());
+            return ResponseEntity.badRequest().contentType(MediaType.APPLICATION_JSON)
+                    .body(new ApiError("bad_csr", "could not sign the certificate request: " + e.getMessage()));
+        }
+    }
+
+    /** The CN of the request's verified mTLS client certificate, or {@code null} if none was presented. Mirrors
+     *  {@code AgentAuthInterceptor}: identity is the cert's CN, never anything the client otherwise claims. */
+    private static String clientCertCommonName(HttpServletRequest request) {
+        Object attr = request.getAttribute("jakarta.servlet.request.X509Certificate");
+        if (!(attr instanceof X509Certificate[] certs) || certs.length == 0) {
+            return null;
+        }
+        try {
+            for (Rdn rdn : new LdapName(certs[0].getSubjectX500Principal().getName()).getRdns()) {
+                if (rdn.getType().equalsIgnoreCase("CN")) {
+                    return rdn.getValue().toString();
+                }
+            }
+        } catch (Exception ignored) {
+            // malformed subject — treat as no identity
+        }
+        return null;
     }
 }

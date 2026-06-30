@@ -58,6 +58,45 @@ public class PostgresTenantStore implements TenantStore {
     }
 
     @Override
+    public boolean isAgentRevoked(String agentId) {
+        if (agentId == null) {
+            return false;
+        }
+        Boolean revoked = jdbc.query(
+                "select revoked_at is not null from agent_enrollment where agent_id = ?",
+                rs -> rs.next() && rs.getBoolean(1), agentId);
+        return Boolean.TRUE.equals(revoked);
+    }
+
+    @Override
+    public boolean revokeAgent(String tenantId, String agentId, String reason) {
+        if (tenantId == null || agentId == null) {
+            return false;
+        }
+        // Idempotent: stamp revoked_at (and the reason) for the agent in this tenant. A second revoke just
+        // refreshes the timestamp; the row count (1) still means "the agent exists in this tenant".
+        int rows = jdbc.update(
+                "update agent_enrollment set revoked_at = now(), revoked_reason = ? "
+                        + "where agent_id = ? and tenant_id = ?", reason, agentId, tenantId);
+        return rows == 1;
+    }
+
+    @Override
+    public Optional<String> reEnrollAgent(String tenantId, String agentId) {
+        if (tenantId == null || agentId == null) {
+            return Optional.empty();
+        }
+        // Issue a fresh one-time token and clear the revoked/consumed marks, so the agent (or a replacement
+        // provisioned with this token) can bootstrap a new certificate. Rewrites the token PK in place.
+        String newToken = "enroll-" + java.util.UUID.randomUUID();
+        int rows = jdbc.update(
+                "update agent_enrollment set token = ?, consumed_at = null, revoked_at = null, "
+                        + "revoked_reason = null where agent_id = ? and tenant_id = ?",
+                newToken, agentId, tenantId);
+        return rows == 1 ? Optional.of(newToken) : Optional.empty();
+    }
+
+    @Override
     public Optional<Tenant> tenantByApiKey(String apiKey) {
         if (apiKey == null) {
             return Optional.empty();

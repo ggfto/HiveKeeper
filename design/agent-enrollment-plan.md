@@ -8,7 +8,22 @@
 > `EnrollmentCertificateControllerTest`, `EnrollmentBootstrapTest`, + a Postgres-IT consume check.
 > **Deviations from this plan:** CA loads a PKCS12 keystore (reuses `dev-pki/ca.p12`) instead of separate
 > `HIVEKEEPER_CA_CERT`/`_KEY` PEMs; the cert is returned as a PEM bundle (leaf then CA) rather than a JSON
-> `{certificatePem, caChainPem}`. Slice 2 (auto-renewal, revocation, intermediate CA, KMS/HSM) is below.
+> `{certificatePem, caChainPem}`.
+>
+> **Status: slice 2 (auto-renewal + revocation) SHIPPED.** Auto-renewal: `EnrollmentRenewal` in `hive-agent`
+> (a pure `dueForRenewal` window check + an mTLS-authenticated re-issue that **reuses the keypair**, so the
+> gateway's cached public key stays valid) driven by a background loop in `AgentMain`
+> (`HIVEKEEPER_CERT_RENEW_WINDOW_DAYS` / `_CHECK_HOURS`); the gateway endpoint is
+> `POST /api/enrollments/certificate/renew`, authenticated by the agent's current client cert (no token). The
+> renewed keystore is swapped into the WS channel (`WebSocketFrameChannel.useSslContext`) for the next
+> reconnect. CSR/keystore logic is shared with bootstrap via `EnrollmentKeystores`. Revocation: by agent
+> identity, enforced at the auth seam (`AgentAuthInterceptor` → 403) and the renew endpoint; admin
+> `POST /api/agents/{id}/revoke` + `/re-enroll` (new one-time token), `TenantStore.isAgentRevoked` /
+> `revokeAgent` / `reEnrollAgent`, Flyway **V12** (`revoked_at` / `revoked_reason`). The gateway is the sole
+> relying party, so revocation needs no CRL/OCSP distribution. Tested: renewal controller (renew / no-cert /
+> unenrolled / revoked / no-CA), `InMemoryTenantStoreRevocationTest`, `AgentAuthInterceptorTest`, the gateway
+> security slice (revoke/re-enroll admin-only + foreign-tenant 404), and `EnrollmentRenewalTest` (window
+> boundaries + keypair-reuse loopback). **Slice 3 (intermediate CA, KMS/HSM custody) remains** — see below.
 
 ## Goal
 

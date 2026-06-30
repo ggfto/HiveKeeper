@@ -36,6 +36,21 @@ final class TlsSupport {
         throw new IllegalStateException("no private key entry found in keystore " + keystorePath);
     }
 
+    /** The agent's own leaf certificate (the first cert of its first key entry) — used to read the expiry that
+     *  drives renewal and to reuse the existing public key in the renewal CSR. */
+    static java.security.cert.X509Certificate clientCertificate(String keystorePath, char[] password)
+            throws Exception {
+        KeyStore keyStore = load(keystorePath, password);
+        for (Enumeration<String> aliases = keyStore.aliases(); aliases.hasMoreElements(); ) {
+            String alias = aliases.nextElement();
+            if (keyStore.isKeyEntry(alias)
+                    && keyStore.getCertificate(alias) instanceof java.security.cert.X509Certificate cert) {
+                return cert;
+            }
+        }
+        throw new IllegalStateException("no certificate entry found in keystore " + keystorePath);
+    }
+
     static SSLContext fromKeystores(String keystorePath, char[] keystorePassword,
                                     String truststorePath, char[] truststorePassword) throws Exception {
         KeyStore keyStore = load(keystorePath, keystorePassword);

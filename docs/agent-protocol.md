@@ -89,7 +89,22 @@ channel — no socket.)
   CA custody is a **file-backed** keystore (`HIVEKEEPER_CA_KEYSTORE`, dev/self-hosted only — reuse
   `dev-pki/ca.p12`) behind a `CertificateAuthority` interface, so a KMS/HSM intermediate CA can replace it
   later. Agent env: `HIVEKEEPER_ENROLLMENT_TOKEN` / `HIVEKEEPER_ENROLLMENT_URL` (+ `HIVEKEEPER_ENROLLMENT_CACERT`
-  for an https bootstrap). **Deferred to slice 2:** auto-renewal, revocation/CRL, intermediate CA, KMS/HSM.
+  for an https bootstrap).
+- **Certificate auto-renewal & revocation (slice 2)** — the agent re-issues its cert before expiry and an
+  operator can revoke/re-enroll an agent:
+  - **Auto-renewal** — a background loop checks the leaf's expiry (`HIVEKEEPER_CERT_RENEW_WINDOW_DAYS`,
+    default 30; checked every `HIVEKEEPER_CERT_RENEW_CHECK_HOURS`, default 12) and, once inside the window,
+    posts a fresh CSR to `POST /api/enrollments/certificate/renew`. That endpoint is authenticated by the
+    agent's **current mTLS cert** (no token — renewal is repeatable); identity is the cert CN, exactly like the
+    handshake. Renewal **keeps the keypair** (it is not a rekey), so the gateway's cached public key — used to
+    seal secrets to the agent — stays valid. The new keystore takes effect on the next reconnect.
+  - **Revocation** — `POST /api/agents/{id}/revoke` (admin) marks the agent's enrollment revoked; the gateway
+    then refuses both its handshake (403) and its renewals. The gateway is the sole relying party for these
+    client certs, so it enforces revocation directly at the auth seam — no CRL/OCSP distribution is needed.
+    `POST /api/agents/{id}/re-enroll` (admin) clears the revoked/consumed marks and mints a **fresh one-time
+    token** so a replacement agent can bootstrap. Flyway `V12` adds `revoked_at` / `revoked_reason`.
+  - **Deferred to a later slice:** an intermediate CA and KMS/HSM custody of the CA key (slice 1's CA key is a
+    file on the gateway — dev/self-hosted only).
 - **Multi-tenancy** — `(tenantId, agentId)`-keyed registry; REST scoped by `X-Tenant-Key`; cross-tenant
   lookups 404 with no existence leakage.
 - **Postgres + RLS** — the `postgres` profile backs tenants/enrollments/fleet/jobs with PostgreSQL (Flyway);
@@ -109,10 +124,12 @@ including submit-while-agent-offline → reconnect → redelivered → succeeded
 
 ## Not yet implemented
 
-- **Certificate auto-renewal & revocation (enrollment slice 2)** — bootstrap (token → CSR → signed cert) is
-  built (see Implemented); what remains is the agent re-issuing before expiry over its current mTLS, a
-  revocation story (short-lived certs + re-bootstrap, or CRL/OCSP), an intermediate CA, and KMS/HSM custody
-  of the CA key (slice 1's CA key is a file on the gateway — dev/self-hosted only).
+- **Certificate intermediate CA & KMS/HSM custody (enrollment slice 3)** — slices 1–2 (bootstrap, auto-renewal,
+  revocation) are built (see Implemented). What remains for production custody is an **intermediate CA** (root
+  signs an intermediate; leaves chain root → intermediate → leaf) and moving the CA private key into a
+  **KMS/HSM** behind the existing `CertificateAuthority` interface — slice 1's CA key is a file on the gateway
+  (dev/self-hosted only). A formal signed **CRL/OCSP** would only be needed if something other than the gateway
+  ever verifies these client certs.
 - **End-to-end secret encryption to the agent's public key** — **done**. Credential management
   (`SetCredential`), minted PPSK keys (`ManagePpskUser`), and now **secret-bearing durable jobs** all seal to
   the agent's key with `EnvelopeCipher`: a `configure-ssid` / `configure-hive` job is wrapped in a

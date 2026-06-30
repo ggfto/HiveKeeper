@@ -6,6 +6,7 @@ import org.bouncycastle.pkcs.PKCS10CertificationRequest;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.http.ResponseEntity;
+import org.springframework.mock.web.MockHttpServletRequest;
 
 import java.io.ByteArrayInputStream;
 import java.io.StringWriter;
@@ -14,6 +15,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.security.cert.CertificateFactory;
 import java.security.cert.X509Certificate;
+import java.time.Duration;
 import java.util.List;
 
 import org.bouncycastle.openssl.jcajce.JcaPEMWriter;
@@ -116,6 +118,60 @@ class EnrollmentCertificateControllerTest {
         ResponseEntity<?> retry = controller.issueCertificate(TOKEN, csrPem("x"));
         assertEquals(200, retry.getStatusCode().value());
         assertInstanceOf(String.class, retry.getBody());
+    }
+
+    // -- renewal (mTLS-authenticated, no token) ---------------------------------
+
+    @Test
+    void aValidClientCertRenewsForItsEnrolledIdentity() throws Exception {
+        FileCertificateAuthority ca = realCa();
+        var controller = new EnrollmentCertificateController(tenants, provider(ca));
+        X509Certificate clientCert = ca.sign(CaFixtures.newCsr("lab-agent"), "lab-agent", Duration.ofDays(1));
+
+        ResponseEntity<?> response = controller.renewCertificate(csrPem("ignored"), withClientCert(clientCert));
+
+        assertEquals(200, response.getStatusCode().value());
+        List<X509Certificate> certs = parse((String) response.getBody());
+        assertTrue(certs.get(0).getSubjectX500Principal().getName().contains("CN=lab-agent"),
+                "renewed leaf keeps the server-assigned agentId");
+    }
+
+    @Test
+    void renewalWithoutAClientCertIsUnauthorized() throws Exception {
+        var controller = new EnrollmentCertificateController(tenants, provider(realCa()));
+        // No X509Certificate attribute on the request — the agent presented no client cert.
+        assertEquals(401, controller.renewCertificate(csrPem("x"), new MockHttpServletRequest())
+                .getStatusCode().value());
+    }
+
+    @Test
+    void renewalForAnUnenrolledIdentityIsUnauthorized() throws Exception {
+        FileCertificateAuthority ca = realCa();
+        var controller = new EnrollmentCertificateController(tenants, provider(ca));
+        X509Certificate ghost = ca.sign(CaFixtures.newCsr("ghost"), "ghost", Duration.ofDays(1));
+        assertEquals(401, controller.renewCertificate(csrPem("x"), withClientCert(ghost)).getStatusCode().value());
+    }
+
+    @Test
+    void aRevokedAgentCannotRenew() throws Exception {
+        FileCertificateAuthority ca = realCa();
+        var controller = new EnrollmentCertificateController(tenants, provider(ca));
+        tenants.revokeAgent("acme", "lab-agent", "compromised");
+        X509Certificate clientCert = ca.sign(CaFixtures.newCsr("lab-agent"), "lab-agent", Duration.ofDays(1));
+        assertEquals(403, controller.renewCertificate(csrPem("x"), withClientCert(clientCert)).getStatusCode().value());
+    }
+
+    @Test
+    void renewalWithoutACaReportsNotImplemented() throws Exception {
+        var controller = new EnrollmentCertificateController(tenants, provider(null));
+        assertEquals(501, controller.renewCertificate(csrPem("x"), new MockHttpServletRequest())
+                .getStatusCode().value());
+    }
+
+    private static MockHttpServletRequest withClientCert(X509Certificate cert) {
+        MockHttpServletRequest request = new MockHttpServletRequest();
+        request.setAttribute("jakarta.servlet.request.X509Certificate", new X509Certificate[]{cert});
+        return request;
     }
 
     private static List<X509Certificate> parse(String pem) throws Exception {

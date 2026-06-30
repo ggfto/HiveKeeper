@@ -24,8 +24,10 @@ backoff + jitter) that re-announces on every connect.
 | `HIVEKEEPER_SSH_HOSTKEY` | `tofu` | SSH host-key policy: `tofu` (trust-on-first-use), `strict` (key must be pre-seeded), or `accept-all` (lab escape hatch, no verification) |
 | `HIVEKEEPER_KNOWN_HOSTS` | `hivekeeper-known_hosts` | managed known_hosts file for `tofu`/`strict` (recorded on first trust; a later mismatch is refused) |
 | `HIVEKEEPER_ENROLLMENT_TOKEN` | _(unset)_ | one-time enrollment token. With a keystore path set but no keystore file yet, the agent bootstraps a client cert (keypair → CSR → signed cert) before connecting. |
-| `HIVEKEEPER_ENROLLMENT_URL` | _(unset)_ | gateway base URL for the bootstrap CSR exchange (e.g. `https://gw:8443`) |
+| `HIVEKEEPER_ENROLLMENT_URL` | _(unset)_ | gateway base URL for the bootstrap **and renewal** CSR exchange (e.g. `https://gw:8443`) |
 | `HIVEKEEPER_ENROLLMENT_CACERT` | _(unset)_ | optional PEM CA bundle to trust the gateway's HTTPS server cert during bootstrap |
+| `HIVEKEEPER_CERT_RENEW_WINDOW_DAYS` | `30` | auto-renew the mTLS cert once it is within this many days of expiry. Renewal re-issues over the agent's **current** cert (mTLS, no token) and reuses the keypair; needs `HIVEKEEPER_ENROLLMENT_URL`. |
+| `HIVEKEEPER_CERT_RENEW_CHECK_HOURS` | `12` | how often the agent checks its cert's expiry |
 
 > Resolution always happens on the agent — the cloud never sees device secrets, only an opaque `credRef`.
 > With a vault configured, each device's `credRef` maps to its own local secret (encrypted at rest), and the
@@ -56,5 +58,7 @@ The gateway side (`hive-gateway`) is built, and the full chain is proven live: H
 mTLS WebSocket (agent, cert identity) → SSH (agent → AP230), including submit-while-offline → reconnect →
 redelivered → succeeded. Durable jobs, idempotent redelivery, and `Resume` are handled by the gateway's
 job DB (the `postgres` profile); `WebSocketLoopbackTest` still proves the agent in isolation against a stub
-gateway over a real socket. What remains is automated certificate enrollment — see the root README's
-[Roadmap](../README.md#roadmap) and [`docs/agent-protocol.md`](../docs/agent-protocol.md).
+gateway over a real socket. Automated certificate enrollment is done — bootstrap (token → CSR → cert),
+auto-renewal before expiry, and operator revoke/re-enroll; what remains is an intermediate CA + KMS/HSM key
+custody. See the root README's [Roadmap](../README.md#roadmap) and
+[`docs/agent-protocol.md`](../docs/agent-protocol.md).

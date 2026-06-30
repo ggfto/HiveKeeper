@@ -24,6 +24,34 @@ public interface TenantStore {
         return false;
     }
 
+    /**
+     * True when the agent's enrollment has been revoked (decommissioned or compromised). The auth seam and the
+     * certificate-renewal endpoint refuse a revoked agent, so a single mark blocks every certificate it could
+     * present (the CN=agentId identity is stable across renewals). Cross-tenant lookup — the {@code agentId} is
+     * globally unique. The default never revokes (stores that do not track revocation).
+     */
+    default boolean isAgentRevoked(String agentId) {
+        return false;
+    }
+
+    /**
+     * Revoke an agent within {@code tenantId} (idempotent). Returns {@code true} when the agent exists in that
+     * tenant (and is now revoked), {@code false} when it does not. The default throws — stores that cannot
+     * mutate enrollments (the seed-only in-memory demo stack) do not support revocation.
+     */
+    default boolean revokeAgent(String tenantId, String agentId, String reason) {
+        throw new UnsupportedOperationException("this tenant store cannot revoke agents");
+    }
+
+    /**
+     * Re-enroll an agent within {@code tenantId}: clear its revoked/consumed marks and issue a FRESH one-time
+     * token, returning it (so an operator can provision a replacement agent). Returns empty when the agent does
+     * not exist in the tenant. The default throws — stores that cannot mint enrollments do not support it.
+     */
+    default Optional<String> reEnrollAgent(String tenantId, String agentId) {
+        throw new UnsupportedOperationException("this tenant store cannot re-enroll agents");
+    }
+
     Optional<Tenant> tenantByApiKey(String apiKey);
 
     Optional<Tenant> tenant(String tenantId);
