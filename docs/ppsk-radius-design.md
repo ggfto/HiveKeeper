@@ -3,11 +3,13 @@ title: PPSK via RADIUS — design
 description: How HiveKeeper will mint and own per-user Private PSKs by making the on-prem agent run a RADIUS server (PPSK "Caminho B").
 ---
 
-> **Status: design for a future phase — not yet built.** This is the architecture for PPSK *Caminho B*
-> (admin-driven key minting). *Caminho A* (self-registration: the HiveAP serves PPSK and hosts the enrolment
-> portal) already ships — see [Capabilities](/capabilities/) → Wi-Fi → PPSK. This document exists so the phase
-> can be picked up with the hard decisions already made; the grammar quoted here was confirmed live on an
-> AP230 (HiveOS 10.6r1a), the RADIUS runtime is the part that still needs to be built and validated.
+> **Status: BUILT and unit-tested; lab-untested (milestone 4 pending).** This is the architecture for PPSK
+> *Caminho B* (admin-driven key minting). *Caminho A* (self-registration) and the AP→RADIUS wiring already ship
+> live-confirmed; milestones 1-3 below (the sealed `ManagePpskUser` pipeline, the gateway key CRUD, and the
+> agent's FreeRADIUS provisioning) are implemented and unit-tested. The remaining work is the **live lab
+> validation** (milestone 4) — see the [runbook](ppsk-radius-runbook.md) — which also captures the one open
+> grammar question (the Aerohive user-profile VSA). The CLI grammar quoted here was confirmed live on an AP230
+> (HiveOS 10.6r1a).
 
 ## The gap
 
@@ -164,6 +166,20 @@ REST under the existing `GatewayController`, mirroring the agent-op authz model
    resolved: `?`-help on the AP230 offers **pap** (default), **chap**, **ms-chap-v2**, and a bare `radius-auth`
    enables it with PAP. All lines were applied to the running-config, confirmed, and reverted live on the AP230
    (non-persistent). The shared secret is masked by `Secrets` server-side. Unit-tested.
-2. `PpskUser` model + key CRUD API + sealed `ManagePpskUser` pipeline (no live RADIUS yet; unit-tested).
-3. Agent RADIUS runtime (FreeRADIUS integration) + provisioning.
-4. Live lab validation (the plan above) → leave "untested".
+2. `PpskUser` model + key CRUD API + sealed `ManagePpskUser` pipeline — **SHIPPED (unit-tested)**. The
+   `ManagePpskUser` command / `PpskUserManaged` result ride the agent-control path (handled before SSH dispatch,
+   like `SetCredential` — the AP is never touched). The gateway generates the PSK (`PskGenerator`), seals it to
+   the agent (`EnvelopeCipher`), persists **metadata + `psk_ref` only** (`ppsk_user`, Flyway `V9`, RLS;
+   `PostgresPpskUserService` / `InMemoryPpskUserService`), and exposes the REST + authz above (returning the key
+   once). The agent unseals locally and writes the encrypted-at-rest `FilePpskUserStore`. A **PPSK users** web
+   tab drives the CRUD. **Where the PSK is generated** (open question) resolved to **gateway-side**, sealed to
+   the agent — consistent with the existing `SetCredential` flow; the cloud never persists the usable key.
+3. Agent RADIUS runtime (FreeRADIUS integration) + provisioning — **SHIPPED (unit-tested)**.
+   `FreeRadiusFilesProvisioner` renders the user set into a FreeRADIUS `files` authorize file (PAP
+   `Cleartext-Password` + RFC 2868 VLAN tunnel attributes) on every mutation; `scripts/dev-radius.ps1` runs
+   FreeRADIUS in Podman co-located with the agent. **Embedded vs. managed FreeRADIUS** (open question) resolved
+   to **managed FreeRADIUS** reading an agent-written authorize file (the Java side stays pure + testable).
+4. Live lab validation (the plan above) → leave "untested" — **REMAINS**. See the dedicated
+   [runbook](ppsk-radius-runbook.md). The one unresolved open question is the **exact Aerohive user-profile VSA**
+   for returning a named user-profile on Accept: the RFC VLAN attributes are emitted; the VSA is a documented
+   comment until captured from a real exchange.

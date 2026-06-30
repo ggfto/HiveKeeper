@@ -5,6 +5,7 @@ import io.hivekeeper.core.api.EventSink;
 import io.hivekeeper.core.api.Result;
 import io.hivekeeper.core.crypto.CredentialPayload;
 import io.hivekeeper.core.crypto.EnvelopeCipher;
+import io.hivekeeper.core.crypto.PskGenerator;
 import io.hivekeeper.core.model.Device;
 import io.hivekeeper.core.model.DeviceRef;
 import io.hivekeeper.core.model.HiveSpec;
@@ -16,6 +17,7 @@ import io.hivekeeper.gateway.access.ResourceScope;
 import io.hivekeeper.gateway.access.Role;
 import io.hivekeeper.core.crypto.Secrets;
 import io.hivekeeper.gateway.fleet.FleetService;
+import io.hivekeeper.gateway.ppsk.PpskUserService;
 import io.hivekeeper.gateway.tenant.TenantStore;
 import io.hivekeeper.protocol.RemoteEngine;
 import io.hivekeeper.wire.JsonCodec;
@@ -24,6 +26,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -113,6 +116,29 @@ public class GatewayController {
     public record CredentialSetResponse(String credRef, boolean vaultUpdated, boolean deviceUpdated) {
     }
 
+    /** Mint a Private-PSK user (PPSK "Caminho B"). The gateway generates the key, seals it to the agent, and
+     *  records only metadata + a reference — the usable PSK lives on the agent's RADIUS store. {@code pskLength}
+     *  is optional (8–63, default 20). {@code userProfileAttr}/{@code vlanId} are the policy RADIUS returns. */
+    public record CreatePpskUserRequest(String securityObject, String userGroup, String username,
+                                        Integer userProfileAttr, Integer vlanId, String scheduleName,
+                                        List<String> macBindings, Integer pskLength) {
+    }
+
+    /** A PPSK user as the cloud sees it — metadata only, NEVER a usable key. */
+    public record PpskUserView(String id, String securityObject, String userGroup, String username,
+                               Integer userProfileAttr, Integer vlanId, String scheduleName,
+                               List<String> macBindings, String status, java.time.Instant createdAt,
+                               java.time.Instant rotatedAt) {
+    }
+
+    /** Create/rotate response: the user plus the freshly generated PSK, returned ONCE for the operator to hand
+     *  to the user. The cloud never stores it; this is the only time it is visible. */
+    public record PpskUserCreated(PpskUserView user, String psk) {
+    }
+
+    public record PpskUserList(List<PpskUserView> users) {
+    }
+
     public record AdoptResponse(String deviceId, String serial, String model) {
     }
 
@@ -141,12 +167,14 @@ public class GatewayController {
 
     private final JsonCodec codec = new JsonCodec();
     private final EnvelopeCipher envelope = new EnvelopeCipher();   // stateless; seals credentials to agent keys
+    private final PskGenerator pskGen = new PskGenerator();          // strong Private-PSK generation (PPSK)
     private final AgentRegistry registry;
     private final AccessGuard guard;
     private final TenantStore tenants;
     private final Optional<OperationLog> operationLog;
     private final Optional<JobGateway> jobGateway;
     private final Optional<FleetService> fleet;
+    private final Optional<PpskUserService> ppskUsers;
     private final ExecutorService sseExecutor = Executors.newFixedThreadPool(8, runnable -> {
         Thread thread = new Thread(runnable, "gw-sse");
         thread.setDaemon(true);
@@ -155,13 +183,14 @@ public class GatewayController {
 
     public GatewayController(AgentRegistry registry, AccessGuard guard, TenantStore tenants,
                              Optional<OperationLog> operationLog, Optional<JobGateway> jobGateway,
-                             Optional<FleetService> fleet) {
+                             Optional<FleetService> fleet, Optional<PpskUserService> ppskUsers) {
         this.registry = registry;
         this.guard = guard;
         this.tenants = tenants;
         this.operationLog = operationLog;
         this.jobGateway = jobGateway;
         this.fleet = fleet;
+        this.ppskUsers = ppskUsers;
     }
 
     /** Submit a DURABLE job: persisted, dispatched if the agent is connected, and redelivered on reconnect.
@@ -544,6 +573,162 @@ public class GatewayController {
             log.warn("set-credential via agent '{}' failed: {}", agentId, e.getMessage());
             return status(502, new ApiError(e.getClass().getSimpleName(), e.getMessage() == null ? "" : e.getMessage()));
         }
+    }
+
+    // -- PPSK users (Caminho B): admin-minted Private PSKs, owned on-prem by the agent's RADIUS store -------
+
+    /** List an agent's PPSK users (metadata only — never a usable key). Viewer on the agent's site. */
+    @GetMapping("/api/agents/{agentId}/ppsk-users")
+    public ResponseEntity<String> listPpskUsers(@PathVariable String agentId) {
+        Principal p = guard.authenticate();
+        guard.require(p, Role.VIEWER, agentScope(p, agentId));
+        if (ppskUsers.isEmpty()) {
+            return status(501, new ApiError("not_supported", "PPSK user management is not configured"));
+        }
+        List<PpskUserView> views = ppskUsers.get().list(p.tenantId(), agentId).stream().map(this::toView).toList();
+        return json(new PpskUserList(views));
+    }
+
+    /** Mint a PPSK user: generate the key, seal it to the agent, provision its RADIUS store, record metadata.
+     *  Operator on the agent's site. The freshly generated PSK is returned ONCE in the response. */
+    @PostMapping("/api/agents/{agentId}/ppsk-users")
+    public Callable<ResponseEntity<String>> createPpskUser(@PathVariable String agentId,
+                                                           @RequestBody CreatePpskUserRequest req) {
+        Principal p = guard.authenticate();
+        guard.require(p, Role.OPERATOR, agentScope(p, agentId));
+        return () -> doCreatePpskUser(p, agentId, req);
+    }
+
+    /** Rotate a PPSK user's key. Operator on the agent's site. Returns the new PSK ONCE. */
+    @PostMapping("/api/agents/{agentId}/ppsk-users/{id}/rotate")
+    public Callable<ResponseEntity<String>> rotatePpskUser(@PathVariable String agentId, @PathVariable String id) {
+        Principal p = guard.authenticate();
+        guard.require(p, Role.OPERATOR, agentScope(p, agentId));
+        return () -> doRotatePpskUser(p, agentId, id);
+    }
+
+    /** Revoke a PPSK user: remove it from the agent's RADIUS store and mark it revoked. Operator on the site. */
+    @DeleteMapping("/api/agents/{agentId}/ppsk-users/{id}")
+    public Callable<ResponseEntity<String>> revokePpskUser(@PathVariable String agentId, @PathVariable String id) {
+        Principal p = guard.authenticate();
+        guard.require(p, Role.OPERATOR, agentScope(p, agentId));
+        return () -> doRevokePpskUser(p, agentId, id);
+    }
+
+    private ResponseEntity<String> doCreatePpskUser(Principal p, String agentId, CreatePpskUserRequest req) {
+        if (ppskUsers.isEmpty()) {
+            return status(501, new ApiError("not_supported", "PPSK user management is not configured"));
+        }
+        if (req == null || req.securityObject() == null || req.securityObject().isBlank()
+                || req.username() == null || req.username().isBlank()) {
+            return status(400, new ApiError("bad_request", "securityObject and username are required"));
+        }
+        Optional<RemoteEngine> engine = registry.engine(p.tenantId(), agentId);
+        if (engine.isEmpty()) {
+            return status(404, new ApiError("agent_not_connected", agentId));
+        }
+        String so = req.securityObject().trim();
+        String username = req.username().trim();
+        String psk;
+        try {
+            psk = pskGen.generate(req.pskLength() == null ? 20 : req.pskLength());
+        } catch (IllegalArgumentException e) {
+            return status(400, new ApiError("bad_request", e.getMessage()));
+        }
+        List<String> macs = req.macBindings() == null ? List.of() : req.macBindings();
+        String sealed = sealPsk(p, agentId, username, psk);
+        Command cmd = Command.ManagePpskUser.create(so, req.userGroup(), username, sealed,
+                req.userProfileAttr(), req.vlanId(), req.scheduleName(), macs);
+        try {
+            Result result = engine.get().execute(cmd, EventSink.NOOP);
+            if (!(result instanceof Result.PpskUserManaged)) {
+                return status(502, new ApiError("unexpected_result", "create did not return a PPSK result"));
+            }
+            String pskRef = "pskref-" + java.util.UUID.randomUUID();
+            String id = ppskUsers.get().create(p.tenantId(), agentId, so, req.userGroup(), username, pskRef,
+                    req.userProfileAttr(), req.vlanId(), req.scheduleName(), macs);
+            record(p.tenantId(), agentId, "ppsk-create", so, "PpskUserManaged");
+            PpskUserView view = ppskUsers.get().get(p.tenantId(), id).map(this::toView).orElse(null);
+            return json(new PpskUserCreated(view, psk));
+        } catch (IllegalStateException e) {
+            return status(409, new ApiError("conflict", e.getMessage()));
+        } catch (Exception e) {
+            log.warn("ppsk create via agent '{}' failed: {}", agentId, e.getMessage());
+            return status(502, new ApiError(e.getClass().getSimpleName(), e.getMessage() == null ? "" : e.getMessage()));
+        }
+    }
+
+    private ResponseEntity<String> doRotatePpskUser(Principal p, String agentId, String id) {
+        if (ppskUsers.isEmpty()) {
+            return status(501, new ApiError("not_supported", "PPSK user management is not configured"));
+        }
+        Optional<PpskUserService.PpskUser> existing = ppskUsers.get().get(p.tenantId(), id);
+        if (existing.isEmpty() || !existing.get().agentId().equals(agentId)) {
+            return status(404, new ApiError("ppsk_user_not_found", id));
+        }
+        Optional<RemoteEngine> engine = registry.engine(p.tenantId(), agentId);
+        if (engine.isEmpty()) {
+            return status(404, new ApiError("agent_not_connected", agentId));
+        }
+        PpskUserService.PpskUser u = existing.get();
+        String psk = pskGen.generate(20);
+        String sealed = sealPsk(p, agentId, u.username(), psk);
+        Command cmd = Command.ManagePpskUser.rotate(u.securityObject(), u.userGroup(), u.username(), sealed,
+                u.userProfileAttr(), u.vlanId(), u.scheduleName(), u.macBindings());
+        try {
+            Result result = engine.get().execute(cmd, EventSink.NOOP);
+            if (!(result instanceof Result.PpskUserManaged)) {
+                return status(502, new ApiError("unexpected_result", "rotate did not return a PPSK result"));
+            }
+            ppskUsers.get().markRotated(p.tenantId(), id, "pskref-" + java.util.UUID.randomUUID());
+            record(p.tenantId(), agentId, "ppsk-rotate", u.securityObject(), "PpskUserManaged");
+            PpskUserView view = ppskUsers.get().get(p.tenantId(), id).map(this::toView).orElse(null);
+            return json(new PpskUserCreated(view, psk));
+        } catch (Exception e) {
+            log.warn("ppsk rotate via agent '{}' failed: {}", agentId, e.getMessage());
+            return status(502, new ApiError(e.getClass().getSimpleName(), e.getMessage() == null ? "" : e.getMessage()));
+        }
+    }
+
+    private ResponseEntity<String> doRevokePpskUser(Principal p, String agentId, String id) {
+        if (ppskUsers.isEmpty()) {
+            return status(501, new ApiError("not_supported", "PPSK user management is not configured"));
+        }
+        Optional<PpskUserService.PpskUser> existing = ppskUsers.get().get(p.tenantId(), id);
+        if (existing.isEmpty() || !existing.get().agentId().equals(agentId)) {
+            return status(404, new ApiError("ppsk_user_not_found", id));
+        }
+        Optional<RemoteEngine> engine = registry.engine(p.tenantId(), agentId);
+        if (engine.isEmpty()) {
+            return status(404, new ApiError("agent_not_connected", agentId));
+        }
+        PpskUserService.PpskUser u = existing.get();
+        Command cmd = Command.ManagePpskUser.revoke(u.securityObject(), u.username());
+        try {
+            engine.get().execute(cmd, EventSink.NOOP);
+            ppskUsers.get().revoke(p.tenantId(), id);
+            record(p.tenantId(), agentId, "ppsk-revoke", u.securityObject(), "PpskUserManaged");
+            return json(toView(ppskUsers.get().get(p.tenantId(), id).orElse(u)));
+        } catch (Exception e) {
+            log.warn("ppsk revoke via agent '{}' failed: {}", agentId, e.getMessage());
+            return status(502, new ApiError(e.getClass().getSimpleName(), e.getMessage() == null ? "" : e.getMessage()));
+        }
+    }
+
+    /** Seals {@code username\npsk} to the agent's public key (env1:), or the INSECURE plain1: dev fallback when
+     *  the agent connected without an mTLS cert — the gateway keeps no plaintext key either way. */
+    private String sealPsk(Principal p, String agentId, String username, String psk) {
+        PublicKey agentKey = registry.publicKey(p.tenantId(), agentId).orElse(null);
+        if (agentKey == null) {
+            log.warn("agent '{}' has no public key (no mTLS cert); sealing the PSK with the INSECURE plain1: "
+                    + "dev fallback — enable mTLS for end-to-end key encryption", agentId);
+        }
+        return envelope.seal(agentKey, CredentialPayload.encode(username, psk));
+    }
+
+    private PpskUserView toView(PpskUserService.PpskUser u) {
+        return new PpskUserView(u.id(), u.securityObject(), u.userGroup(), u.username(), u.userProfileAttr(),
+                u.vlanId(), u.scheduleName(), u.macBindings(), u.status(), u.createdAt(), u.rotatedAt());
     }
 
     /** Bulk read op (backup|inventory) over every registered device in a group/site/org. Each device is

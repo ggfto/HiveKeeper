@@ -12,8 +12,13 @@ import java.net.URI;
  *   <li>{@code HIVEKEEPER_CREDENTIAL_VAULT} — path to a per-device credential vault (properties:
  *       {@code <credRef>.user} / {@code <credRef>.password}); resolved locally, never sent by the cloud.
  *       When set, HiveKeeper can also manage credentials from the UI (writes this file).</li>
- *   <li>{@code HIVEKEEPER_VAULT_KEY} — base64 AES-256 key that encrypts vault passwords at rest; without it
- *       the vault is read/written in plaintext (a logged warning)</li>
+ *   <li>{@code HIVEKEEPER_VAULT_KEY} — base64 AES-256 key that encrypts vault passwords (and PPSK keys) at
+ *       rest; without it they are read/written in plaintext (a logged warning)</li>
+ *   <li>{@code HIVEKEEPER_PPSK_STORE} — path to the on-prem PPSK user store (properties); when set (and mTLS
+ *       is configured for unsealing), HiveKeeper can mint/rotate/revoke Private PSKs from the UI
+ *       ({@code ManagePpskUser}). The store feeds the co-located RADIUS server.</li>
+ *   <li>{@code HIVEKEEPER_RADIUS_DIR} — directory the RADIUS provisioner writes its authorize file to
+ *       (optional; PPSK keys are still stored without it, just not pushed to a RADIUS server)</li>
  *   <li>{@code HIVEKEEPER_BACKUP_DIR} — local git backup directory</li>
  *   <li>{@code HIVEKEEPER_TLS_KEYSTORE} (+ {@code _PASSWORD}) — client keystore for mTLS (PKCS12)</li>
  *   <li>{@code HIVEKEEPER_TLS_TRUSTSTORE} (+ {@code _PASSWORD}) — CA truststore (PKCS12)</li>
@@ -21,8 +26,9 @@ import java.net.URI;
  * mTLS is enabled when a keystore is configured (use a {@code wss://} gateway URL).
  */
 public record AgentConfig(URI gatewayUri, String agentId, String defaultUser, String defaultPassword,
-                          String credentialVault, String vaultKey, String backupDir, String tlsKeystore,
-                          String tlsKeystorePassword, String tlsTruststore, String tlsTruststorePassword) {
+                          String credentialVault, String vaultKey, String ppskStore, String radiusDir,
+                          String backupDir, String tlsKeystore, String tlsKeystorePassword,
+                          String tlsTruststore, String tlsTruststorePassword) {
 
     public boolean mtlsEnabled() {
         return tlsKeystore != null && !tlsKeystore.isBlank();
@@ -36,6 +42,8 @@ public record AgentConfig(URI gatewayUri, String agentId, String defaultUser, St
                 env("HIVEKEEPER_DEFAULT_PASSWORD", ""),
                 env("HIVEKEEPER_CREDENTIAL_VAULT", null),
                 env("HIVEKEEPER_VAULT_KEY", null),
+                env("HIVEKEEPER_PPSK_STORE", null),
+                env("HIVEKEEPER_RADIUS_DIR", null),
                 env("HIVEKEEPER_BACKUP_DIR", "hivekeeper-backups"),
                 env("HIVEKEEPER_TLS_KEYSTORE", null),
                 env("HIVEKEEPER_TLS_KEYSTORE_PASSWORD", "changeit"),

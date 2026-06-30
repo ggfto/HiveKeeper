@@ -20,6 +20,7 @@ import { PowerForm } from '../components/organisms/PowerForm'
 import { LedForm } from '../components/organisms/LedForm'
 import { DeviceOverviewForm } from '../components/organisms/DeviceOverviewForm'
 import { CredentialForm } from '../components/organisms/CredentialForm'
+import { PpskUsersSection } from '../components/organisms/PpskUsersSection'
 import { CaptivePortalForm } from '../components/organisms/CaptivePortalForm'
 import { MonitoringSection } from '../components/organisms/MonitoringSection'
 import { MONITORING_SECTIONS } from '../lib/configSchema'
@@ -50,6 +51,7 @@ const SECTIONS = [
   { id: 'clientmode', label: 'Client mode', icon: Router },
   { id: 'network', label: 'Network', icon: Globe },
   { id: 'policy', label: 'Policy', icon: ShieldUser },
+  { id: 'ppskusers', label: 'PPSK users', icon: KeyRound },
   { id: 'schedules', label: 'Schedules', icon: CalendarClock },
   { id: 'monitoring', label: 'Monitoring', icon: Activity },
   { id: 'advanced', label: 'Advanced', icon: Terminal },
@@ -139,6 +141,12 @@ export function DeviceDetailPage() {
       const r = await gateway.setCredential(d.agentId, { host: d.mgmtIp, port: 22, deviceId: d.deviceId, ...body })
       return `Credential: vault ${r?.vaultUpdated ? 'updated' : 'unchanged'}${r?.deviceUpdated ? ' · AP password changed' : ''}`
     })
+  // PPSK users (Caminho B): list/mint/rotate/revoke per-user Private PSKs the gateway owns via the agent's
+  // RADIUS store. The cloud returns the generated key ONCE on create/rotate; the organism shows it then drops it.
+  const loadPpskUsers = useCallback((d) => gateway.ppskUsers(d.agentId).then((r) => r?.users || []), [gateway])
+  const onCreatePpskUser = useCallback((d, body) => gateway.createPpskUser(d.agentId, body), [gateway])
+  const onRotatePpskUser = useCallback((d, id) => gateway.rotatePpskUser(d.agentId, id), [gateway])
+  const onRevokePpskUser = useCallback((d, id) => gateway.revokePpskUser(d.agentId, id), [gateway])
   // Read the SSIDs straight from the AP's running-config (parsed UI-side) so the Wi-Fi list reflects reality.
   const loadSsids = useCallback(
     (d) =>
@@ -431,6 +439,16 @@ export function DeviceDetailPage() {
           )}
           {section === 'policy' && (
             <PolicySection device={device} loadPolicy={loadPolicy} onApply={onApplyConfig} busy={busy} />
+          )}
+          {section === 'ppskusers' && (
+            <PpskUsersSection
+              device={device}
+              loadPpskUsers={loadPpskUsers}
+              onCreate={onCreatePpskUser}
+              onRotate={onRotatePpskUser}
+              onRevoke={onRevokePpskUser}
+              busy={busy}
+            />
           )}
           {section === 'schedules' && (
             <ScheduleSection device={device} loadSchedules={loadSchedules} onApply={onApplyConfig} busy={busy} />

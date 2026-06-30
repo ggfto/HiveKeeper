@@ -65,6 +65,7 @@ public final class RemoteEngine implements Engine {
             case Command.RestoreConfig c -> c.device().id();
             case Command.FirmwareUpgrade c -> c.device().id();
             case Command.SetCredential c -> c.device() != null ? c.device().id() : DeviceId.of(c.credRef());
+            case Command.ManagePpskUser c -> DeviceId.of("ppsk:" + c.securityObject());
             case Command.Discover c -> DeviceId.of(c.cidr());
         };
     }

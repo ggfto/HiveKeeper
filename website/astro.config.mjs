@@ -64,6 +64,7 @@ export default defineConfig({
         { label: 'Architecture', link: '/architecture/' },
         { label: 'Agent ⇄ gateway protocol', link: '/agent-protocol/' },
         { label: 'PPSK via RADIUS — design', link: '/ppsk-radius-design/' },
+        { label: 'PPSK via RADIUS — runbook', link: '/ppsk-radius-runbook/' },
       ],
     }),
   ],

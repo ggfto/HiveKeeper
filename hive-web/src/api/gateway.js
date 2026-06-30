@@ -95,6 +95,12 @@ export function createGateway({ getAuth = () => ({}), fetchImpl = fetch, baseUrl
     // set/rotate a device's SSH credential. The secret is sealed to the agent's key at the gateway and never
     // persisted in the cloud; `alsoSetOnDevice` also changes the admin password on the AP itself.
     setCredential: (agentId, body) => req(`/api/agents/${agentId}/set-credential`, { method: 'POST', body }),
+    // PPSK users (Caminho B): mint/rotate/revoke per-user Private PSKs owned on-prem by the agent's RADIUS.
+    // list returns metadata only; create/rotate return the generated PSK ONCE (the cloud never stores it).
+    ppskUsers: (agentId) => req(`/api/agents/${agentId}/ppsk-users`),
+    createPpskUser: (agentId, body) => req(`/api/agents/${agentId}/ppsk-users`, { method: 'POST', body }),
+    rotatePpskUser: (agentId, id) => req(`/api/agents/${agentId}/ppsk-users/${id}/rotate`, { method: 'POST' }),
+    revokePpskUser: (agentId, id) => req(`/api/agents/${agentId}/ppsk-users/${id}`, { method: 'DELETE' }),
     // bulk read ops across a scope
     bulk: (op, target) => req(`/api/fleet/bulk/${op}`, { method: 'POST', body: bulkBody(target) }),
     // bulk WRITE: apply the same CLI lines (a config template) across a scope; `save` persists with `save config`.

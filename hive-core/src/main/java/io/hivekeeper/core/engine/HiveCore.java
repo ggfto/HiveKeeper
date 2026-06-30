@@ -6,6 +6,7 @@ import io.hivekeeper.core.discovery.TcpBannerScanner;
 import io.hivekeeper.core.drivers.DriverRegistry;
 import io.hivekeeper.core.spi.BackupStore;
 import io.hivekeeper.core.spi.CredentialProvider;
+import io.hivekeeper.core.spi.PpskUserStore;
 import io.hivekeeper.core.spi.SecretUnsealer;
 import io.hivekeeper.core.spi.WritableCredentialProvider;
 import io.hivekeeper.core.transport.SshTransport;
@@ -33,9 +34,21 @@ public final class HiveCore {
      */
     public static Engine localEngine(CredentialProvider credentials, BackupStore backupStore,
                                      WritableCredentialProvider writableCredentials, SecretUnsealer unsealer) {
+        return localEngine(credentials, backupStore, writableCredentials, unsealer, null);
+    }
+
+    /**
+     * Build a local engine that can also manage credentials and PPSK users. Pass a {@code ppskUsers} store
+     * (+ {@code unsealer}) to enable {@link io.hivekeeper.core.api.Command.ManagePpskUser} (the on-prem agent
+     * does); pass {@code null} to leave PPSK key management disabled.
+     */
+    public static Engine localEngine(CredentialProvider credentials, BackupStore backupStore,
+                                     WritableCredentialProvider writableCredentials, SecretUnsealer unsealer,
+                                     PpskUserStore ppskUsers) {
         SshTransport transport = new SshjTransport();
         DriverRegistry drivers = DriverRegistry.fromServiceLoader();
         Scanner scanner = new TcpBannerScanner();
-        return new LocalEngine(transport, credentials, drivers, backupStore, scanner, writableCredentials, unsealer);
+        return new LocalEngine(transport, credentials, drivers, backupStore, scanner, writableCredentials,
+                unsealer, ppskUsers);
     }
 }

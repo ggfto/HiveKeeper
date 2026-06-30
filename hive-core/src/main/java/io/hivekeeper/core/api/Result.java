@@ -12,7 +12,7 @@ import java.util.UUID;
  *  network-scoped result the deviceId is the scan scope, e.g. the CIDR). */
 public sealed interface Result
         permits Result.Inventory, Result.Backup, Result.RawCapture, Result.Discovered, Result.ConfigApplied,
-                Result.FirmwareUpgraded, Result.CredentialSet {
+                Result.FirmwareUpgraded, Result.CredentialSet, Result.PpskUserManaged {
 
     UUID commandId();
 
@@ -57,5 +57,12 @@ public sealed interface Result
      *  was updated, and whether the admin password was also changed on the AP. Carries NO secret. */
     record CredentialSet(UUID commandId, DeviceId deviceId, String credRef, boolean vaultUpdated,
                          boolean deviceUpdated) implements Result {
+    }
+
+    /** Outcome of a {@link Command.ManagePpskUser}: the user and security object touched and the resulting
+     *  status ({@code active} after create/rotate, {@code revoked} after revoke). Carries NO key — the PSK
+     *  lives only in the on-prem store. The {@code deviceId} is a synthetic {@code ppsk:<so>} scope. */
+    record PpskUserManaged(UUID commandId, DeviceId deviceId, String username, String securityObject,
+                           String status) implements Result {
     }
 }

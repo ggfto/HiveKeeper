@@ -34,8 +34,12 @@ Per device, via the web UI ([device configuration](/device-configuration/) expla
   the AP issues keys locally. A separate **PPSK via RADIUS** block wires the AP's local PPSK server at an external
   RADIUS backend (`aaa ppsk-server radius-server primary <ip>` + `shared-secret` / `auth-port` / `auto-save-interval`)
   and forwards a security object's private-PSK auth to it (`security-object <so> security private-psk radius-auth
-  pap|chap|ms-chap-v2`) — the AP→RADIUS wiring for admin-driven keys. HiveKeeper configures these models; it does not
-  yet mint individual keys (that needs the RADIUS runtime — see the roadmap).
+  pap|chap|ms-chap-v2`). On top of that wiring, a **PPSK users** tab **mints, rotates, and revokes per-user
+  Private PSKs** that HiveKeeper owns on-prem: the gateway generates the key, seals it to the agent, and the
+  agent stores it (encrypted at rest) and provisions a co-located FreeRADIUS — the cloud keeps only metadata + a
+  reference, and the generated key is shown **once**. This admin-minting path (Caminho B) is built and
+  unit-tested but ships **untested** until the live lab pass (see the runbook); the AP→RADIUS wiring and the
+  self-registration model are live-confirmed.
 - **Policy** — **user profiles**: the policy a client lands in (default **VLAN** id or VLAN group, optional
   **QoS policy** and **schedule**), keyed by a numeric attribute (0–4095). List the profiles read from the AP,
   create / overwrite one, **bind** it to an SSID's security object as the default profile, and remove it. Per
@@ -89,9 +93,10 @@ The gateway:
 
 ## Not yet
 
-Alert **delivery** (email / webhook) and a background poller (alerting is on-demand, in-console for now), PPSK
-admin-driven key minting, and any non-HiveOS vendor (the driver SPI is ready for them). Firmware upgrade ships
-but is **lab/untested** until validated on real hardware. The project README's Roadmap tracks the current plan.
+Alert **delivery** (email / webhook) and a background poller (alerting is on-demand, in-console for now), and any
+non-HiveOS vendor (the driver SPI is ready for them). Firmware upgrade and **PPSK admin-driven key minting**
+(Caminho B) both ship but are **lab/untested** until validated on real hardware — PPSK-via-RADIUS has a dedicated
+[runbook](/ppsk-radius-runbook/). The project README's Roadmap tracks the current plan.
 
 A few HiveOS features are **not exposed because the AP230 has no running-config grammar for them** (confirmed
 live, so they can't be driven through the SSH/apply-config path HiveKeeper uses):

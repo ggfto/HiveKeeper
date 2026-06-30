@@ -19,10 +19,12 @@ import io.hivekeeper.core.model.Device;
 import io.hivekeeper.core.model.DeviceId;
 import io.hivekeeper.core.model.DeviceRef;
 import io.hivekeeper.core.model.DiscoveryResult;
+import io.hivekeeper.core.model.PpskUserRecord;
 import io.hivekeeper.core.session.CommandRunner;
 import io.hivekeeper.core.spi.BackupStore;
 import io.hivekeeper.core.spi.CredentialProvider;
 import io.hivekeeper.core.spi.Credentials;
+import io.hivekeeper.core.spi.PpskUserStore;
 import io.hivekeeper.core.spi.SecretUnsealer;
 import io.hivekeeper.core.spi.WritableCredentialProvider;
 import io.hivekeeper.core.transport.SshSession;
@@ -32,6 +34,7 @@ import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.UUID;
 
@@ -50,21 +53,30 @@ public final class LocalEngine implements Engine {
     private final BackupStore backupStore;
     private final Scanner scanner;
     private final WritableCredentialProvider writableCredentials;   // nullable — credential mgmt off when null
-    private final SecretUnsealer unsealer;                          // nullable — credential mgmt off when null
+    private final SecretUnsealer unsealer;                          // nullable — credential/PPSK mgmt off when null
+    private final PpskUserStore ppskUsers;                          // nullable — PPSK mgmt off when null
 
     public LocalEngine(SshTransport transport, CredentialProvider credentials, DriverRegistry drivers,
                        BackupStore backupStore, Scanner scanner) {
-        this(transport, credentials, drivers, backupStore, scanner, null, null);
+        this(transport, credentials, drivers, backupStore, scanner, null, null, null);
+    }
+
+    public LocalEngine(SshTransport transport, CredentialProvider credentials, DriverRegistry drivers,
+                       BackupStore backupStore, Scanner scanner,
+                       WritableCredentialProvider writableCredentials, SecretUnsealer unsealer) {
+        this(transport, credentials, drivers, backupStore, scanner, writableCredentials, unsealer, null);
     }
 
     /**
      * Full constructor. Pass a {@code writableCredentials} + {@code unsealer} to enable
      * {@link Command.SetCredential} (the on-prem agent does); pass {@code null} for both to leave credential
-     * management disabled (e.g. a read-only/local setup), in which case a {@code SetCredential} is refused.
+     * management disabled. Pass a {@code ppskUsers} store (+ {@code unsealer}) to enable
+     * {@link Command.ManagePpskUser}; {@code null} leaves PPSK key management disabled.
      */
     public LocalEngine(SshTransport transport, CredentialProvider credentials, DriverRegistry drivers,
                        BackupStore backupStore, Scanner scanner,
-                       WritableCredentialProvider writableCredentials, SecretUnsealer unsealer) {
+                       WritableCredentialProvider writableCredentials, SecretUnsealer unsealer,
+                       PpskUserStore ppskUsers) {
         this.transport = transport;
         this.credentials = credentials;
         this.drivers = drivers;
@@ -72,6 +84,7 @@ public final class LocalEngine implements Engine {
         this.scanner = scanner;
         this.writableCredentials = writableCredentials;
         this.unsealer = unsealer;
+        this.ppskUsers = ppskUsers;
     }
 
     @Override
@@ -83,6 +96,9 @@ public final class LocalEngine implements Engine {
         }
         if (command instanceof Command.SetCredential setCredential) {
             return setCredential(id, setCredential, sink);
+        }
+        if (command instanceof Command.ManagePpskUser managePpskUser) {
+            return managePpskUser(id, managePpskUser, sink);
         }
 
         DeviceRef ref = deviceRefOf(command);
@@ -187,6 +203,52 @@ public final class LocalEngine implements Engine {
         }
     }
 
+    /**
+     * Manages a Private-PSK user in the on-prem RADIUS store. Like {@link #setCredential} this is an
+     * agent-control operation, not a device CLI command: the PSK arrives sealed to this node's key, is
+     * unsealed locally, and written to the local store — the cloud never holds the usable key, and the AP
+     * is never touched (HiveOS cannot mint a key over SSH). A {@code revoke} removes the user; a
+     * {@code create}/{@code rotate} upserts it (with its returned VLAN / user-profile policy).
+     */
+    private Result managePpskUser(UUID id, Command.ManagePpskUser cmd, EventSink sink) throws HiveException {
+        DeviceId scope = DeviceId.of("ppsk:" + cmd.securityObject());
+        sink.emit(new Event.Started(id, scope, "ManagePpskUser"));
+        try {
+            if (ppskUsers == null) {
+                throw new IllegalStateException("PPSK user management is not enabled on this engine");
+            }
+            String action = cmd.action() == null ? "" : cmd.action().toLowerCase(Locale.ROOT);
+            String status;
+            switch (action) {
+                case "create", "rotate" -> {
+                    if (unsealer == null) {
+                        throw new IllegalStateException("no unsealer: cannot recover the sealed PSK on this engine");
+                    }
+                    Credentials creds = unsealer.unseal(cmd.sealedPsk());
+                    ppskUsers.put(new PpskUserRecord(cmd.securityObject(), cmd.userGroup(), cmd.username(),
+                            creds.password(), cmd.userProfileAttr(), cmd.vlanId(), cmd.scheduleName(),
+                            cmd.macBindings(), "active"));
+                    status = "active";
+                    sink.emit(new Event.Progress(id, scope, "Provisioned PPSK user in the on-prem RADIUS store", 100));
+                }
+                case "revoke" -> {
+                    ppskUsers.remove(cmd.securityObject(), cmd.username());
+                    status = "revoked";
+                    sink.emit(new Event.Progress(id, scope, "Revoked PPSK user from the on-prem RADIUS store", 100));
+                }
+                default -> throw new IllegalArgumentException("unknown PPSK action: " + cmd.action());
+            }
+            Result result = new Result.PpskUserManaged(id, scope, cmd.username(), cmd.securityObject(), status);
+            sink.emit(new Event.Completed(id, scope, result));
+            return result;
+        } catch (Exception e) {
+            String detail = e.getMessage() == null ? "" : e.getMessage();
+            log.warn("manage-ppsk-user failed for {}: {}", scope, detail);
+            sink.emit(new Event.Failed(id, scope, e.getClass().getSimpleName(), detail));
+            throw new HiveException(id, scope, "manage-ppsk-user failed: " + detail, e);
+        }
+    }
+
     private Result dispatch(Command command, UUID id, DeviceId deviceId, CliExecutor exec,
                             ProgressReporter progress, Driver driver) throws IOException {
         return switch (command) {
@@ -244,6 +306,8 @@ public final class LocalEngine implements Engine {
             case Command.Discover ignored -> throw new IllegalStateException("discover is handled without a session");
             case Command.SetCredential ignored ->
                     throw new IllegalStateException("set-credential is handled before SSH dispatch");
+            case Command.ManagePpskUser ignored ->
+                    throw new IllegalStateException("manage-ppsk-user is handled before SSH dispatch");
         };
     }
 
@@ -261,6 +325,8 @@ public final class LocalEngine implements Engine {
             case Command.Discover ignored -> throw new IllegalStateException("discover is network-scoped");
             case Command.SetCredential ignored ->
                     throw new IllegalStateException("set-credential is handled before deviceRefOf");
+            case Command.ManagePpskUser ignored ->
+                    throw new IllegalStateException("manage-ppsk-user is handled before deviceRefOf");
         };
     }
 }

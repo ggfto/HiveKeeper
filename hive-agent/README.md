@@ -17,7 +17,9 @@ backoff + jitter) that re-announces on every connect.
 | `HIVEKEEPER_DEFAULT_USER` | `admin` | fallback device username (used when no `credRef` resolves) |
 | `HIVEKEEPER_DEFAULT_PASSWORD` | _(empty)_ | fallback device password |
 | `HIVEKEEPER_CREDENTIAL_VAULT` | _(unset)_ | path to a per-device credential vault (properties: `<credRef>.user` / `<credRef>.password`). When set, HiveKeeper can also **manage credentials from the UI** (the gateway seals the secret to this agent's key; the agent writes the vault). |
-| `HIVEKEEPER_VAULT_KEY` | _(unset)_ | base64 AES-256 key that encrypts vault passwords **at rest**; without it the vault is written in plaintext (a logged warning) |
+| `HIVEKEEPER_VAULT_KEY` | _(unset)_ | base64 AES-256 key that encrypts vault passwords **and PPSK keys at rest**; without it they are written in plaintext (a logged warning) |
+| `HIVEKEEPER_PPSK_STORE` | _(unset)_ | path to the on-prem PPSK user store (properties). When set (with mTLS for unsealing), HiveKeeper can **mint/rotate/revoke Private PSKs** from the UI; the store feeds a co-located RADIUS server. See `docs/ppsk-radius-runbook.md`. |
+| `HIVEKEEPER_RADIUS_DIR` | _(unset)_ | directory the RADIUS provisioner writes its FreeRADIUS `authorize` file to (omit to store PPSK keys without pushing them to a RADIUS server) |
 | `HIVEKEEPER_BACKUP_DIR` | `hivekeeper-backups` | local git backup directory |
 
 > Resolution always happens on the agent — the cloud never sees device secrets, only an opaque `credRef`.

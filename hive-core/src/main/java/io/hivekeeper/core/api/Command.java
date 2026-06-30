@@ -15,7 +15,8 @@ import java.util.UUID;
 public sealed interface Command
         permits Command.Inventory, Command.BackupConfig, Command.RunRaw, Command.Discover,
                 Command.ApplyConfig, Command.ConfigureSsid, Command.ConfigureHive, Command.Reboot,
-                Command.RestoreConfig, Command.FirmwareUpgrade, Command.SetCredential {
+                Command.RestoreConfig, Command.FirmwareUpgrade, Command.SetCredential,
+                Command.ManagePpskUser {
 
     UUID commandId();
 
@@ -120,6 +121,46 @@ public sealed interface Command
         public static SetCredential of(DeviceRef device, String credRef, String sealedSecret,
                                        boolean alsoSetOnDevice) {
             return new SetCredential(UUID.randomUUID(), device, credRef, sealedSecret, alsoSetOnDevice);
+        }
+    }
+
+    /**
+     * Manage a Private-PSK user in the on-prem RADIUS store (PPSK "Caminho B"). Like {@link SetCredential}
+     * this is NOT a device CLI operation — it provisions the on-prem agent's RADIUS store, never the AP
+     * (HiveOS has no running-config grammar to mint a key over SSH). {@code action} is
+     * {@code create}/{@code rotate}/{@code revoke}; for create/rotate the PSK travels as {@code sealedPsk},
+     * an {@link io.hivekeeper.core.crypto.EnvelopeCipher} token of the JSON-free
+     * {@link io.hivekeeper.core.crypto.CredentialPayload} encoding {@code username\npsk} sealed to the
+     * agent's public key (the engine unseals it locally, so the cloud never holds the usable key).
+     * {@code userProfileAttr}/{@code vlanId} are the policy the RADIUS server returns on Accept;
+     * {@code macBindings} optional bound client MACs; {@code scheduleName} an optional validity window.
+     * A {@code revoke} carries only {@code securityObject}+{@code username}.
+     */
+    record ManagePpskUser(UUID commandId, String action, String securityObject, String userGroup,
+                          String username, String sealedPsk, Integer userProfileAttr, Integer vlanId,
+                          String scheduleName, List<String> macBindings) implements Command {
+
+        public ManagePpskUser {
+            macBindings = macBindings == null ? List.of() : List.copyOf(macBindings);
+        }
+
+        public static ManagePpskUser create(String securityObject, String userGroup, String username,
+                                            String sealedPsk, Integer userProfileAttr, Integer vlanId,
+                                            String scheduleName, List<String> macBindings) {
+            return new ManagePpskUser(UUID.randomUUID(), "create", securityObject, userGroup, username,
+                    sealedPsk, userProfileAttr, vlanId, scheduleName, macBindings);
+        }
+
+        public static ManagePpskUser rotate(String securityObject, String userGroup, String username,
+                                            String sealedPsk, Integer userProfileAttr, Integer vlanId,
+                                            String scheduleName, List<String> macBindings) {
+            return new ManagePpskUser(UUID.randomUUID(), "rotate", securityObject, userGroup, username,
+                    sealedPsk, userProfileAttr, vlanId, scheduleName, macBindings);
+        }
+
+        public static ManagePpskUser revoke(String securityObject, String username) {
+            return new ManagePpskUser(UUID.randomUUID(), "revoke", securityObject, null, username, null,
+                    null, null, null, List.of());
         }
     }
 }

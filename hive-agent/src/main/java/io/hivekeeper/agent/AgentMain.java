@@ -1,5 +1,7 @@
 package io.hivekeeper.agent;
 
+import io.hivekeeper.agent.radius.FreeRadiusFilesProvisioner;
+import io.hivekeeper.agent.radius.RadiusProvisioner;
 import io.hivekeeper.core.api.Engine;
 import io.hivekeeper.core.crypto.EnvelopeCipher;
 import io.hivekeeper.core.crypto.SecretCipher;
@@ -7,6 +9,7 @@ import io.hivekeeper.core.engine.HiveCore;
 import io.hivekeeper.core.spi.BackupStore;
 import io.hivekeeper.core.spi.CredentialProvider;
 import io.hivekeeper.core.spi.Credentials;
+import io.hivekeeper.core.spi.PpskUserStore;
 import io.hivekeeper.core.spi.SecretUnsealer;
 import io.hivekeeper.core.spi.WritableCredentialProvider;
 import io.hivekeeper.core.tasks.storage.GitBackupStore;
@@ -40,27 +43,40 @@ public final class AgentMain {
         // credential from the UI: the gateway seals the secret to this agent's public key, and the agent
         // unseals it here with its mTLS private key before writing the (at-rest-encrypted) vault.
         Credentials fallback = new Credentials(config.defaultUser(), config.defaultPassword());
+        SecretCipher vaultCipher = config.vaultKey() == null ? null : SecretCipher.fromBase64(config.vaultKey());
+        // The agent's mTLS private key unseals secrets the gateway sealed to its public key (credentials, PSKs).
+        PrivateKey agentKey = config.mtlsEnabled()
+                ? TlsSupport.privateKey(config.tlsKeystore(), config.tlsKeystorePassword().toCharArray())
+                : null;
+        SecretUnsealer unsealer = new KeystoreSecretUnsealer(agentKey, new EnvelopeCipher());
+
         CredentialProvider credentials;
         WritableCredentialProvider writableCredentials = null;
-        SecretUnsealer unsealer = null;
         if (config.credentialVault() == null) {
             credentials = new DefaultCredentialProvider(config.defaultUser(), config.defaultPassword());
             log.info("credentials: single default (credential management disabled — set HIVEKEEPER_CREDENTIAL_VAULT)");
         } else {
-            SecretCipher vaultCipher = config.vaultKey() == null ? null : SecretCipher.fromBase64(config.vaultKey());
             WritableVaultCredentialProvider vault = WritableVaultCredentialProvider.fromFile(
                     Path.of(config.credentialVault()), fallback, vaultCipher);
-            PrivateKey agentKey = config.mtlsEnabled()
-                    ? TlsSupport.privateKey(config.tlsKeystore(), config.tlsKeystorePassword().toCharArray())
-                    : null;
             credentials = vault;
             writableCredentials = vault;
-            unsealer = new KeystoreSecretUnsealer(agentKey, new EnvelopeCipher());
             log.info("credentials: per-device vault (management enabled, at-rest {})",
                     vaultCipher != null ? "encrypted" : "PLAINTEXT");
         }
+
+        // PPSK user store (Caminho B): mint/rotate/revoke Private PSKs locally and feed the co-located RADIUS
+        // server. The PSK arrives sealed to this agent and is unsealed here, so the cloud never holds the key.
+        PpskUserStore ppskUsers = null;
+        if (config.ppskStore() != null) {
+            RadiusProvisioner provisioner = config.radiusDir() == null ? null
+                    : new FreeRadiusFilesProvisioner(Path.of(config.radiusDir()));
+            ppskUsers = FilePpskUserStore.fromFile(Path.of(config.ppskStore()), vaultCipher, provisioner);
+            log.info("PPSK store enabled (at-rest {}, RADIUS provisioning {})",
+                    vaultCipher != null ? "encrypted" : "PLAINTEXT", provisioner != null ? "on" : "off");
+        }
+
         BackupStore backupStore = new GitBackupStore(Path.of(config.backupDir()));
-        Engine engine = HiveCore.localEngine(credentials, backupStore, writableCredentials, unsealer);
+        Engine engine = HiveCore.localEngine(credentials, backupStore, writableCredentials, unsealer, ppskUsers);
 
         SSLContext sslContext = config.mtlsEnabled()
                 ? TlsSupport.fromKeystores(config.tlsKeystore(), config.tlsKeystorePassword().toCharArray(),

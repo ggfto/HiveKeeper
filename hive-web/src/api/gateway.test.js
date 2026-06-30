@@ -157,6 +157,28 @@ describe('createGateway', () => {
     })
   })
 
+  it('mints, lists, rotates and revokes PPSK users through an agent', async () => {
+    const fetchImpl = okFetch({ users: [] })
+    const gw = createGateway({ getAuth: () => ({ tenantKey: 'k' }), fetchImpl })
+
+    await gw.ppskUsers('lab-agent')
+    expect(fetchImpl.mock.calls[0][0]).toBe('/gw/api/agents/lab-agent/ppsk-users')
+    expect(fetchImpl.mock.calls[0][1].method ?? 'GET').toBe('GET')
+
+    await gw.createPpskUser('lab-agent', { securityObject: 'Corp', username: 'alice', vlanId: 30 })
+    expect(fetchImpl.mock.calls[1][0]).toBe('/gw/api/agents/lab-agent/ppsk-users')
+    expect(fetchImpl.mock.calls[1][1].method).toBe('POST')
+    expect(JSON.parse(fetchImpl.mock.calls[1][1].body)).toEqual({ securityObject: 'Corp', username: 'alice', vlanId: 30 })
+
+    await gw.rotatePpskUser('lab-agent', 'ppsk-1')
+    expect(fetchImpl.mock.calls[2][0]).toBe('/gw/api/agents/lab-agent/ppsk-users/ppsk-1/rotate')
+    expect(fetchImpl.mock.calls[2][1].method).toBe('POST')
+
+    await gw.revokePpskUser('lab-agent', 'ppsk-1')
+    expect(fetchImpl.mock.calls[3][0]).toBe('/gw/api/agents/lab-agent/ppsk-users/ppsk-1')
+    expect(fetchImpl.mock.calls[3][1].method).toBe('DELETE')
+  })
+
   it('adds an organization member with POST', async () => {
     const fetchImpl = okFetch({ userId: 'usr-9' })
     const gw = createGateway({ getAuth: () => ({ accessToken: 'tok', org: 'acme' }), fetchImpl })

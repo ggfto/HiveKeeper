@@ -390,6 +390,40 @@ export function createDemoGateway() {
       logOp('set-credential', body.host, `credential set${body.alsoSetOnDevice ? ' · AP password changed' : ''}`, agentId)
       return ok({ credRef, vaultUpdated: true, deviceUpdated: !!body.alsoSetOnDevice })
     },
+    ppskUsers: (agentId) => ok({ users: (db.ppsk || []).filter((u) => u.agentId === agentId) }),
+    createPpskUser: (agentId, body = {}) => {
+      if (!connected(agentId)) return fail('the device agent is offline', 503)
+      db.ppsk = db.ppsk || []
+      const user = {
+        id: uid('ppsk'),
+        agentId,
+        securityObject: body.securityObject,
+        userGroup: body.userGroup || null,
+        username: body.username,
+        userProfileAttr: body.userProfileAttr ?? null,
+        vlanId: body.vlanId ?? null,
+        scheduleName: body.scheduleName || null,
+        macBindings: body.macBindings || [],
+        status: 'active',
+        createdAt: new Date().toISOString(),
+        rotatedAt: null,
+      }
+      db.ppsk.push(user)
+      logOp('ppsk-create', body.securityObject, `minted PPSK user ${body.username}`, agentId)
+      return ok({ user, psk: `demo-psk-${Math.random().toString(36).slice(2, 12)}` })
+    },
+    rotatePpskUser: (agentId, id) => {
+      const u = (db.ppsk || []).find((x) => x.id === id)
+      if (!u) return fail('ppsk user not found', 404)
+      u.rotatedAt = new Date().toISOString()
+      return ok({ user: u, psk: `demo-psk-${Math.random().toString(36).slice(2, 12)}` })
+    },
+    revokePpskUser: (agentId, id) => {
+      const u = (db.ppsk || []).find((x) => x.id === id)
+      if (!u) return fail('ppsk user not found', 404)
+      u.status = 'revoked'
+      return ok(u)
+    },
     bulk: (op, target) => {
       let pool = db.devices
       if (target?.kind === 'site') pool = pool.filter((d) => d.siteId === target.id)

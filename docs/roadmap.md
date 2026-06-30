@@ -261,8 +261,24 @@ where knobs live: **interface-level** (`interface wifiN radio …`) vs **profile
   the `radius-auth` methods left as `<method>` in the design — was **confirmed live on the AP230**: applied to the
   running-config against a throwaway security object, confirmed via `show running-config`, then reverted clean
   (non-persistent, no `save`). `auth-port 1812` / `auto-save-interval 600` are RADIUS defaults the AP omits from the
-  running-config. Unit-tested (builder + organism). **Milestones 2-4 (the `PpskUser` model, key CRUD, and the agent
-  RADIUS runtime) remain** — that is the subsystem the design calls out as its own work.
+  running-config. Unit-tested (builder + organism). **Milestones 2-3 — SHIPPED (unit-tested, lab-untested).**
+  HiveKeeper now **mints, rotates, and revokes per-user Private PSKs** it owns on-prem:
+  - **M2 — sealed `ManagePpskUser` pipeline + key CRUD.** A `ManagePpskUser` command / `PpskUserManaged` result
+    flow through the same agent-control path as `SetCredential` (handled before SSH dispatch — the AP is never
+    touched): the gateway **generates** the key (`PskGenerator`, pure/RNG-injectable), **seals** it to the agent
+    (`EnvelopeCipher`, `env1:`), and the engine unseals it locally and writes the on-prem `PpskUserStore`. The
+    gateway persists **metadata + a `psk_ref` only** (Flyway `V9`, RLS-isolated `ppsk_user`; `PostgresPpskUserService`
+    + `InMemoryPpskUserService`), exposes `GET/POST /api/agents/{id}/ppsk-users`, `POST …/{id}/rotate`,
+    `DELETE …/{id}` (VIEWER to list, OPERATOR to mutate, scoped to the agent's site), and returns the generated
+    PSK **once**. A **PPSK users** device tab (`PpskUsersSection`) drives it; the agent's `FilePpskUserStore`
+    encrypts keys at rest (`HIVEKEEPER_VAULT_KEY`) like the credential vault.
+  - **M3 — agent RADIUS runtime.** `FreeRadiusFilesProvisioner` renders the on-prem user set into a FreeRADIUS
+    `files`-module authorize file (standard PAP `Cleartext-Password` + RFC 2868 VLAN tunnel attributes) on every
+    mutation; `scripts/dev-radius.ps1` stands up FreeRADIUS in Podman co-located with the agent.
+  - **M4 — live lab validation — REMAINS (needs real hardware + a Wi-Fi client).** The end-to-end auth path and
+    the exact **Aerohive user-profile VSA** (currently a documented comment, not emitted) must be captured from a
+    real exchange. Until then PPSK Caminho B ships **untested**, like firmware upgrade. Full steps:
+    [PPSK via RADIUS — runbook](ppsk-radius-runbook.md).
 
 ---
 
