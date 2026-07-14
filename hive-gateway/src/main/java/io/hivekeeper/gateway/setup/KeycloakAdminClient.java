@@ -11,6 +11,7 @@ import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 
 /**
  * Minimal Keycloak Admin API client — only what first-run setup needs: create the very first realm admin user
@@ -100,6 +101,69 @@ public class KeycloakAdminClient {
             }
             throw new KeycloakAdminException("creating the Keycloak user failed: HTTP " + e.getStatusCode().value());
         }
+    }
+
+    /** An existing Keycloak account. {@code id} becomes the {@code sub} of the JWTs they sign in with. */
+    public record KeycloakUser(String id, String email, String name) {
+    }
+
+    /**
+     * Find an existing realm user by exact username or e-mail.
+     *
+     * <p>This is what makes federated login usable. Someone who signs in through an identity provider (GitHub,
+     * say) has no password and does not exist in Keycloak until their FIRST sign-in creates them — so there is
+     * nothing for {@link #createUser} to create, and an admin cannot add them to an organization in advance.
+     * They sign in once (and are told they belong to no organization), and the admin then admits the account
+     * that by then exists. Hence: look up, do not create.
+     */
+    public Optional<KeycloakUser> findUser(String usernameOrEmail) {
+        String query = enc(usernameOrEmail.trim());
+        String token = adminToken();
+        try {
+            // exact=true: a substring match could admit the wrong person to an organization.
+            List<Map<String, Object>> byUsername = search(token, "username=" + query + "&exact=true");
+            return byUsername.isEmpty()
+                    ? user(search(token, "email=" + query + "&exact=true"))
+                    : user(byUsername);
+        } catch (RestClientResponseException e) {
+            throw new KeycloakAdminException("looking the Keycloak user up failed: HTTP " + e.getStatusCode().value());
+        }
+    }
+
+    @SuppressWarnings("unchecked")
+    private List<Map<String, Object>> search(String token, String query) {
+        List<Map<String, Object>> found = http.get()
+                .uri(baseUrl + "/admin/realms/" + realm + "/users?" + query)
+                .header("Authorization", "Bearer " + token)
+                .retrieve()
+                .body(List.class);
+        return found == null ? List.of() : found;
+    }
+
+    private static Optional<KeycloakUser> user(List<Map<String, Object>> users) {
+        // An exact match on a unique field yields at most one user; anything else counts as no match rather than
+        // a guess about which person was meant.
+        if (users.size() != 1) {
+            return Optional.empty();
+        }
+        Map<String, Object> u = users.get(0);
+        Object id = u.get("id");
+        if (id == null) {
+            return Optional.empty();
+        }
+        return Optional.of(new KeycloakUser(id.toString(), str(u.get("email")), displayName(u)));
+    }
+
+    /** Keycloak stores first/last separately; app_user keeps one name. Fall back to the username. */
+    private static String displayName(Map<String, Object> u) {
+        String first = str(u.get("firstName"));
+        String last = str(u.get("lastName"));
+        String full = ((first == null ? "" : first) + " " + (last == null ? "" : last)).trim();
+        return full.isEmpty() ? str(u.get("username")) : full;
+    }
+
+    private static String str(Object o) {
+        return o == null || o.toString().isBlank() ? null : o.toString();
     }
 
     private String adminToken() {

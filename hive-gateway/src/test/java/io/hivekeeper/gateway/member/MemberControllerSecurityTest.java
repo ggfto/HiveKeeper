@@ -84,11 +84,60 @@ class MemberControllerSecurityTest {
     }
 
     @Test
-    void addingRejectsAMissingPassword() throws Exception {
+    void addingRejectsAMissingUsername() throws Exception {
         mvc.perform(post("/api/members").contentType(MediaType.APPLICATION_JSON)
-                        .content("{\"username\":\"bob\",\"role\":\"viewer\"}"))
+                        .content("{\"role\":\"viewer\"}"))
                 .andExpect(status().isBadRequest());
         verifyNoInteractions(members);
+    }
+
+    @Test
+    void noPasswordAdmitsAnAccountThatAlreadyExists() throws Exception {
+        // The federated-login path. Someone who signs in with GitHub has no password and no Keycloak account
+        // until their first sign-in creates one, so an admin cannot CREATE them — only admit them afterwards.
+        when(members.invite("acme", "octocat", Role.VIEWER)).thenReturn(Optional.of("usr-9"));
+
+        mvc.perform(post("/api/members").contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"username\":\"octocat\",\"role\":\"viewer\"}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.userId").value("usr-9"));
+
+        verify(guard).require(principal, Role.ADMIN, ResourceScope.org());
+        // No new login is minted — that is the whole distinction between this and the password path.
+        verify(members, never()).add(any(), any(), any(), any(), any(), any());
+    }
+
+    @Test
+    void invitingSomeoneWhoHasNeverSignedInIs404() throws Exception {
+        when(members.invite("acme", "ghost", Role.VIEWER)).thenReturn(Optional.empty());
+
+        mvc.perform(post("/api/members").contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"username\":\"ghost\",\"role\":\"viewer\"}"))
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.error").value("user_not_found"));
+    }
+
+    @Test
+    void invitingSomeoneAlreadyInTheOrgIs409() throws Exception {
+        when(members.invite("acme", "octocat", Role.VIEWER))
+                .thenThrow(new MemberService.AlreadyAMemberException("octocat"));
+
+        mvc.perform(post("/api/members").contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"username\":\"octocat\",\"role\":\"viewer\"}"))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.error").value("already_a_member"));
+    }
+
+    @Test
+    void invitingAsOwnerStillRequiresOwner() throws Exception {
+        // The invite path must not become a way around the no-privilege-escalation rule.
+        when(members.invite("acme", "octocat", Role.OWNER)).thenReturn(Optional.of("usr-9"));
+
+        mvc.perform(post("/api/members").contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"username\":\"octocat\",\"role\":\"owner\"}"))
+                .andExpect(status().isOk());
+
+        verify(guard).require(principal, Role.OWNER, ResourceScope.org());
     }
 
     @Test

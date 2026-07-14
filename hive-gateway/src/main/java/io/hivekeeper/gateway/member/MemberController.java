@@ -54,11 +54,22 @@ public class MemberController {
         return ResponseEntity.ok(members.list(p.tenantId()));
     }
 
+    /**
+     * Add a teammate. Two shapes, distinguished by the password:
+     *
+     * <ul>
+     *   <li><b>with a password</b> — create a brand-new login (they change it at first sign-in);</li>
+     *   <li><b>without one</b> — <i>admit an account that already exists</i>. This is the only way to add
+     *       somebody who signs in through an identity provider: a GitHub user has no password, and no Keycloak
+     *       account at all until their first sign-in creates one. They sign in once, are told they belong to no
+     *       organization, and an admin then admits them by username or e-mail.</li>
+     * </ul>
+     */
     @PostMapping("/api/members")
     public ResponseEntity<?> add(@RequestBody AddMember req) {
         Principal p = guard.authenticate();
-        if (isBlank(req.username()) || isBlank(req.password())) {
-            return badRequest("a username and password are required");
+        if (isBlank(req.username())) {
+            return badRequest("a username (or e-mail) is required");
         }
         Role role = parseRole(req.role());
         if (role == null) {
@@ -67,9 +78,18 @@ public class MemberController {
         // Managing members is an admin action; minting an OWNER is reserved to owners (no privilege escalation).
         guard.require(p, role == Role.OWNER ? Role.OWNER : Role.ADMIN, ResourceScope.org());
         try {
+            if (isBlank(req.password())) {
+                return members.invite(p.tenantId(), req.username().trim(), role)
+                        .<ResponseEntity<?>>map(userId -> ResponseEntity.ok(new MemberResponse(userId)))
+                        .orElseGet(() -> ResponseEntity.status(404).body(new ApiError("user_not_found",
+                                "no account for '" + req.username().trim() + "'. Someone signing in with an "
+                                        + "identity provider must sign in once before they can be added.")));
+            }
             String userId = members.add(p.tenantId(), req.username().trim(), req.email(), req.password(),
                     req.name(), role);
             return ResponseEntity.ok(new MemberResponse(userId));
+        } catch (MemberService.AlreadyAMemberException e) {
+            return ResponseEntity.status(409).body(new ApiError("already_a_member", e.getMessage()));
         } catch (KeycloakAdminException e) {
             return ResponseEntity.status(409).body(new ApiError("user_exists", e.getMessage()));
         }

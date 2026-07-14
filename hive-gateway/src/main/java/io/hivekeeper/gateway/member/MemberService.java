@@ -89,6 +89,48 @@ public class MemberService {
         return user.userId();
     }
 
+    /**
+     * Admit an EXISTING account to the org — the federated-login half of {@link #add}.
+     *
+     * <p>Someone who signs in with GitHub (or any brokered identity provider) has no password, and no Keycloak
+     * account at all until their first sign-in creates one. {@link #add} therefore cannot reach them: it creates
+     * a user with a password. So they sign in once, are told they belong to no organization, and an admin admits
+     * the account that by then exists — looked up by exact username or e-mail.
+     *
+     * @return the user id, or empty when no such account exists (they have not signed in yet)
+     * @throws AlreadyAMemberException if they are already in this org
+     */
+    @Transactional
+    public Optional<String> invite(String tenantId, String usernameOrEmail, Role role) {
+        Optional<KeycloakAdminClient.KeycloakUser> found = keycloak.findUser(usernameOrEmail);
+        if (found.isEmpty()) {
+            return Optional.empty();
+        }
+        KeycloakAdminClient.KeycloakUser kc = found.get();
+        // Idempotent on (issuer, subject): their first sign-in already provisioned this row, so this refreshes
+        // it rather than duplicating it. Pass the identity we just read, since provision() overwrites both.
+        UserService.AppUser user = users.provision(issuer, kc.id(), kc.email(), kc.name());
+
+        setTenant(tenantId);
+        if (membershipId(user.userId()).isPresent()) {
+            throw new AlreadyAMemberException(usernameOrEmail);
+        }
+        String membershipId = "mb-" + UUID.randomUUID();
+        jdbc.update("insert into membership (membership_id, user_id, tenant_id) values (?, ?, ?)",
+                membershipId, user.userId(), tenantId);
+        jdbc.update("insert into role_grant (grant_id, membership_id, tenant_id, role, scope_type, scope_id) "
+                        + "values (?, ?, ?, ?, 'org', null)",
+                "g-" + UUID.randomUUID(), membershipId, tenantId, role.name().toLowerCase());
+        return Optional.of(user.userId());
+    }
+
+    /** Thrown when an invite names someone who is already in the org (the controller maps it to 409). */
+    public static class AlreadyAMemberException extends RuntimeException {
+        public AlreadyAMemberException(String who) {
+            super(who + " is already a member of this organization");
+        }
+    }
+
     /** Set a member's single org-scoped role (updating their existing org grant, or inserting one if somehow
      *  absent). Returns false if the user is not a member of the org. */
     @Transactional
