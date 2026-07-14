@@ -99,7 +99,7 @@ jobs:
         run: docker build -f hive-${{ matrix.module }}/Dockerfile -t hivekeeper-${{ matrix.module }}:ci .
 
       - name: Scan it
-        uses: aquasecurity/trivy-action@0.28.0
+        uses: aquasecurity/trivy-action@0.35.0
         with:
           image-ref: hivekeeper-${{ matrix.module }}:ci
           # Fail only on what is both severe AND actually fixable. A HIGH with no available patch is noise that
