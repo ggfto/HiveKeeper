@@ -13,6 +13,9 @@ RUN chmod +x ./gradlew && ./gradlew --no-daemon :hive-agent:installDist -x test
 
 # --- runtime stage -------------------------------------------------------------
 FROM eclipse-temurin:21-jre
+# Patch the base image's OS packages — a JRE base drifts behind the distro's security fixes between its own
+# rebuilds, and the CI image scan fails the build on a fixable CRITICAL/HIGH.
+RUN apt-get update && apt-get upgrade -y && rm -rf /var/lib/apt/lists/*
 WORKDIR /app
 COPY --from=build /src/hive-agent/build/install/hive-agent/ /app/
 

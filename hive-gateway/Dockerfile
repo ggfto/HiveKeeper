@@ -11,8 +11,11 @@ COPY . .
 RUN chmod +x ./gradlew && ./gradlew --no-daemon :hive-gateway:installDist -x test
 
 FROM eclipse-temurin:21-jre
-# curl, for the healthcheck below. The JRE image ships without it.
+# Patch the base image's OS packages (a JRE base drifts behind the distro's security fixes between its own
+# rebuilds), and add curl for the healthcheck below. The image scan in CI fails the build on a fixable
+# CRITICAL/HIGH, so this is what keeps a published image from shipping one.
 RUN apt-get update \
+    && apt-get upgrade -y \
     && apt-get install -y --no-install-recommends curl \
     && rm -rf /var/lib/apt/lists/*
 WORKDIR /app

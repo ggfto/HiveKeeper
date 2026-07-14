@@ -28,6 +28,13 @@ RUN pnpm build
 # --- runtime stage -------------------------------------------------------------
 FROM nginxinc/nginx-unprivileged:1.27-alpine
 
+# Patch the base image's OS packages — an Alpine base drifts behind the distro's security fixes between its own
+# rebuilds, and the CI image scan fails the build on a fixable CRITICAL/HIGH. Briefly root to run apk, then
+# back to the unprivileged uid the base image runs as.
+USER root
+RUN apk upgrade --no-cache
+USER 101
+
 # nginx-unprivileged runs as uid 101 and cannot bind :80 — it listens on :8080, which is what the config says.
 # Running the console as root to serve static files would be a gratuitous risk.
 COPY --from=build /src/dist/ /usr/share/nginx/html/
