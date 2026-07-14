@@ -56,9 +56,11 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # No version here on purpose: it is read from hive-web/package.json's "packageManager" field, so CI, the
+      # container image and a developer's machine all install with the same pnpm.
       - uses: pnpm/action-setup@v4
         with:
-          version: 9
+          package_json_file: hive-web/package.json
 
       - uses: actions/setup-node@v4
         with:

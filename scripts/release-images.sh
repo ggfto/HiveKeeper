@@ -12,7 +12,8 @@ VERSION="${1:?usage: release-images.sh <version>}"
 REGISTRY="${REGISTRY:-ghcr.io/ggfto}"
 
 # module name -> image name suffix. Each module has its own Dockerfile that builds from the repo root.
-for module in gateway agent server; do
+# `web` is the console: without it a deployment has an API and no user interface.
+for module in gateway agent server web; do
   image="${REGISTRY}/hivekeeper-${module}"
   echo ">> building ${image}:${VERSION}"
   docker build -f "hive-${module}/Dockerfile" \
@@ -23,4 +24,4 @@ for module in gateway agent server; do
   docker push "${image}:latest"
 done
 
-echo ">> published gateway/agent/server images at ${VERSION}"
+echo ">> published gateway/agent/server/web images at ${VERSION}"

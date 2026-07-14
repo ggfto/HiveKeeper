@@ -4,6 +4,7 @@
   "version": "0.1.0",
   "type": "module",
   "description": "HiveKeeper web UI (Vite + React) — multi-org control panel for the hive-gateway control plane.",
+  "packageManager": "pnpm@10.33.2",
   "scripts": {
     "sync-docs": "node scripts/sync-docs.mjs",
     "dev": "node scripts/sync-docs.mjs && vite",

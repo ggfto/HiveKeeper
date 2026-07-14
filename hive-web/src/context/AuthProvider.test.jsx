@@ -1,10 +1,10 @@
 import { describe, it, expect, vi } from 'vitest'
 import { render, screen, act } from '@testing-library/react'
 
-// Capture the handlers AuthProvider registers on the (mocked) userManager so the test can fire them.
-const h = vi.hoisted(() => ({}))
-vi.mock('../auth', () => ({
-  userManager: {
+// Capture the handlers AuthProvider registers on the (mocked) OIDC client so the test can fire them. The
+// client is now built during boot from what the gateway reports, so configureAuth() is what hands it over.
+const h = vi.hoisted(() => ({
+  manager: {
     events: {
       addUserLoaded: (fn) => {
         h.loaded = fn
@@ -16,6 +16,10 @@ vi.mock('../auth', () => ({
       removeAccessTokenExpired: () => {},
     },
   },
+}))
+vi.mock('../auth', () => ({
+  configureAuth: vi.fn(() => h.manager),
+  getUserManager: vi.fn(() => h.manager),
   login: vi.fn(),
   logout: vi.fn(),
   resolveUser: vi.fn().mockResolvedValue(null), // no session at start

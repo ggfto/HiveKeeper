@@ -1,8 +1,9 @@
 import { createContext, useContext, useEffect, useMemo, useRef, useState } from 'react'
-import { login, logout, resolveUser, userManager } from '../auth'
+import { configureAuth, getUserManager, login, logout, resolveUser } from '../auth'
 import { createGateway } from '../api/gateway'
 import { createDemoGateway, DEMO_USER, DEMO_ME } from '../api/demoGateway'
 import { resolveAuth, defaultOrg } from '../lib/authState'
+import { resolveOidcSettings } from '../lib/oidcConfig'
 
 export const AuthContext = createContext(null)
 
@@ -29,6 +30,9 @@ export function AuthProvider({ children }) {
   // (HIVEKEEPER_SOLO): no sign-in, no organizations — the gateway authorizes every request as the local owner.
   const [solo, setSolo] = useState(false)
   const [bootReady, setBootReady] = useState(false)
+  // Whether this deployment has an identity provider at all — also learned on boot. Without one there is
+  // nothing to sign in to, so the console must not offer a button that leads nowhere.
+  const [oidcReady, setOidcReady] = useState(false)
 
   // The gateway client reads the latest auth through this ref, so it never needs to be recreated.
   const authRef = useRef({ user: null, activeOrg: '', tenantKey: DEFAULT_TENANT_KEY, devMode: false })
@@ -41,8 +45,12 @@ export function AuthProvider({ children }) {
   // Keep the session fresh: when oidc-client-ts silently renews the access token it emits userLoaded with the
   // new user — re-point the gateway client at it so subsequent calls carry the fresh token. If renewal ever
   // fails and the token expires, drop to the sign-in gate rather than silently 401ing every request.
+  //
+  // Runs after the boot effect has built the client (oidcReady), since before that there is no client to
+  // listen to.
   useEffect(() => {
-    if (DEMO) return // no IdP in the demo build
+    const manager = getUserManager()
+    if (!manager) return // demo build, or a deployment with no IdP
     const onLoaded = (u) => {
       authRef.current = { ...authRef.current, user: u }
       setUser(u)
@@ -52,45 +60,69 @@ export function AuthProvider({ children }) {
       setMe(null)
       setActiveOrg('')
     }
-    userManager.events.addUserLoaded(onLoaded)
-    userManager.events.addAccessTokenExpired(onExpired)
+    manager.events.addUserLoaded(onLoaded)
+    manager.events.addAccessTokenExpired(onExpired)
     return () => {
-      userManager.events.removeUserLoaded(onLoaded)
-      userManager.events.removeAccessTokenExpired(onExpired)
+      manager.events.removeUserLoaded(onLoaded)
+      manager.events.removeAccessTokenExpired(onExpired)
     }
-  }, [])
+  }, [oidcReady])
 
-  // One boot probe of the deployment shape. On failure we just assume a normal (non-solo) gateway. bootReady
-  // gates the app's first render so it never flashes the sign-in page before learning it is in solo mode.
+  // Boot, in this order and no other: learn the deployment's shape, BUILD the OIDC client from what it
+  // reports, and only then resolve the session. The console is one published image run at addresses we cannot
+  // know, so it cannot know its identity provider until the gateway names it — which means the OIDC client
+  // cannot exist until this has run. bootReady gates the first render, so the app never flashes a sign-in page
+  // before learning it is in solo mode (or that there is no IdP at all).
+  const didBoot = useRef(false)
   useEffect(() => {
+    if (didBoot.current) return // resolveUser() consumes a one-time OIDC callback; never run it twice
+    didBoot.current = true
+
     let active = true
-    gateway
-      .mode()
-      .then((m) => active && setSolo(!!m?.solo))
-      .catch(() => {})
-      .finally(() => active && setBootReady(true))
+    ;(async () => {
+      let mode = null
+      try {
+        mode = await gateway.mode()
+      } catch {
+        /* gateway unreachable: fall back to a normal, non-solo deployment and the build-time IdP (if any) */
+      }
+      if (!active) return
+      setSolo(!!mode?.solo)
+
+      const settings = resolveOidcSettings(
+        mode?.oidc,
+        {
+          authority: import.meta.env.VITE_OIDC_AUTHORITY,
+          clientId: import.meta.env.VITE_OIDC_CLIENT_ID,
+        },
+        window.location.origin,
+      )
+      // The demo build has no IdP and a pre-seeded session, so it never gets a client.
+      const manager = DEMO ? null : configureAuth(settings)
+      setOidcReady(!!manager)
+
+      if (manager) {
+        const u = await resolveUser()
+        if (u && active) {
+          authRef.current = { ...authRef.current, user: u }
+          setUser(u)
+          try {
+            const profile = await gateway.me()
+            if (active) {
+              setMe(profile)
+              setActiveOrg(defaultOrg(profile))
+            }
+          } catch {
+            /* identity stays token-only */
+          }
+        }
+      }
+      if (active) setBootReady(true)
+    })()
+
     return () => {
       active = false
     }
-  }, [gateway])
-
-  const didInit = useRef(false)
-  useEffect(() => {
-    if (DEMO) return // the demo session is pre-seeded; no OIDC callback to resolve
-    if (didInit.current) return // resolveUser() consumes a one-time OIDC callback; never run it twice
-    didInit.current = true
-    resolveUser().then(async (u) => {
-      if (!u) return
-      authRef.current = { ...authRef.current, user: u }
-      setUser(u)
-      try {
-        const profile = await gateway.me()
-        setMe(profile)
-        setActiveOrg(defaultOrg(profile))
-      } catch {
-        /* the gateway may be running without the oidc profile; identity stays token-only */
-      }
-    })
   }, [gateway])
 
   const value = useMemo(
@@ -104,6 +136,9 @@ export function AuthProvider({ children }) {
       solo,
       demo: DEMO,
       bootReady,
+      // Whether this deployment has an IdP to sign in to. The sign-in gate reads it so a gateway running
+      // without OIDC does not offer a button that leads nowhere.
+      oidcReady,
       // The console renders when there is a real identity, the dev owner key was chosen, OR the gateway is in
       // solo mode (single-user local — no sign-in at all).
       authenticated: !!user || devMode || solo,
@@ -120,7 +155,7 @@ export function AuthProvider({ children }) {
             setDevMode(false)
           },
     }),
-    [user, me, activeOrg, gateway, devMode, solo, bootReady],
+    [user, me, activeOrg, gateway, devMode, solo, bootReady, oidcReady],
   )
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>
