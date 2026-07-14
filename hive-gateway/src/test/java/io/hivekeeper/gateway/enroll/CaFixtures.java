@@ -25,13 +25,13 @@ import java.time.Instant;
 import java.util.Date;
 
 /** Test PKI helpers: write a CA keystore the file CA can load, and build CSRs to sign. */
-final class CaFixtures {
+public final class CaFixtures {
 
     private CaFixtures() {
     }
 
     /** Generate a self-signed CA and write it to a PKCS12 keystore; return the keystore path. */
-    static Path writeCaKeystore(Path file, String alias, char[] password) throws Exception {
+    public static Path writeCaKeystore(Path file, String alias, char[] password) throws Exception {
         KeyPair caKeys = rsa();
         X509Certificate caCert = selfSignedCa(caKeys);
         KeyStore ks = KeyStore.getInstance("PKCS12");
@@ -44,8 +44,29 @@ final class CaFixtures {
         return file;
     }
 
+    /**
+     * Write a PKCS12 TRUSTSTORE holding a self-signed CA certificate, and return its path.
+     *
+     * <p>Not the same thing as {@link #writeCaKeystore}, and the difference bites: a truststore needs a
+     * <i>trustedCertEntry</i>, while a keystore holds a <i>privateKeyEntry</i>. Handing Java a PKCS12 that has
+     * only the latter yields "the trustAnchors parameter must be non-empty" — it contains a certificate, but
+     * not one it has been told to trust. ({@code keytool -importcert}, which the production PKI script uses,
+     * writes the right kind.)
+     */
+    public static Path writeTruststore(Path file, String alias, char[] password) throws Exception {
+        X509Certificate caCert = selfSignedCa(rsa());
+        KeyStore ts = KeyStore.getInstance("PKCS12");
+        ts.load(null, null);
+        ts.setCertificateEntry(alias, caCert);
+        Files.createDirectories(file.toAbsolutePath().getParent());
+        try (OutputStream out = Files.newOutputStream(file)) {
+            ts.store(out, password);
+        }
+        return file;
+    }
+
     /** Build a PKCS#10 CSR for the given subject CN with a fresh keypair. */
-    static PKCS10CertificationRequest newCsr(String cn) throws Exception {
+    public static PKCS10CertificationRequest newCsr(String cn) throws Exception {
         KeyPair keys = rsa();
         JcaPKCS10CertificationRequestBuilder builder =
                 new JcaPKCS10CertificationRequestBuilder(new X500Name("CN=" + cn), keys.getPublic());
@@ -53,7 +74,7 @@ final class CaFixtures {
         return builder.build(signer);
     }
 
-    static KeyPair rsa() throws Exception {
+    public static KeyPair rsa() throws Exception {
         KeyPairGenerator gen = KeyPairGenerator.getInstance("RSA");
         gen.initialize(2048);
         return gen.generateKeyPair();

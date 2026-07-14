@@ -12,10 +12,13 @@ services:
     environment:
       POSTGRES_PASSWORD: ${HIVEKEEPER_DB_ADMIN_PASSWORD:-postgres}
       POSTGRES_DB: hivekeeper
+      # The restricted app role's password: the init script below sets the role up with it, and the gateway
+      # connects with it. They have to agree, so both read the same variable.
+      HIVEKEEPER_DB_PASSWORD: ${HIVEKEEPER_DB_PASSWORD:-app}
     volumes:
       - pg-data:/var/lib/postgresql/data
       # Runs once on first init (before Flyway) to create the restricted application role.
-      - ./deploy/postgres/10-init-app-role.sql:/docker-entrypoint-initdb.d/10-init-app-role.sql:ro
+      - ./deploy/postgres/10-init-app-role.sh:/docker-entrypoint-initdb.d/10-init-app-role.sh:ro
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U postgres -d hivekeeper"]
       interval: 5s

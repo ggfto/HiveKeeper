@@ -1,0 +1,190 @@
+# HiveKeeper — production stack. Self-contained: it does NOT layer on docker-compose.yml, so none of that
+# file's zero-config development defaults (an insecure crypto key, `app`/`postgres` passwords, a Keycloak with
+# admin/admin and users whose password is their username) can leak into a deployment by accident.
+#
+#   scripts/init-secrets.sh hivekeeper.example.org     # once: every secret + the private PKI
+#   docker compose --env-file .env.prod -f docker-compose.prod.yml up -d
+#
+# Ports to open on the host:
+#   80, 443   the console and Keycloak, behind Caddy (which also gets the TLS certificate).
+#   9443      the AGENTS. Deliberately not behind the proxy — they authenticate with a client certificate that
+#             the gateway reads from the TLS connection itself, and a TLS-terminating proxy would swallow it.
+#
+# Everything else — the gateway's HTTP port, its metrics, both databases — stays on the internal network and is
+# never published.
+#
+# HIVEKEEPER_SOLO appears nowhere here, and must never be added: it turns every unauthenticated request into
+# the owner.
+
+name: hivekeeper
+
+services:
+  caddy:
+    image: caddy:2-alpine
+    environment:
+      HIVEKEEPER_DOMAIN: ${HIVEKEEPER_DOMAIN:?set HIVEKEEPER_DOMAIN}
+      HIVEKEEPER_ACME_EMAIL: ${HIVEKEEPER_ACME_EMAIL:?set HIVEKEEPER_ACME_EMAIL for certificate expiry notices}
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./deploy/caddy/Caddyfile:/etc/caddy/Caddyfile:ro
+      # The issued certificates. On a volume, or every restart re-requests them and hits Let's Encrypt's rate limit.
+      - caddy-data:/data
+      - caddy-config:/config
+    depends_on:
+      web:
+        condition: service_healthy
+    restart: unless-stopped
+
+  web:
+    image: ${HIVEKEEPER_REGISTRY:-ghcr.io/ggfto}/hivekeeper-web:${HIVEKEEPER_TAG:?pin a version — never :latest in production}
+    environment:
+      HIVEKEEPER_GATEWAY_ORIGIN: http://gateway:8090
+    depends_on:
+      gateway:
+        condition: service_healthy
+    restart: unless-stopped
+
+  gateway:
+    image: ${HIVEKEEPER_REGISTRY:-ghcr.io/ggfto}/hivekeeper-gateway:${HIVEKEEPER_TAG:?pin a version}
+    environment:
+      # postgres = durable jobs + RLS multi-tenancy; oidc = per-user login; mtls = the agent TLS listener.
+      SPRING_PROFILES_ACTIVE: postgres,oidc,mtls
+      SERVER_ADDRESS: 0.0.0.0
+
+      # Only user JWTs. With the static tenant key enabled, one leaked header value would be an owner of the
+      # whole organization, bypassing every per-user authorization check.
+      HIVEKEEPER_TENANTKEY_ENABLED: "false"
+
+      HIVEKEEPER_DB_URL: jdbc:postgresql://postgres:5432/hivekeeper
+      HIVEKEEPER_DB_USER: hivekeeper_app
+      HIVEKEEPER_DB_PASSWORD: ${HIVEKEEPER_DB_PASSWORD:?set it — init-secrets.sh generates one}
+      HIVEKEEPER_DB_ADMIN_USER: postgres
+      HIVEKEEPER_DB_ADMIN_PASSWORD: ${HIVEKEEPER_DB_ADMIN_PASSWORD:?set it}
+
+      # Encrypts secrets at rest in the database. The gateway refuses to start without it, and refuses to start
+      # with the built-in development key — as it should: that key is public, in the source.
+      HIVEKEEPER_CRYPTO_KEY: ${HIVEKEEPER_CRYPTO_KEY:?set it — init-secrets.sh generates one}
+      HIVEKEEPER_CRYPTO_ALLOW_INSECURE_DEV_KEY: "false"
+
+      # The issuer is what the BROWSER logs in at — Keycloak lives under /auth on the same hostname. The
+      # console reads this back from /api/mode, so nothing is baked into its bundle.
+      HIVEKEEPER_OIDC_ISSUER: https://${HIVEKEEPER_DOMAIN}/auth/realms/hivekeeper
+      # ...while the gateway itself reaches Keycloak over the internal network, by service name.
+      HIVEKEEPER_OIDC_JWK_SET_URI: http://keycloak:8080/auth/realms/hivekeeper/protocol/openid-connect/certs
+      HIVEKEEPER_OIDC_AUDIENCE: hive-gateway
+      HIVEKEEPER_KEYCLOAK_BASE_URL: http://keycloak:8080/auth
+      HIVEKEEPER_KEYCLOAK_REALM: hivekeeper
+      HIVEKEEPER_KEYCLOAK_ADMIN_USERNAME: ${KEYCLOAK_ADMIN:?set it}
+      HIVEKEEPER_KEYCLOAK_ADMIN_PASSWORD: ${KEYCLOAK_ADMIN_PASSWORD:?set it}
+
+      # The agent-facing TLS listener (port 9443) and the CA that signs agent certificates.
+      HIVEKEEPER_TLS_KEYSTORE: /pki/gateway.p12
+      HIVEKEEPER_TLS_KEYSTORE_PASSWORD: ${HIVEKEEPER_TLS_KEYSTORE_PASSWORD:?set it}
+      HIVEKEEPER_TLS_TRUSTSTORE: /pki/truststore.p12
+      HIVEKEEPER_TLS_TRUSTSTORE_PASSWORD: ${HIVEKEEPER_TLS_TRUSTSTORE_PASSWORD:?set it}
+      HIVEKEEPER_CA_KEYSTORE: /pki/ca.p12
+      HIVEKEEPER_CA_KEYSTORE_PASSWORD: ${HIVEKEEPER_CA_KEYSTORE_PASSWORD:?set it}
+    ports:
+      # The agents, and ONLY the agents. Unterminated, on purpose (see the header).
+      - "9443:9443"
+    volumes:
+      # Read-only: the gateway signs with the CA key but must never rewrite the PKI.
+      - ./secrets/pki:/pki:ro
+    depends_on:
+      postgres:
+        condition: service_healthy
+      keycloak:
+        condition: service_healthy
+    restart: unless-stopped
+
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_PASSWORD: ${HIVEKEEPER_DB_ADMIN_PASSWORD:?set it}
+      POSTGRES_DB: hivekeeper
+      # The restricted role the app connects as (NOSUPERUSER, NOBYPASSRLS): row-level security is the hard wall
+      # between organizations, and it does not apply to a superuser.
+      HIVEKEEPER_DB_PASSWORD: ${HIVEKEEPER_DB_PASSWORD:?set it}
+    volumes:
+      - pg-data:/var/lib/postgresql/data
+      - ./deploy/postgres/10-init-app-role.sh:/docker-entrypoint-initdb.d/10-init-app-role.sh:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d hivekeeper"]
+      interval: 10s
+      timeout: 5s
+      retries: 20
+    restart: unless-stopped
+
+  keycloak:
+    image: quay.io/keycloak/keycloak:26.0
+    # `start`, not `start-dev`: production mode. It runs plain HTTP behind Caddy, which terminates TLS —
+    # hence hostname-strict-https=false and proxy-headers, so Keycloak builds its issuer and redirect URLs
+    # from the X-Forwarded-* headers Caddy sets rather than from the container's own address.
+    command: ["start", "--optimized=false", "--http-enabled=true", "--hostname-strict-https=false", "--proxy-headers=xforwarded"]
+    environment:
+      KC_DB: postgres
+      KC_DB_URL: jdbc:postgresql://keycloak-db:5432/keycloak
+      KC_DB_USERNAME: keycloak
+      KC_DB_PASSWORD: ${KEYCLOAK_DB_PASSWORD:?set it}
+      KC_HOSTNAME: https://${HIVEKEEPER_DOMAIN}/auth
+      KC_HTTP_RELATIVE_PATH: /auth
+      KC_HEALTH_ENABLED: "true"
+      KC_BOOTSTRAP_ADMIN_USERNAME: ${KEYCLOAK_ADMIN:?set it}
+      KC_BOOTSTRAP_ADMIN_PASSWORD: ${KEYCLOAK_ADMIN_PASSWORD:?set it}
+    healthcheck:
+      # Keycloak serves health on the management port (9000), not the HTTP one. No curl in the image, so use
+      # the JVM's own client.
+      test: ["CMD-SHELL", "exec 3<>/dev/tcp/127.0.0.1/9000 && echo -e 'GET /health/ready HTTP/1.1\\r\\nHost: localhost\\r\\nConnection: close\\r\\n\\r\\n' >&3 && grep -q '\"UP\"' <&3"]
+      interval: 10s
+      timeout: 5s
+      retries: 30
+      start_period: 60s
+    depends_on:
+      keycloak-db:
+        condition: service_healthy
+    restart: unless-stopped
+
+  # Creates the realm, the console's public client (auth-code + PKCE) and — given credentials — the GitHub
+  # identity provider. Idempotent, so it runs on every `up` and reconciles any drift. Runs to completion and
+  # exits; `restart: "no"` keeps compose from treating that as a crash.
+  keycloak-init:
+    image: quay.io/keycloak/keycloak:26.0
+    entrypoint: ["/bin/bash", "/bootstrap.sh"]
+    environment:
+      KC_URL: http://keycloak:8080/auth
+      KEYCLOAK_ADMIN: ${KEYCLOAK_ADMIN:?set it}
+      KEYCLOAK_ADMIN_PASSWORD: ${KEYCLOAK_ADMIN_PASSWORD:?set it}
+      HIVEKEEPER_CONSOLE_URL: https://${HIVEKEEPER_DOMAIN}
+      HIVEKEEPER_REALM: hivekeeper
+      HIVEKEEPER_OIDC_CLIENT_ID: hive-gateway
+      HIVEKEEPER_GITHUB_CLIENT_ID: ${HIVEKEEPER_GITHUB_CLIENT_ID:-}
+      HIVEKEEPER_GITHUB_CLIENT_SECRET: ${HIVEKEEPER_GITHUB_CLIENT_SECRET:-}
+    volumes:
+      - ./deploy/keycloak/bootstrap.sh:/bootstrap.sh:ro
+    depends_on:
+      keycloak:
+        condition: service_healthy
+    restart: "no"
+
+  keycloak-db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: keycloak
+      POSTGRES_USER: keycloak
+      POSTGRES_PASSWORD: ${KEYCLOAK_DB_PASSWORD:?set it}
+    volumes:
+      - keycloak-db-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U keycloak -d keycloak"]
+      interval: 10s
+      timeout: 5s
+      retries: 20
+    restart: unless-stopped
+
+volumes:
+  caddy-data:
+  caddy-config:
+  pg-data:
+  keycloak-db-data:

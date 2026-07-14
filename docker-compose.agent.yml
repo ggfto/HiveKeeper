@@ -1,0 +1,35 @@
+# The on-prem agent — run this on a machine INSIDE the network your access points are on, NOT on the server
+# that runs docker-compose.prod.yml.
+#
+# That separation is the whole architecture. The agent reaches your APs over SSH on the LAN and resolves their
+# credentials locally, then dials OUT to the gateway over TLS. So:
+#   * your APs never need to be reachable from the internet;
+#   * this machine never needs an inbound port opened;
+#   * the cloud never holds a usable AP password — it only ever sends a reference (credRef).
+#
+#   1. cp hive-agent/agent.conf.example agent.conf   and edit it (gateway.url, enrollment token, vault key)
+#   2. copy secrets/pki/ca.pem from the server next to it (it is the CA cert — public, not a secret)
+#   3. docker compose -f docker-compose.agent.yml up -d
+#
+# Everything is configured in agent.conf, which is bind-mounted. Environment variables would still override it,
+# which is why this file deliberately sets none.
+
+name: hivekeeper-agent
+
+services:
+  agent:
+    image: ${HIVEKEEPER_REGISTRY:-ghcr.io/ggfto}/hivekeeper-agent:${HIVEKEEPER_TAG:?pin the same version as the gateway}
+    volumes:
+      # Your configuration, replacing the image's container defaults.
+      - ./agent.conf:/etc/hivekeeper/agent.conf:ro
+      # The gateway's CA, so the agent can trust its server certificate while enrolling — before it has been
+      # issued a truststore of its own. Referenced from agent.conf as enrollment.cacert.
+      - ./ca.pem:/etc/hivekeeper/ca.pem:ro
+      # BACK THIS UP. It holds the agent's identity (its keystore), the credential vault, the pinned SSH host
+      # keys, and the git history of every device config — which is your rollback path.
+      - agent-data:/data
+    # The agent opens no ports. It dials out.
+    restart: unless-stopped
+
+volumes:
+  agent-data:

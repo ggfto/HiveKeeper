@@ -1,0 +1,49 @@
+# TLS for the browser-facing half of HiveKeeper. Caddy gets and renews a certificate for HIVEKEEPER_DOMAIN
+# automatically, so there is no certbot, no cron, and no cert to forget to renew.
+#
+# What is NOT here matters as much as what is: the AGENT port (9443) does not pass through Caddy. Agents
+# authenticate with a client certificate that the gateway reads from the TLS connection itself, so terminating
+# their TLS here would swallow it and every agent handshake and certificate renewal would fail — closed, and
+# quietly. That port is published straight from the gateway container.
+
+{
+	# Where Let's Encrypt sends expiry warnings. Not optional in any deployment you intend to keep running.
+	email {$HIVEKEEPER_ACME_EMAIL}
+}
+
+{$HIVEKEEPER_DOMAIN} {
+	encode gzip
+
+	# Keycloak, at /auth (KC_HTTP_RELATIVE_PATH). One hostname, one certificate, one DNS record — a
+	# self-hoster should not need a second subdomain just to sign in.
+	#
+	# `handle`, NOT `handle_path`: handle_path strips the matched prefix, and Keycloak is *serving* at /auth,
+	# so it needs to receive it. Stripping it turns every Keycloak URL into a 404.
+	handle /auth/* {
+		reverse_proxy keycloak:8080 {
+			# Keycloak builds absolute URLs (issuer, redirects, the JWKS URI) from these. Get them wrong and
+			# it happily mints tokens whose issuer does not match where the browser actually is, which fails
+			# validation at the gateway with a message that explains nothing.
+			header_up X-Forwarded-Proto {scheme}
+			header_up X-Forwarded-Host {host}
+			header_up X-Forwarded-Port {server_port}
+		}
+	}
+
+	# Everything else is the console, which serves the SPA and proxies its own /gw/* calls on to the gateway.
+	handle {
+		reverse_proxy web:8080 {
+			# Job progress is Server-Sent Events. Caddy streams by default; this makes it explicit and stops a
+			# future buffering default from turning a live progress bar into a result screen.
+			flush_interval -1
+		}
+	}
+
+	header {
+		# HiveKeeper is HTTPS-only in production. A year, and subdomains too.
+		Strict-Transport-Security "max-age=31536000; includeSubDomains"
+		X-Content-Type-Options nosniff
+		Referrer-Policy no-referrer
+		-Server
+	}
+}
