@@ -7,6 +7,15 @@ The dev scripts in [Getting started](/getting-started/) are the quickest way to 
 it as a deployed stack — the gateway plus an on-prem agent, optionally with Postgres and OIDC — use the
 committed Docker Compose files. (Everything here works the same with `podman compose`.)
 
+:::caution[This page is the DEVELOPMENT stack.]
+It is zero-config on purpose, and its defaults say so: a publicly-known encryption key, the database password
+`app`, a Keycloak in dev mode whose users' passwords are their usernames. Do not run it on the internet.
+
+For a deployment you intend to keep — TLS, generated secrets, per-user login, backups — follow
+[Running in production](/production/), which uses a separate, self-contained stack that refuses those
+defaults rather than inheriting them.
+:::
+
 ## Compose stack
 
 The repo root ships a layered set of compose files:
@@ -50,9 +59,13 @@ The poller and email/webhook delivery only run under the `postgres` profile; cha
 in the console under **Alerts → Alert delivery** (admin-gated).
 
 :::note
-The web console (`hive-web`) is served separately by design — it is not bundled into the gateway. Run it
-with `pnpm --dir hive-web dev` (it proxies `/gw` to the gateway on `:8090`), or build the static `dist/` and
-serve it from any static host / CDN.
+The console (`hive-web`) is its own container: a static bundle behind nginx, which also proxies the console's
+`/gw` calls to the gateway (in development that proxy is the Vite dev server's job). It is not bundled into
+the gateway. For hacking on the UI, `pnpm --dir hive-web dev` is still the fastest loop.
+
+Nothing about your deployment is baked into the bundle — it asks the gateway where to sign in
+(`GET /api/mode`) at runtime, so the published image works against whatever domain and identity provider you
+point it at.
 :::
 
 :::caution
@@ -68,6 +81,7 @@ Released images are published to the GitHub Container Registry:
 - `ghcr.io/ggfto/hivekeeper-gateway`
 - `ghcr.io/ggfto/hivekeeper-agent`
 - `ghcr.io/ggfto/hivekeeper-server`
+- `ghcr.io/ggfto/hivekeeper-web` — the console
 
 Each is tagged with the release version (e.g. `0.2.0`) and `latest`. To run the published images instead of
 building from source, set the tag and pull:

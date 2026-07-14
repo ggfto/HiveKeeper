@@ -168,6 +168,27 @@ services:
         condition: service_healthy
     restart: "no"
 
+  # Periodic pg_dump of BOTH databases into the pg-backups volume. Both, because either alone is useless:
+  # restore the gateway's without Keycloak's and every role grant points at a user id that no longer exists —
+  # nobody can sign in, you included.
+  backup:
+    image: postgres:16-alpine
+    entrypoint: ["/bin/sh", "/backup.sh"]
+    environment:
+      HIVEKEEPER_DB_ADMIN_PASSWORD: ${HIVEKEEPER_DB_ADMIN_PASSWORD:?set it}
+      KEYCLOAK_DB_PASSWORD: ${KEYCLOAK_DB_PASSWORD:?set it}
+      HIVEKEEPER_BACKUP_INTERVAL_HOURS: ${HIVEKEEPER_BACKUP_INTERVAL_HOURS:-24}
+      HIVEKEEPER_BACKUP_RETENTION_DAYS: ${HIVEKEEPER_BACKUP_RETENTION_DAYS:-14}
+    volumes:
+      - ./deploy/postgres/backup.sh:/backup.sh:ro
+      - pg-backups:/backups
+    depends_on:
+      postgres:
+        condition: service_healthy
+      keycloak-db:
+        condition: service_healthy
+    restart: unless-stopped
+
   keycloak-db:
     image: postgres:16-alpine
     environment:
@@ -187,4 +208,5 @@ volumes:
   caddy-data:
   caddy-config:
   pg-data:
+  pg-backups:
   keycloak-db-data:
