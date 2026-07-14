@@ -31,6 +31,9 @@ import org.springframework.web.context.request.ServletRequestAttributes;
 @Component
 public class AccessGuard {
 
+    /** Request attribute holding the resolved {@link Principal}, so one request authenticates exactly once. */
+    private static final String PRINCIPAL_ATTRIBUTE = AccessGuard.class.getName() + ".principal";
+
     private final TenantStore tenants;
     private final ObjectProvider<AccessService> access;
     private final ObjectProvider<JwtDecoder> jwtDecoder;
@@ -53,10 +56,24 @@ public class AccessGuard {
         this.soloTenant = soloTenant;
     }
 
-    /** Resolves the caller, or throws {@link AccessException} (401/400/403). */
+    /**
+     * Resolves the caller, or throws {@link AccessException} (401/400/403).
+     *
+     * <p>Memoized per request: {@link AuthenticationBackstop} authenticates every non-public request before the
+     * handler runs, and the handler then calls this again (as does each nested authorization check), so without
+     * a cache one request would decode and verify the same JWT several times.
+     */
     public Principal authenticate() {
         HttpServletRequest req = currentRequest();
+        if (req.getAttribute(PRINCIPAL_ATTRIBUTE) instanceof Principal cached) {
+            return cached;
+        }
+        Principal principal = resolve(req);
+        req.setAttribute(PRINCIPAL_ATTRIBUTE, principal);
+        return principal;
+    }
 
+    private Principal resolve(HttpServletRequest req) {
         // The X-Tenant-Key path can be turned off entirely (hivekeeper.tenantkey.enabled=false) so a hardened
         // OIDC deployment accepts only user JWTs; when off, a key is ignored and the caller falls through to JWT.
         String apiKey = req.getHeader("X-Tenant-Key");

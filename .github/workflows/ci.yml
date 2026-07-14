@@ -1,0 +1,82 @@
+name: CI
+
+# The test gate. Until this existed, nothing ran the test suites in CI: `release.yml` published images to GHCR
+# on every push to main, and each Dockerfile builds with `-x test` — so a broken commit could become a released
+# image without a single test having run anywhere. Release now depends on this workflow (see release.yml).
+#
+# `workflow_call` is what lets release.yml reuse it, so "tested" and "released" can never drift apart.
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_call:
+  workflow_dispatch:
+
+# A superseded run of an open PR is wasted work; a run on main is the gate for a release, so let it finish.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+permissions:
+  contents: read
+
+jobs:
+  jvm:
+    name: JVM tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up JDK 21
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+
+      # Docker is present on the runner, so the gateway's Testcontainers suites (Postgres RLS, the SECURITY
+      # DEFINER function, cross-tenant FKs) actually run here — locally they self-skip without a container engine.
+      - name: Build and test
+        run: ./gradlew build --no-daemon
+
+      - name: Upload test reports
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: jvm-test-reports
+          path: '**/build/reports/tests/**'
+          retention-days: 7
+
+  web:
+    name: hive-web tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+          cache-dependency-path: hive-web/pnpm-lock.yaml
+
+      - name: Install
+        run: pnpm install --frozen-lockfile
+        working-directory: hive-web
+
+      # `pnpm test` runs sync-docs then vitest in a jsdom environment. It must be the package script — a bare
+      # `npx vitest` resolves from a cache that has no jsdom and fails with "document is not defined".
+      - name: Test
+        run: pnpm test
+        working-directory: hive-web
+
+      # A build failure here is a release failure waiting to happen: the console ships as a static bundle.
+      - name: Build
+        run: pnpm build
+        working-directory: hive-web
