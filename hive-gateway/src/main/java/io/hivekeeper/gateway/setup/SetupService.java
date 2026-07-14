@@ -6,6 +6,8 @@ import org.springframework.context.annotation.Profile;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
 import java.security.SecureRandom;
 import java.util.UUID;
 
@@ -55,6 +57,20 @@ public class SetupService {
     }
 
     /**
+     * Compare the presented token in constant time. {@code String.equals} returns as soon as two bytes differ,
+     * so how long the answer takes leaks how much of the token was right — enough, over enough attempts, to
+     * recover it a character at a time. This is the one unauthenticated endpoint that writes to the database,
+     * so it is worth not leaking anything at all.
+     */
+    private boolean isSetupToken(String presented) {
+        if (presented == null) {
+            return false;
+        }
+        return MessageDigest.isEqual(
+                presented.getBytes(StandardCharsets.UTF_8), setupToken.getBytes(StandardCharsets.UTF_8));
+    }
+
+    /**
      * Create the first org + admin. Validates the setup token and that the gateway is still uninitialized,
      * creates the Keycloak user (whose id becomes the admin's OIDC subject), then writes the tenant, the
      * app_user, the membership and an OWNER org grant in one transaction. The Keycloak user is created first
@@ -64,7 +80,7 @@ public class SetupService {
     @Transactional
     public SetupResult setup(String token, String orgName, String username, String password, String email,
                              String displayName) {
-        if (token == null || !token.equals(setupToken)) {
+        if (!isSetupToken(token)) {
             throw new SetupException(403, "invalid or missing setup token");
         }
         if (isBlank(orgName)) {

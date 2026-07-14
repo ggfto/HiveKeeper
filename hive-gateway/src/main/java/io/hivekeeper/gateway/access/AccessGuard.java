@@ -98,7 +98,13 @@ public class AccessGuard {
             if (org == null || org.isBlank()) {
                 throw new AccessException(400, "x_org_required", "X-Org header names the active organization");
             }
-            String userId = userService.resolveOrProvision(jwt);
+            // A token we have never seen is a person we have never admitted — the same answer as a non-member,
+            // and no row written. This used to provision on sight, which with a brokered identity provider
+            // would let any GitHub account on earth write to app_user before being refused.
+            String userId = userService.resolve(jwt)
+                    .map(UserService.AppUser::userId)
+                    .orElseThrow(() -> new AccessException(403, "not_a_member",
+                            "not a member of organization " + org));
             if (!userService.isMember(org, userId)) {
                 throw new AccessException(403, "not_a_member", "not a member of organization " + org);
             }

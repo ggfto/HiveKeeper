@@ -10,7 +10,10 @@ import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.context.TestPropertySource;
 import org.springframework.test.web.servlet.MockMvc;
 import java.util.List;
+import java.util.Optional;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.jwt;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
@@ -47,9 +50,9 @@ class MeControllerSecurityTest {
     }
 
     @Test
-    void returnsTheProvisionedUserAndOrgsWithAValidJwt() throws Exception {
-        when(users.provision(any(), any(), any(), any()))
-                .thenReturn(new UserService.AppUser("usr-owner", "owner@acme.test", "Olivia Owner"));
+    void returnsTheKnownUserAndTheirOrgsWithAValidJwt() throws Exception {
+        when(users.resolve(any()))
+                .thenReturn(Optional.of(new UserService.AppUser("usr-owner", "owner@acme.test", "Olivia Owner")));
         when(users.memberships("usr-owner"))
                 .thenReturn(List.of(new UserService.Membership("acme", "Acme Corp", "active")));
 
@@ -60,5 +63,26 @@ class MeControllerSecurityTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.userId").value("usr-owner"))
                 .andExpect(jsonPath("$.organizations[0].tenantId").value("acme"));
+    }
+
+    @Test
+    void anAuthenticatedStrangerGetsTheirIdentityBackWithNoOrgsAndNoRowWritten() throws Exception {
+        // The first time somebody signs in with GitHub. They are a real, authenticated person and a total
+        // stranger to us: /api/me must tell them who they are and that they belong to nothing, so the console
+        // can say "ask an admin for access" — and it must NOT create a row, or every GitHub account on earth
+        // could grow app_user just by signing in.
+        when(users.resolve(any())).thenReturn(Optional.empty());
+
+        mvc.perform(get("/api/me").with(jwt().jwt(j -> j
+                        .subject("gh|octocat")
+                        .issuer("http://localhost/realms/hivekeeper")
+                        .claim("email", "octocat@github.test")
+                        .claim("name", "The Octocat"))))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.userId").doesNotExist())
+                .andExpect(jsonPath("$.name").value("The Octocat"))
+                .andExpect(jsonPath("$.organizations").isEmpty());
+
+        verify(users, never()).provision(any(), any(), any(), any());
     }
 }

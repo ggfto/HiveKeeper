@@ -82,3 +82,28 @@ jobs:
       - name: Build
         run: pnpm build
         working-directory: hive-web
+
+  # The images are what people actually run. A critical CVE in a base image is exactly as exploitable as one in
+  # our own code, and nothing was looking for either.
+  images:
+    name: Image scan
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        module: [gateway, agent, server, web]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build the image
+        run: docker build -f hive-${{ matrix.module }}/Dockerfile -t hivekeeper-${{ matrix.module }}:ci .
+
+      - name: Scan it
+        uses: aquasecurity/trivy-action@0.28.0
+        with:
+          image-ref: hivekeeper-${{ matrix.module }}:ci
+          # Fail only on what is both severe AND actually fixable. A HIGH with no available patch is noise that
+          # would block every PR and teach everyone to ignore the job.
+          severity: CRITICAL,HIGH
+          ignore-unfixed: true
+          exit-code: '1'

@@ -6,6 +6,7 @@ import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import java.util.List;
+import java.util.Optional;
 import java.util.UUID;
 
 /**
@@ -52,23 +53,26 @@ public class UserService {
                 userId);
     }
 
-    /** Returns the user id for a validated token, provisioning the user on first use. Read-mostly: a SELECT
-     *  on the common (already-provisioned) path, an insert only on the very first request. */
-    @Transactional
-    public String resolveOrProvision(Jwt jwt) {
-        String issuer = String.valueOf(jwt.getIssuer());
-        String subject = jwt.getSubject();
-        List<String> existing = jdbc.queryForList(
-                "select user_id from app_user where oidc_issuer = ? and oidc_subject = ?",
-                String.class, issuer, subject);
-        if (!existing.isEmpty()) {
-            return existing.get(0);
-        }
-        String name = jwt.getClaimAsString("name");
-        if (name == null || name.isBlank()) {
-            name = jwt.getClaimAsString("preferred_username");
-        }
-        return provision(issuer, subject, jwt.getClaimAsString("email"), name).userId();
+    /**
+     * The user behind a validated token, or empty if we do not know them — a pure lookup, which never writes.
+     *
+     * <p>It used to provision on first sight, and that has to stop now that an identity provider can be
+     * brokered. With "Sign in with GitHub" enabled, <b>every GitHub account on earth</b> can authenticate
+     * against the realm and present a perfectly valid token. Creating a row for each one would let any stranger
+     * grow this table without ever being authorized for anything — they would get a 403 immediately afterwards,
+     * having already written to the database.
+     *
+     * <p>Rows are now written only where somebody is deliberately admitted: first-run setup, and
+     * {@code MemberService} (which creates a login, or admits an existing account). So an unknown token means
+     * an unknown person, and the caller treats that exactly as it treats a non-member.
+     */
+    @Transactional(readOnly = true)
+    public Optional<AppUser> resolve(Jwt jwt) {
+        return jdbc.query(
+                "select user_id, email, name from app_user where oidc_issuer = ? and oidc_subject = ?",
+                (rs, n) -> new AppUser(rs.getString("user_id"), rs.getString("email"), rs.getString("name")),
+                String.valueOf(jwt.getIssuer()), jwt.getSubject())
+                .stream().findFirst();
     }
 
     /** Whether the user is an ACTIVE member of the organization. Uses the SECURITY DEFINER lookup so no

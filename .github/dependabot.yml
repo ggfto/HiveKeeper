@@ -1,0 +1,56 @@
+# HiveKeeper handles SSH credentials, signs certificates and holds the keys that decrypt a fleet's secrets.
+# A known CVE sitting in a transitive dependency for six months is not an acceptable state for that.
+#
+# Weekly, grouped: one PR per ecosystem for the routine bumps (which nobody reads individually anyway) and a
+# separate PR for each major, which is the one that actually needs a human.
+version: 2
+
+updates:
+  - package-ecosystem: gradle
+    directory: /
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+    groups:
+      minor-and-patch:
+        update-types: [minor, patch]
+
+  - package-ecosystem: npm
+    directory: /hive-web
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+    groups:
+      minor-and-patch:
+        update-types: [minor, patch]
+
+  - package-ecosystem: npm
+    directory: /website
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 3
+    groups:
+      minor-and-patch:
+        update-types: [minor, patch]
+
+  # The release tooling at the root.
+  - package-ecosystem: npm
+    directory: /
+    schedule:
+      interval: monthly
+    open-pull-requests-limit: 3
+
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: monthly
+
+  # The base images the stack is built on: a JRE with an unpatched CVE is exactly as exploitable as one of ours.
+  - package-ecosystem: docker
+    directories:
+      - /hive-gateway
+      - /hive-agent
+      - /hive-server
+      - /hive-web
+    schedule:
+      interval: weekly

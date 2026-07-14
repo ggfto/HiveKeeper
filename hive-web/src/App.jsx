@@ -6,6 +6,7 @@ import { Toaster } from './components/molecules/Toaster'
 import { ConsoleLayout } from './components/templates/ConsoleLayout'
 import { SignInGate } from './components/organisms/SignInGate'
 import { SetupWizard } from './components/organisms/SetupWizard'
+import { NoOrganizationGate } from './components/organisms/NoOrganizationGate'
 import { OverviewPage } from './pages/OverviewPage'
 import { MapPage } from './pages/MapPage'
 import { AgentsPage } from './pages/AgentsPage'
@@ -75,6 +76,13 @@ function Root() {
   }
   if (!auth.authenticated) {
     return <SignInGate onSignIn={auth.signIn} onDevMode={auth.enableDevMode} />
+  }
+  // Signed in, but admitted to nothing. The expected first step of federated sign-in: a GitHub user has no
+  // account here until their first sign-in creates one, so an admin cannot add them in advance — they sign in,
+  // land here, and get admitted. Falling through to the console instead would show them an empty org switcher
+  // and a page where every request fails.
+  if (auth.user && auth.me && (auth.me.organizations || []).length === 0) {
+    return <NoOrganizationGate me={auth.me} onSignOut={auth.signOut} />
   }
   return <Console />
 }

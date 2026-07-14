@@ -76,6 +76,8 @@ class GatewayPostgresIT {
     private FleetService fleet;
     @Autowired
     private TenantStore tenants;
+    @Autowired
+    private org.springframework.jdbc.core.JdbcTemplate jdbc;
 
     // -- AccessService: scoped roles under real RLS + the @Transactional tenant-context coupling -----------
 
@@ -112,17 +114,39 @@ class GatewayPostgresIT {
         assertFalse(users.isMember("globex", "usr-op"));
     }
 
-    // -- JIT provisioning idempotency ---------------------------------------------------------------------
+    // -- identity resolution never writes -----------------------------------------------------------------
 
     @Test
-    void jitProvisioningIsIdempotentForTheSameIdentity() {
+    void aTokenForSomebodyWeHaveNeverAdmittedResolvesToNothingAndCreatesNoRow() {
         Jwt jwt = Jwt.withTokenValue("t").header("alg", "none")
-                .issuer("https://issuer.test/realms/hk").subject("brand-new-subject")
+                .issuer("https://issuer.test/realms/hk").subject("a-stranger")
+                .claim("email", "stranger@example.test").build();
+        Integer before = jdbc.queryForObject("select count(*) from app_user", Integer.class);
+
+        assertTrue(users.resolve(jwt).isEmpty(), "an unknown identity must resolve to nothing");
+
+        // The point of the change. With an identity provider brokered, every GitHub account on earth can
+        // produce a token this gateway considers valid; if merely presenting one wrote a row, any stranger
+        // could grow this table without ever being authorized for anything.
+        assertEquals(before, jdbc.queryForObject("select count(*) from app_user", Integer.class),
+                "resolving an unknown identity must not write to app_user");
+    }
+
+    @Test
+    void provisioningIsIdempotentForTheSameIdentity() {
+        // Deliberate admission (first-run setup, or an admin adding a member) is the only thing that writes,
+        // and doing it twice must not duplicate the person.
+        Jwt jwt = Jwt.withTokenValue("t").header("alg", "none")
+                .issuer("https://issuer.test/realms/hk").subject("newly-admitted")
                 .claim("email", "new@acme.test").build();
 
-        String first = users.resolveOrProvision(jwt);
-        String second = users.resolveOrProvision(jwt);
+        String first = users.provision("https://issuer.test/realms/hk", "newly-admitted", "new@acme.test",
+                "New Person").userId();
+        String second = users.provision("https://issuer.test/realms/hk", "newly-admitted", "new@acme.test",
+                "New Person").userId();
+
         assertEquals(first, second, "the same (issuer, subject) must resolve to one stable user id");
+        assertEquals(first, users.resolve(jwt).orElseThrow().userId());
         assertTrue(users.memberships(first).isEmpty(), "a freshly provisioned user has no organizations yet");
     }
 

@@ -23,6 +23,7 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.atLeastOnce;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
@@ -131,13 +132,27 @@ class AccessGuardTest {
         request.addHeader("Authorization", "Bearer good");
         request.addHeader("X-Org", "acme");
         when(decoder.decode("good")).thenReturn(jwt());
-        when(users.resolveOrProvision(any())).thenReturn("usr-1");
+        when(users.resolve(any())).thenReturn(Optional.of(new UserService.AppUser("usr-1", null, null)));
         when(users.isMember("acme", "usr-1")).thenReturn(true);
 
         Principal p = guard.authenticate();
         assertFalse(p.isService());
         assertEquals("acme", p.tenantId());
         assertEquals("usr-1", p.userId());
+    }
+
+    @Test
+    void aValidTokenForSomebodyWeHaveNeverAdmittedIs403AndWritesNothing() {
+        // With an identity provider brokered, every GitHub account on earth can produce a token this gateway
+        // considers valid. They must be refused like any non-member — and, crucially, without a row being
+        // written for them first.
+        request.addHeader("Authorization", "Bearer good");
+        request.addHeader("X-Org", "acme");
+        when(decoder.decode("good")).thenReturn(jwt());
+        when(users.resolve(any())).thenReturn(Optional.empty());
+
+        assertEquals(403, statusOf(() -> guard.authenticate()));
+        verify(users, never()).provision(any(), any(), any(), any());
     }
 
     @Test
@@ -152,7 +167,7 @@ class AccessGuardTest {
         request.addHeader("Authorization", "Bearer good");
         request.addHeader("X-Org", "globex");
         when(decoder.decode("good")).thenReturn(jwt());
-        when(users.resolveOrProvision(any())).thenReturn("usr-1");
+        when(users.resolve(any())).thenReturn(Optional.of(new UserService.AppUser("usr-1", null, null)));
         when(users.isMember("globex", "usr-1")).thenReturn(false);
         assertEquals(403, statusOf(() -> guard.authenticate()));
     }
