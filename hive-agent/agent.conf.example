@@ -1,0 +1,85 @@
+# HiveKeeper agent — configuration file
+#
+# Copy to one of the paths the agent searches, in order:
+#   ./agent.conf                          (working directory)
+#   /etc/hivekeeper/agent.conf            (Linux service)
+#   C:/ProgramData/HiveKeeper/agent.conf  (Windows service)
+# ...or point HIVEKEEPER_AGENT_CONFIG at it explicitly. A path named there but missing is a startup ERROR,
+# never a silent fallback.
+#
+# This file holds the enrollment token, the vault key and the fallback SSH password. Restrict it:
+#   chmod 600 /etc/hivekeeper/agent.conf     (the agent warns if it is readable beyond its owner)
+#
+# Every setting also has an environment variable, and THE ENVIRONMENT WINS. The names map mechanically:
+# drop HIVEKEEPER_, lowercase, turn _ into . — HIVEKEEPER_GATEWAY_URL is gateway.url here. Writing the
+# env-var form in this file does not work; the agent warns and tells you the key to use.
+
+# --- Gateway -------------------------------------------------------------------------------------------
+# THE ONE SETTING EVERY DEPLOYMENT MUST SET. HiveKeeper is self-hosted: only you know where your gateway
+# is. Use wss:// (TLS) for anything that leaves the machine; ws:// is for a local, trusted network only.
+# The agent dials OUT to this — it never opens an inbound port on your LAN.
+gateway.url = wss://hivekeeper.example.org:9443/agent
+
+# A stable identity for this agent, unique within the organization. Defaults to the hostname.
+# It becomes the CN of the agent's certificate, so changing it later means re-enrolling.
+agent.id = site-a-agent
+
+# --- Enrollment (how the agent gets its mTLS certificate) ----------------------------------------------
+# Generate the one-time token in the console (Fleet -> Agents -> Enroll) and paste it here. On first start
+# the agent generates a keypair, posts a CSR, and writes the keystore/truststore below; the token is then
+# spent and can be removed from this file. After that the agent renews its own certificate over mTLS, with
+# no token — leave enrollment.url set so it can.
+enrollment.token = paste-the-one-time-token-here
+enrollment.url = https://hivekeeper.example.org
+
+# The gateway's own certificate is issued by HiveKeeper's private CA, so the JVM has no reason to trust it
+# during bootstrap (before the agent has a truststore). Point this at the CA's PEM to close that gap.
+# Not needed when the enrollment URL is fronted by a public certificate (e.g. Let's Encrypt).
+#enrollment.cacert = /etc/hivekeeper/ca.pem
+
+# Where the enrolled identity lands. These files ARE the agent's identity — back them up with the vault.
+tls.keystore = /var/lib/hivekeeper/agent.p12
+tls.keystore.password = change-me
+tls.truststore = /var/lib/hivekeeper/truststore.p12
+tls.truststore.password = change-me
+
+# Renew the certificate once it is this close to expiring (days), checking this often (hours).
+#cert.renew.window.days = 30
+#cert.renew.check.hours = 12
+
+# --- Device credentials (they never leave this machine) -------------------------------------------------
+# The gateway only ever sends a reference (credRef); the agent resolves the actual secret here. The cloud
+# never sees an AP password, which is the whole point of the split.
+#
+# The vault is per-device and WRITABLE: with it set, you can set/rotate a device's credential from the UI —
+# the gateway seals the secret to this agent's public key and only this agent can open it.
+credential.vault = /var/lib/hivekeeper/vault.properties
+
+# base64 AES-256 key encrypting the vault (and minted PPSK keys) AT REST. Generate with:
+#   openssl rand -base64 32
+# Without it the vault is written in PLAINTEXT (the agent logs a warning). Losing this key means losing the
+# vault: back it up somewhere other than this machine.
+vault.key = generate-me-with-openssl-rand-base64-32
+
+# The fleet-wide fallback, used only when a device has no vault entry. Leave the password empty to force
+# every device through the vault.
+default.user = admin
+default.password =
+
+# --- SSH host keys -------------------------------------------------------------------------------------
+# tofu       trust-on-first-use (default): the first key seen for an AP is pinned; a CHANGED key is refused
+#            as a possible man-in-the-middle.
+# strict     the key must already be in known.hosts — nothing is learned automatically.
+# accept-all NO verification. A lab escape hatch. Never in production.
+ssh.hostkey = tofu
+known.hosts = /var/lib/hivekeeper/known_hosts
+
+# --- Storage -------------------------------------------------------------------------------------------
+# Every device config backup, as a local git repository. Back this up: it is your rollback path.
+backup.dir = /var/lib/hivekeeper/backups
+
+# --- Private PSK via RADIUS (optional) -----------------------------------------------------------------
+# The on-prem store of per-user PSKs that HiveKeeper mints, and the directory the RADIUS provisioner writes
+# its authorize file to. Encrypted at rest with vault.key. Leave unset unless you run the PPSK/RADIUS path.
+#ppsk.store = /var/lib/hivekeeper/ppsk.properties
+#radius.dir = /etc/raddb

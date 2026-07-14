@@ -37,7 +37,7 @@ public final class AgentMain {
     }
 
     public static void main(String[] args) throws Exception {
-        AgentConfig config = AgentConfig.fromEnv();
+        AgentConfig config = AgentConfig.load();
         log.info("starting HiveKeeper agent '{}' -> {} (mTLS={})",
                 config.agentId(), config.gatewayUri(), config.mtlsEnabled());
 

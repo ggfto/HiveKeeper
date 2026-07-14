@@ -30,6 +30,10 @@ node_modules/
 # Local compose env (the committed template is .env.example)
 .env
 
+# A real agent config: it holds the enrollment token, the vault key and the fallback SSH password.
+# The committed template is hive-agent/agent.conf.example.
+agent.conf
+
 # Local secrets, keystores, and captured device data — never commit
 *.pem
 *.key
