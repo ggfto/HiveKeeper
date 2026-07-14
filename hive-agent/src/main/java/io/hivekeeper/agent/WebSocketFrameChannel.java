@@ -67,6 +67,13 @@ public final class WebSocketFrameChannel implements FrameChannel {
         connect();
     }
 
+    /** Whether the uplink to the gateway is currently open. An agent that cannot reach its gateway can do
+     *  nothing, so this — not "the process is alive" — is what health reporting is interested in. */
+    public boolean isConnected() {
+        InnerClient c = client;
+        return c != null && c.isOpen();
+    }
+
     private void connect() {
         if (!running) {
             return;

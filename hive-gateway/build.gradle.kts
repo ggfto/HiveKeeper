@@ -13,6 +13,10 @@ dependencies {
     implementation(platform("org.springframework.boot:spring-boot-dependencies:3.4.1"))
     implementation("org.springframework.boot:spring-boot-starter-web")
     implementation("org.springframework.boot:spring-boot-starter-websocket")
+    // Health + metrics, served on a SEPARATE management port that no deployment publishes (see
+    // application.properties). Without this there is no way for an orchestrator to know the gateway is up.
+    implementation("org.springframework.boot:spring-boot-starter-actuator")
+    runtimeOnly("io.micrometer:micrometer-registry-prometheus")
     // Email alert delivery (JavaMailSender / SMTP). Webhook delivery reuses the web starter's RestTemplate.
     implementation("org.springframework.boot:spring-boot-starter-mail")
     // Persistence (active only under the 'postgres' profile)

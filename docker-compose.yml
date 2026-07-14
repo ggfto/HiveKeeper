@@ -48,7 +48,10 @@ services:
     volumes:
       - agent-data:/data
     depends_on:
-      - gateway
+      # Wait for the gateway to actually answer its health check, not merely for its container to exist —
+      # otherwise the agent's first dial-out races the gateway's startup and burns a reconnect backoff.
+      gateway:
+        condition: service_healthy
     restart: unless-stopped
 
 volumes:

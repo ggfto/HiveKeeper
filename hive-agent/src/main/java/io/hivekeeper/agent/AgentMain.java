@@ -112,11 +112,16 @@ public final class AgentMain {
         // Auto-renew the mTLS certificate before it expires (re-issue over the current cert; reuses the keypair).
         ScheduledExecutorService renewer = startCertRenewal(config, channel);
 
+        // Health for a supervisor to watch. A file rather than a port: the agent never accepts an inbound
+        // connection, and that is worth more than the convenience of an HTTP endpoint.
+        AgentHealth health = AgentHealth.start(Path.of(config.healthFile()), channel);
+
         Runtime.getRuntime().addShutdownHook(new Thread(() -> {
             log.info("shutting down agent");
             if (renewer != null) {
                 renewer.shutdownNow();
             }
+            health.close();
             channel.close();
             agent.close();
         }));
