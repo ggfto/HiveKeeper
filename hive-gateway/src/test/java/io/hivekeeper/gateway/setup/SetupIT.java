@@ -5,8 +5,9 @@ import io.hivekeeper.gateway.access.ResourceScope;
 import io.hivekeeper.gateway.access.Role;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.resttestclient.TestRestTemplate;
+import org.springframework.boot.resttestclient.autoconfigure.AutoConfigureTestRestTemplate;
 import org.springframework.boot.test.context.SpringBootTest;
-import org.springframework.boot.test.web.client.TestRestTemplate;
 import org.springframework.http.ResponseEntity;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.ActiveProfiles;
@@ -31,6 +32,7 @@ import static org.mockito.Mockito.when;
  * the self-locking behaviour. Self-skips without a container engine.
  */
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
+@AutoConfigureTestRestTemplate   // Spring Boot 4 no longer auto-registers TestRestTemplate implicitly
 @ActiveProfiles({"postgres", "oidc"})
 @Testcontainers(disabledWithoutDocker = true)
 class SetupIT {
