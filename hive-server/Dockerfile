@@ -16,7 +16,10 @@ RUN chmod +x ./gradlew && ./gradlew --no-daemon :hive-server:installDist -x test
 FROM eclipse-temurin:21-jre
 # Patch the base image's OS packages — a JRE base drifts behind the distro's security fixes between its own
 # rebuilds, and the CI image scan fails the build on a fixable CRITICAL/HIGH.
-RUN apt-get update && apt-get upgrade -y && rm -rf /var/lib/apt/lists/*
+RUN apt-get update && apt-get upgrade -y && rm -rf /var/lib/apt/lists/* \
+    # Drop pebble: Canonical's service manager, bundled in the temurin base, unused here (the ENTRYPOINT runs
+    # the app directly), and a static Go binary apt cannot patch — so it would keep failing the CVE scan.
+    && rm -f /usr/bin/pebble
 WORKDIR /app
 COPY --from=build /src/hive-server/build/install/hive-server/ /app/
 # Inside the container, bind all interfaces; override at deploy time as needed.

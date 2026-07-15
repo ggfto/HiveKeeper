@@ -17,7 +17,10 @@ FROM eclipse-temurin:21-jre
 RUN apt-get update \
     && apt-get upgrade -y \
     && apt-get install -y --no-install-recommends curl \
-    && rm -rf /var/lib/apt/lists/*
+    && rm -rf /var/lib/apt/lists/* \
+    # pebble is Canonical's service manager, bundled in the temurin base and never used here (the ENTRYPOINT
+    # runs the app directly). It is a static Go binary apt cannot patch, and it carries its own CVEs, so drop it.
+    && rm -f /usr/bin/pebble
 WORKDIR /app
 COPY --from=build /src/hive-gateway/build/install/hive-gateway/ /app/
 ENV SERVER_ADDRESS=0.0.0.0 \

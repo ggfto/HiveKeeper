@@ -10,7 +10,7 @@ dependencies {
     // Agent enrollment: parse the agent's PKCS#10 CSR and sign a leaf cert with the file-backed CA.
     implementation(libs.bcpkix)
 
-    implementation(platform("org.springframework.boot:spring-boot-dependencies:3.4.1"))
+    implementation(platform("org.springframework.boot:spring-boot-dependencies:3.5.16"))
     implementation("org.springframework.boot:spring-boot-starter-web")
     implementation("org.springframework.boot:spring-boot-starter-websocket")
     // Health + metrics, served on a SEPARATE management port that no deployment publishes (see
