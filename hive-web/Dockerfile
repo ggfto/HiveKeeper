@@ -10,7 +10,10 @@
 
 # --- build stage ---------------------------------------------------------------
 FROM node:22-alpine AS build
-RUN corepack enable
+# Install corepack explicitly rather than relying on the one the base image used to bundle: Node 25+ unbundled
+# corepack, so `corepack enable` alone is "not found" (exit 127) on those images. This keeps the build working
+# across Node versions while corepack stays the single source of the pnpm version (package.json packageManager).
+RUN npm install -g corepack@latest && corepack enable
 WORKDIR /src
 
 # Dependencies first, so a source-only change does not re-resolve the whole tree. corepack reads the exact pnpm
