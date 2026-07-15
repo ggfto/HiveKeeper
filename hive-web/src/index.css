@@ -1,5 +1,13 @@
-@tailwind components;
-@tailwind utilities;
+/*
+ * Tailwind v4, CSS-first. We import only the theme tokens and the utilities layer — NOT preflight/base,
+ * because the kit's dist/style.css (imported first in main.jsx) already ships preflight. The JS config
+ * (content globs, the amber color mappings to the kit's HSL CSS vars, and tailwindcss-animate) is kept
+ * via @config so the v3-style theme.extend keeps generating our utilities.
+ */
+@layer theme, components, utilities;
+@import 'tailwindcss/theme.css' layer(theme);
+@import 'tailwindcss/utilities.css' layer(utilities);
+@config '../tailwind.config.js';
 
 /*
  * HiveKeeper identity layered over @mriqbox/ui-kit. The kit's dist/style.css (imported first in main.jsx)
