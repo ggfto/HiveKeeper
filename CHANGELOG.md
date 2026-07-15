@@ -1,3 +1,24 @@
+# [0.8.0](https://github.com/ggfto/HiveKeeper/compare/v0.7.0...v0.8.0) (2026-07-15)
+
+
+### Bug Fixes
+
+* **agent:** commit the image's default agent.conf, which .gitignore was eating ([98de3a5](https://github.com/ggfto/HiveKeeper/commit/98de3a5973a1d878b361f1ebf06f5b86780f61ea))
+* **deps:** patch the CRITICAL/HIGH CVEs the image scan caught in the app's dependencies ([ca95ce0](https://github.com/ggfto/HiveKeeper/commit/ca95ce0afe262ef3a4201f839c2b1b83587ec05b))
+* **images:** patch base-image OS packages so the scan (and the published images) are clean ([40ad960](https://github.com/ggfto/HiveKeeper/commit/40ad9600e21ebf9ad4cde0ab55a0050e17914f96))
+* **security:** stop provisioning users on sight, and close two audit residuals ([cdc0421](https://github.com/ggfto/HiveKeeper/commit/cdc04213d661d8271049454af4adde671cd46e2c))
+
+
+### Features
+
+* **agent:** configuration file, so a self-hosted agent is not configured by env alone ([c2f8833](https://github.com/ggfto/HiveKeeper/commit/c2f8833de4e1232178a0d7d8002f16732f6b8907))
+* **auth:** sign in with GitHub, via Keycloak identity brokering ([62517f3](https://github.com/ggfto/HiveKeeper/commit/62517f352c581f1e2c8f103358c50b3628bfe560))
+* **deploy:** backups, and the production runbook ([3bd5127](https://github.com/ggfto/HiveKeeper/commit/3bd5127a44d4f96b0bed8ff7b369894d5546a617))
+* **deploy:** production stack — TLS, generated secrets, and an unterminated port for agents ([34e2436](https://github.com/ggfto/HiveKeeper/commit/34e24361448b7d4d6b4b8758a5f984d587fdb437))
+* **ops:** health checks for the gateway and the agent ([823cb53](https://github.com/ggfto/HiveKeeper/commit/823cb53b25f7ede54f5241d24267edce574f58c4))
+* **web:** admit an existing account, so a GitHub user can actually be added ([423972d](https://github.com/ggfto/HiveKeeper/commit/423972df46a517cee7e6c130fc8e31dd3fd7db62))
+* **web:** production image for the console, with the IdP resolved at runtime ([cfc55c7](https://github.com/ggfto/HiveKeeper/commit/cfc55c725cea82c6ee1af2b5923b0bb21711d339))
+
 # [0.7.0](https://github.com/ggfto/HiveKeeper/compare/v0.6.0...v0.7.0) (2026-06-30)
 
 
