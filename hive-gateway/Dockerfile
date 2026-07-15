@@ -5,12 +5,12 @@
 # Terminate TLS in front of this for the browser-facing API (see docker-compose.prod.yml) — but NOT for the
 # agent's mTLS port, which must reach the gateway unterminated or client-certificate auth cannot work.
 
-FROM eclipse-temurin:21-jdk AS build
+FROM eclipse-temurin:25-jdk AS build
 WORKDIR /src
 COPY . .
 RUN chmod +x ./gradlew && ./gradlew --no-daemon :hive-gateway:installDist -x test
 
-FROM eclipse-temurin:21-jre
+FROM eclipse-temurin:25-jre
 # Patch the base image's OS packages (a JRE base drifts behind the distro's security fixes between its own
 # rebuilds), and add curl for the healthcheck below. The image scan in CI fails the build on a fixable
 # CRITICAL/HIGH, so this is what keeps a published image from shipping one.
