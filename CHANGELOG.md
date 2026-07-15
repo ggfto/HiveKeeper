@@ -1,3 +1,10 @@
+## [0.8.1](https://github.com/ggfto/HiveKeeper/compare/v0.8.0...v0.8.1) (2026-07-15)
+
+
+### Bug Fixes
+
+* **web:** install corepack explicitly, so the build survives Node 25+ ([9548d7a](https://github.com/ggfto/HiveKeeper/commit/9548d7adf9b562215bdfbf2b9d1ce39f3746b694))
+
 # [0.8.0](https://github.com/ggfto/HiveKeeper/compare/v0.7.0...v0.8.0) (2026-07-15)
 
 
