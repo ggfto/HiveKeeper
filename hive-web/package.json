@@ -14,15 +14,15 @@
     "test:watch": "node scripts/sync-docs.mjs && vitest"
   },
   "dependencies": {
-    "@mriqbox/ui-kit": "^4.9.0",
-    "@xyflow/react": "^12.11.0",
-    "lucide-react": "^1.18.0",
-    "mermaid": "^11.15.0",
+    "@mriqbox/ui-kit": "^4.15.1",
+    "@xyflow/react": "^12.11.2",
+    "lucide-react": "^1.24.0",
+    "mermaid": "^11.16.0",
     "oidc-client-ts": "^3.5.0",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
     "react-markdown": "^9.0.1",
-    "react-router-dom": "^7.17.0",
+    "react-router-dom": "^7.18.1",
     "remark-gfm": "^4.0.0"
   },
   "devDependencies": {
@@ -30,13 +30,13 @@
     "@testing-library/react": "^16.3.2",
     "@testing-library/user-event": "^14.6.1",
     "@vitejs/plugin-react": "^4.3.4",
-    "autoprefixer": "^10.5.0",
+    "autoprefixer": "^10.5.3",
     "jsdom": "^29.1.1",
-    "postcss": "^8.5.15",
+    "postcss": "^8.5.19",
     "tailwindcss": "^3.4.19",
     "tailwindcss-animate": "^1.0.7",
     "vite": "^6.0.7",
-    "vitest": "^4.1.9"
+    "vitest": "^4.1.10"
   },
   "pnpm": {
     "onlyBuiltDependencies": [
