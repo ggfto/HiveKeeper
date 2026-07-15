@@ -24,16 +24,26 @@ dependencies {
     runtimeOnly("org.postgresql:postgresql")
     implementation("org.flywaydb:flyway-core")
     runtimeOnly("org.flywaydb:flyway-database-postgresql")
+    // Spring Boot 4 moved Flyway auto-configuration out of spring-boot-autoconfigure into its own module;
+    // flyway-core alone no longer wires it up, so the 'postgres' profile would silently skip migrations.
+    runtimeOnly("org.springframework.boot:spring-boot-flyway")
     runtimeOnly("org.springframework.boot:spring-boot-starter-logging")
     // OIDC: the gateway validates Keycloak JWTs as a Resource Server (active only under the 'oidc' profile).
     implementation("org.springframework.boot:spring-boot-starter-oauth2-resource-server")
 
     testImplementation("org.springframework.boot:spring-boot-starter-test")
+    // Spring Boot 4 split the test slices out of the core test starter: @WebMvcTest / @AutoConfigureMockMvc now
+    // live in the webmvc-test module, and TestRestTemplate in the resttestclient module (with restclient at
+    // runtime). Without these the controller slice tests and SetupIT no longer compile.
+    testImplementation("org.springframework.boot:spring-boot-starter-webmvc-test")
+    testImplementation("org.springframework.boot:spring-boot-resttestclient")
+    testRuntimeOnly("org.springframework.boot:spring-boot-restclient")
     testImplementation("org.springframework.security:spring-security-test")
-    // Real-Postgres integration tests (RLS, the SECURITY DEFINER fn, JIT, cross-tenant FKs). Versions come
-    // from the Spring Boot BOM above. The tests self-skip when no container engine is available.
-    testImplementation("org.testcontainers:junit-jupiter")
-    testImplementation("org.testcontainers:postgresql")
+    // Real-Postgres integration tests (RLS, the SECURITY DEFINER fn, JIT, cross-tenant FKs). Testcontainers 2.0
+    // (managed by the Spring Boot 4 BOM) renamed its modules with a testcontainers- prefix. The tests self-skip
+    // when no container engine is available.
+    testImplementation("org.testcontainers:testcontainers-junit-jupiter")
+    testImplementation("org.testcontainers:testcontainers-postgresql")
     testRuntimeOnly("org.junit.platform:junit-platform-launcher")
 }
 

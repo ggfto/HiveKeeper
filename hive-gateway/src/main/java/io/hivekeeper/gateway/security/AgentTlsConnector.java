@@ -5,7 +5,7 @@ import org.apache.coyote.http11.Http11NioProtocol;
 import org.apache.tomcat.util.net.SSLHostConfig;
 import org.apache.tomcat.util.net.SSLHostConfigCertificate;
 import org.springframework.beans.factory.annotation.Value;
-import org.springframework.boot.web.embedded.tomcat.TomcatServletWebServerFactory;
+import org.springframework.boot.tomcat.servlet.TomcatServletWebServerFactory;
 import org.springframework.boot.web.server.WebServerFactoryCustomizer;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -47,7 +47,7 @@ public class AgentTlsConnector {
             @Value("${hivekeeper.agent-tls.truststore}") String truststore,
             @Value("${hivekeeper.agent-tls.truststore-password:changeit}") String truststorePassword) {
 
-        return factory -> factory.addAdditionalTomcatConnectors(
+        return factory -> factory.addAdditionalConnectors(
                 connector(port, keystore, keystorePassword, keyAlias, truststore, truststorePassword));
     }
 
