@@ -5,7 +5,7 @@ jgit = "7.7.0.202606012155-r"
 picocli = "4.7.7"
 jackson = "2.22.1"
 slf4j = "2.0.18"
-junit = "5.11.4"
+junit = "6.1.2"
 javaWebsocket = "1.6.0"
 bouncycastle = "1.85"
 
