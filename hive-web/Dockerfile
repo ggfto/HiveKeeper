@@ -26,7 +26,7 @@ COPY docs/ /docs/
 RUN pnpm build
 
 # --- runtime stage -------------------------------------------------------------
-FROM nginxinc/nginx-unprivileged:1.27-alpine
+FROM nginxinc/nginx-unprivileged:1.31-alpine
 
 # Patch the base image's OS packages — an Alpine base drifts behind the distro's security fixes between its own
 # rebuilds, and the CI image scan fails the build on a fixable CRITICAL/HIGH. Briefly root to run apk, then
