@@ -24,10 +24,10 @@ subprojects {
     // Lombok: used judiciously — @Slf4j for loggers and @Builder for wide value types.
     // Records already cover getter/equals/hashCode/toString/constructor, so we do not use @Value/@Data.
     dependencies {
-        "compileOnly"("org.projectlombok:lombok:1.18.38")
-        "annotationProcessor"("org.projectlombok:lombok:1.18.38")
-        "testCompileOnly"("org.projectlombok:lombok:1.18.38")
-        "testAnnotationProcessor"("org.projectlombok:lombok:1.18.38")
+        "compileOnly"("org.projectlombok:lombok:1.18.46")
+        "annotationProcessor"("org.projectlombok:lombok:1.18.46")
+        "testCompileOnly"("org.projectlombok:lombok:1.18.46")
+        "testAnnotationProcessor"("org.projectlombok:lombok:1.18.46")
     }
 
     tasks.withType<JavaCompile>().configureEach {

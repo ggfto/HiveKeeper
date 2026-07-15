@@ -1,13 +1,13 @@
 [versions]
 sshj = "0.40.0"
 jschMwiede = "0.2.25"
-jgit = "7.3.0.202506031305-r"
-picocli = "4.7.6"
-jackson = "2.21.4"
-slf4j = "2.0.16"
+jgit = "7.7.0.202606012155-r"
+picocli = "4.7.7"
+jackson = "2.22.1"
+slf4j = "2.0.18"
 junit = "5.11.4"
 javaWebsocket = "1.6.0"
-bouncycastle = "1.80"
+bouncycastle = "1.85"
 
 [libraries]
 # transport
