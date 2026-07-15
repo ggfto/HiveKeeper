@@ -35,7 +35,7 @@ jobs:
           java-version: 21
 
       - name: Set up Gradle
-        uses: gradle/actions/setup-gradle@v4
+        uses: gradle/actions/setup-gradle@v6
 
       # Docker is present on the runner, so the gateway's Testcontainers suites (Postgres RLS, the SECURITY
       # DEFINER function, cross-tenant FKs) actually run here — locally they self-skip without a container engine.
