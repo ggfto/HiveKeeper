@@ -65,7 +65,12 @@ Per device, via the web UI ([device configuration](/device-configuration/) expla
   (20/40/80/160 MHz, plus the explicit 40-above / 40-below offsets), **band-steering**, **client
   load-balancing**, and a per-profile **max-clients** cap.
   Best-practice advisories (channel overlap, wide channels, high power) flag settings likely to hurt latency
-  under client density, right next to the control that fixes them. A profile can be shared across interfaces
+  under client density, right next to the control that fixes them. A **Channel scan** panel (and `hivekeeper
+  scan`) reads `show acsp channel-info` / `show acsp neighbor` to show, per radio, what every candidate
+  channel would cost, how many neighbouring APs sit on it and how loud the nearest one is — then names the
+  cheapest. The costs are the **AP's own**: it runs automatic channel selection and scores the spectrum
+  continuously, so HiveKeeper reports that measurement rather than re-deriving one. Read-only; changing a
+  channel stays a deliberate act in the radio form, because it reconnects every client on that radio. A profile can be shared across interfaces
   and APs, so a profile change has a wider blast radius than a per-interface tweak. An **Advanced RF tuning**
   disclosure exposes the dense-RF knobs: per-radio `rx-sop` / `ed-threshold` / `dfs-backup-channel`, and on the
   profile `dfs`, `short-guard-interval`, `ampdu` / `amsdu`, `frameburst`, `tx-beamforming`, `high-density`,

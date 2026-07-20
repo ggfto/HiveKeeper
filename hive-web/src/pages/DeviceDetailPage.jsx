@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { MriPageHeader, MriButton, MriStatusBadge } from '@mriqbox/ui-kit'
-import { Boxes, Wifi, Network, Radio, Globe, Terminal, Power, ArrowLeft, Router, Activity, DoorOpen, KeyRound, ShieldUser, CalendarClock } from 'lucide-react'
+import { Boxes, Wifi, Network, Radar, Radio, Globe, Terminal, Power, ArrowLeft, Router, Activity, DoorOpen, KeyRound, ShieldUser, CalendarClock } from 'lucide-react'
 import { useAuth } from '../context/AuthProvider'
 import { useToast } from '../context/ToastProvider'
 import { ConfigNav } from '../components/molecules/ConfigNav'
@@ -23,6 +23,7 @@ import { CredentialForm } from '../components/organisms/CredentialForm'
 import { PpskUsersSection } from '../components/organisms/PpskUsersSection'
 import { CaptivePortalForm } from '../components/organisms/CaptivePortalForm'
 import { MonitoringSection } from '../components/organisms/MonitoringSection'
+import { ChannelScanSection } from '../components/organisms/ChannelScanSection'
 import { MONITORING_SECTIONS } from '../lib/configSchema'
 import {
   parseSsids,
@@ -48,6 +49,7 @@ const SECTIONS = [
   { id: 'captiveportal', label: 'Captive portal', icon: DoorOpen },
   { id: 'mesh', label: 'Mesh', icon: Network },
   { id: 'radio', label: 'Radio', icon: Radio },
+  { id: 'channels', label: 'Channel scan', icon: Radar },
   { id: 'clientmode', label: 'Client mode', icon: Router },
   { id: 'network', label: 'Network', icon: Globe },
   { id: 'policy', label: 'Policy', icon: ShieldUser },
@@ -233,6 +235,30 @@ export function DeviceDetailPage() {
   // cheap reads — `show capwap client` (is the AP standalone or still phoning home) and `show acsp` (per-radio
   // channel/width/Tx power, which inventory leaves null). All through the agent. Memoized so the auto-load fires
   // once, not on every parent render.
+  // The channel scan: two read-only reads down the same agent path monitoring already uses. Kept separate
+  // from loadStatus because it is deliberately on-demand — `show acsp neighbor` is a long table, and there
+  // is no reason to pull it on every status refresh.
+  const [scans, setScans] = useState([])
+  const [scanning, setScanning] = useState(false)
+  const onScan = useCallback(async () => {
+    if (!device) return
+    setScanning(true)
+    try {
+      const r = await gateway.agentOp(device.agentId, 'apply-config', {
+        host: device.mgmtIp,
+        port: 22,
+        commands: ['show acsp channel-info', 'show acsp neighbor'],
+        save: false,
+      })
+      const outputs = r.outputs || []
+      setScans(parseChannelScans(outputs[0], outputs[1]))
+    } catch {
+      setScans([])
+    } finally {
+      setScanning(false)
+    }
+  }, [gateway, device])
+
   const loadStatus = useCallback(
     async (d) => {
       const [inv, outputs] = await Promise.all([
@@ -464,6 +490,9 @@ export function DeviceDetailPage() {
               onApply={onApplyConfig}
               busy={busy}
             />
+          )}
+          {section === 'channels' && (
+            <ChannelScanSection scans={scans} onScan={onScan} busy={busy || scanning} />
           )}
           {section === 'advanced' && (
             <AdvancedConfigForm device={device} onApply={onApplyConfig} result={configResult} busy={busy} />

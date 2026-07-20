@@ -1,0 +1,14 @@
+
+wifi0(12) ACSP neighbor list (104/384): 
+Bssid           Mode     Ssid/Hive                Chan   Rssi(dBm) Aerohive AP  CU  CRC STA Channel-width VID  NVID 
+a4c7:f621:5794  Access   604_EN                   6    -46       yes          42  116 0   20            -    -    
+d854:a282:7214  Access   604_EN                   11   -27       yes          55  96  0   20            1    1    
+6283:e75e:e128  Access                            1    -82       no           --  --  --  40+           -    -    
+b0ec:dd6f:b5b0  Access   GIOVANNA-2.4G            1    -81       no           --  --  --  20            -    -    
+6083:e7be:e128  Access   AudicomTelecom_A707      1    -74       no           --  --  --  40+           -    -    
+58d9:d5bf:2358  Access   Portaria Zenith          1    -77       no           --  --  --  20            -    -    
+6283:e73e:e128  Access   A707                     1    -78       no           --  --  --  40+           -    -    
+b4f2:6751:5d45  Access   Fortaleza.               1    -77       no           --  --  --  20            -    -    
+f209:0d5a:8280  Access                            2    -81       no           --  --  --  40+           -    -    
+3e64:cf5b:4728  Access                            2    -73       no           --  --  --  20            -    -    
+6283:e74e:e128  Access                            1    -81       no           --  --  --  40+           -    -    

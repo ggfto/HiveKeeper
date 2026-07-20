@@ -1,5 +1,6 @@
 package io.hivekeeper.core.drivers;
 
+import io.hivekeeper.core.model.ChannelScan;
 import io.hivekeeper.core.model.ConfigSnapshot;
 import io.hivekeeper.core.model.Device;
 import io.hivekeeper.core.model.DeviceId;
@@ -29,6 +30,18 @@ public interface Driver {
 
     /** Collects a vendor-neutral inventory snapshot. */
     Device inventory(DeviceId id, CliExecutor exec, ProgressReporter progress) throws IOException;
+
+    /**
+     * Reads the device's own assessment of the air around each radio: what every candidate channel would
+     * cost, and which neighbouring BSSIDs it heard.
+     *
+     * <p>Read-only. Access points already run automatic channel selection and score the spectrum
+     * continuously; this surfaces that measurement rather than re-deriving it, because the AP is the one
+     * with the radio. Drivers whose platform exposes nothing comparable return an empty list.
+     */
+    default List<ChannelScan> channelScans(CliExecutor exec, ProgressReporter progress) throws IOException {
+        return List.of();
+    }
 
     /** Captures the device configuration (and, per {@code scope}, the separate user/PPSK channel). */
     ConfigSnapshot captureConfig(DeviceId id, CliExecutor exec, ConfigScope scope, ProgressReporter progress)

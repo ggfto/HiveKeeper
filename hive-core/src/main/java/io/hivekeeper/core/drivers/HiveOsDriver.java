@@ -1,5 +1,6 @@
 package io.hivekeeper.core.drivers;
 
+import io.hivekeeper.core.model.ChannelScan;
 import io.hivekeeper.core.model.ConfigSnapshot;
 import io.hivekeeper.core.model.Device;
 import io.hivekeeper.core.model.DeviceId;
@@ -26,6 +27,8 @@ public final class HiveOsDriver implements Driver {
     private static final String SHOW_INTERFACE_MGT0 = "show interface mgt0";
     private static final String SHOW_INTERFACE = "show interface";
     private static final String SHOW_STATION = "show station";
+    private static final String SHOW_ACSP_CHANNEL_INFO = "show acsp channel-info";
+    private static final String SHOW_ACSP_NEIGHBOR = "show acsp neighbor";
     private static final String RUNNING_CONFIG = "show running-config";
     private static final String RUNNING_CONFIG_SECRETS = "show running-config password";
     private static final String RUNNING_CONFIG_USERS = "show running-config users password";
@@ -137,6 +140,16 @@ public final class HiveOsDriver implements Driver {
         }
         progress.report(100, "Firmware upgrade initiated; verify the version once the AP is back online");
         return output;
+    }
+
+    @Override
+    public List<ChannelScan> channelScans(CliExecutor exec, ProgressReporter progress) throws IOException {
+        progress.report(30, "Reading channel costs");
+        String channelInfo = exec.run(SHOW_ACSP_CHANNEL_INFO);
+        progress.report(70, "Reading neighbouring access points");
+        String neighbors = exec.run(SHOW_ACSP_NEIGHBOR);
+        progress.report(100, "Scan read");
+        return List.copyOf(HiveOsParser.parseChannelScans(channelInfo, neighbors).values());
     }
 
     @Override

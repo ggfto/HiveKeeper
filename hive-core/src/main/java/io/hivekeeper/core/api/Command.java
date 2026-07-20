@@ -14,6 +14,7 @@ import java.util.UUID;
  */
 public sealed interface Command
         permits Command.Inventory, Command.BackupConfig, Command.RunRaw, Command.Discover,
+                Command.ScanChannels,
                 Command.ApplyConfig, Command.ConfigureSsid, Command.ConfigureHive, Command.Reboot,
                 Command.RestoreConfig, Command.FirmwareUpgrade, Command.SetCredential,
                 Command.ManagePpskUser, Command.Sealed {
@@ -24,6 +25,17 @@ public sealed interface Command
     record Inventory(UUID commandId, DeviceRef device) implements Command {
         public static Inventory of(DeviceRef device) {
             return new Inventory(UUID.randomUUID(), device);
+        }
+    }
+
+    /**
+     * Read the AP's own view of the air: the cost it assigns each candidate channel, and the neighbouring
+     * BSSIDs it heard. Read-only — it reports what automatic channel selection already measured so a human
+     * can decide, and changes nothing.
+     */
+    record ScanChannels(UUID commandId, DeviceRef device) implements Command {
+        public static ScanChannels of(DeviceRef device) {
+            return new ScanChannels(UUID.randomUUID(), device);
         }
     }
 

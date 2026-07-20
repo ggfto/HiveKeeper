@@ -56,6 +56,7 @@ public final class RemoteEngine implements Engine {
     private static DeviceId deviceIdOf(Command command) {
         return switch (command) {
             case Command.Inventory c -> c.device().id();
+            case Command.ScanChannels c -> c.device().id();
             case Command.BackupConfig c -> c.device().id();
             case Command.RunRaw c -> c.device().id();
             case Command.ApplyConfig c -> c.device().id();

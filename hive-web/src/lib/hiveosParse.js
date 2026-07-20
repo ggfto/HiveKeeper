@@ -257,3 +257,127 @@ export function parseAcsp(output) {
       }
     })
 }
+
+// HiveOS's sentinel cost for a channel that is not a candidate at all.
+export const UNUSABLE_COST = 32767
+
+/**
+ * Parse `show acsp channel-info` + `show acsp neighbor` into one scan per radio.
+ *
+ * The costs are the AP's own. HiveOS runs ACSP, which scans and scores every permitted channel
+ * continuously; reading that out beats re-deriving it from a neighbour list, because the AP measured the
+ * air and the browser did not. Our job is to surface the number and explain what drove it.
+ *
+ * A cost of UNUSABLE_COST is a sentinel, not an expensive channel: on 2.4 GHz every channel but 1/6/11 is
+ * flagged `overlap`, and on 5 GHz a channel that is the secondary half of a bonded pair is flagged
+ * `offset`. Those are channels the radio cannot centre on, so they are excluded rather than ranked.
+ *
+ * -> [{ iface, state, currentChannel, channels: [{ channel, cost, reason, usable }], neighbors: [...] }]
+ */
+export function parseChannelScans(channelInfo, neighborOutput) {
+  const byRadio = parseAcspNeighbors(neighborOutput)
+  const scans = []
+  let current = null
+
+  for (const raw of (channelInfo || '').split('\n')) {
+    const line = raw.trim()
+    const radio = /^(wifi\d+)\s*\(\d+\)\s*:/i.exec(line)
+    if (radio) {
+      current = {
+        iface: radio[1].toLowerCase(),
+        state: null,
+        currentChannel: null,
+        channels: [],
+        neighbors: [],
+      }
+      current.neighbors = byRadio[current.iface] || []
+      scans.push(current)
+      continue
+    }
+    if (!current) continue
+
+    const state = /^State:\s*(\S+)/.exec(line)
+    if (state) {
+      current.state = state[1]
+      continue
+    }
+    const lowest = /^Lowest cost channel:\s*(\d+)/.exec(line)
+    if (lowest) {
+      current.currentChannel = Number(lowest[1])
+      continue
+    }
+    const ch = /^Channel\s+(\d+)\s+Cost:\s+(\d+)\s*(?:\((\w+)\))?/.exec(line)
+    if (ch) {
+      const cost = Number(ch[2])
+      current.channels.push({
+        channel: Number(ch[1]),
+        cost,
+        reason: ch[3] || null,
+        usable: cost < UNUSABLE_COST,
+      })
+    }
+  }
+  return scans
+}
+
+/**
+ * Parse `show acsp neighbor` into { wifi0: [...], wifi1: [...] }.
+ *
+ * Splitting on whitespace does not work here: the SSID column can contain spaces (a real capture holds
+ * `Portaria Zenith`) and can be empty for a hidden network, so the column count varies row to row. Anchor
+ * on the two unambiguous fields instead — the BSSID at the start and the numeric channel/RSSI pair — and
+ * take whatever sits between as the SSID.
+ */
+function parseAcspNeighbors(output) {
+  const out = {}
+  let iface = null
+  const row =
+    /^([0-9a-f]{4}:[0-9a-f]{4}:[0-9a-f]{4})\s+(\S+)\s+(.*?)\s*(\d+)\s+(-?\d+)\s+(yes|no)\s+(\S+)\s+(\S+)\s+(\S+)\s+(\S+)/i
+
+  for (const raw of (output || '').split('\n')) {
+    const line = raw.trim()
+    const header = /^(wifi\d+)\(\d+\)\s+ACSP neighbor list/i.exec(line)
+    if (header) {
+      iface = header[1].toLowerCase()
+      out[iface] = out[iface] || []
+      continue
+    }
+    if (!iface) continue
+    const m = row.exec(line)
+    if (!m) continue
+    const ssid = m[3].trim()
+    out[iface].push({
+      bssid: m[1],
+      ssid: ssid || null,
+      channel: Number(m[4]),
+      rssiDbm: Number(m[5]),
+      ourFleet: m[6].toLowerCase() === 'yes',
+      // A foreign AP prints `--` for these; keep them null rather than NaN.
+      utilization: num(m[7]),
+      stations: num(m[9]),
+      channelWidth: m[10],
+    })
+  }
+  return out
+}
+
+/** The usable channels of a scan, cheapest first. */
+export function rankedChannels(scan) {
+  return (scan?.channels || [])
+    .filter((c) => c.usable)
+    .sort((a, b) => a.cost - b.cost || a.channel - b.channel)
+}
+
+/**
+ * How crowded a channel is: how many neighbours sit on it, and how loud the loudest one is (dBm, closer to
+ * zero is louder). Worth showing beside a cost — one loud neighbour and a dozen distant ones can score
+ * alike, and they are not the same problem.
+ */
+export function channelCrowding(scan, channel) {
+  const on = (scan?.neighbors || []).filter((n) => n.channel === channel)
+  return {
+    count: on.length,
+    loudestDbm: on.length ? Math.max(...on.map((n) => n.rssiDbm)) : null,
+    ourFleet: on.filter((n) => n.ourFleet).length,
+  }
+}

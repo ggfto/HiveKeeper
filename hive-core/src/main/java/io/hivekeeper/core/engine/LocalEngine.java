@@ -274,6 +274,10 @@ public final class LocalEngine implements Engine {
                 }
                 yield new Result.RawCapture(id, deviceId, outputs);
             }
+            case Command.ScanChannels ignored -> {
+                progress.report(10, "Scanning the air");
+                yield new Result.ChannelsScanned(id, deviceId, driver.channelScans(exec, progress));
+            }
             case Command.ApplyConfig c -> {
                 List<String> outputs = driver.applyConfig(deviceId, exec, c.commands(), c.save(), progress);
                 yield new Result.ConfigApplied(id, deviceId, c.commands(), outputs, c.save());
@@ -318,6 +322,7 @@ public final class LocalEngine implements Engine {
     private static DeviceRef deviceRefOf(Command command) {
         return switch (command) {
             case Command.Inventory c -> c.device();
+            case Command.ScanChannels c -> c.device();
             case Command.BackupConfig c -> c.device();
             case Command.RunRaw c -> c.device();
             case Command.ApplyConfig c -> c.device();
