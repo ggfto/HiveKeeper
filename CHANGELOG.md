@@ -1,3 +1,13 @@
+# [0.9.0](https://github.com/ggfto/HiveKeeper/compare/v0.8.1...v0.9.0) (2026-07-20)
+
+
+### Features
+
+* **backup:** configure the org's backup repository from the console ([5d8be31](https://github.com/ggfto/HiveKeeper/commit/5d8be3165ead8f16688a362bcf95feb31c3f40fb))
+* **deploy:** Portainer stack behind a Cloudflare Tunnel ([ded0570](https://github.com/ggfto/HiveKeeper/commit/ded0570523eb50f9a8f578274ef07dfc692488e9))
+* **hiveos:** discover radios per device, and support the Wi-Fi 6 grammar ([b46a762](https://github.com/ggfto/HiveKeeper/commit/b46a762b85e70eb301b847289198cfca31f91e6a))
+* **rf:** channel scan — what each radio hears, and which channel to pick ([20dbfb7](https://github.com/ggfto/HiveKeeper/commit/20dbfb72eea0e3b0c9bfef42472b773a729a60aa))
+
 ## [0.8.1](https://github.com/ggfto/HiveKeeper/compare/v0.8.0...v0.8.1) (2026-07-15)
 
 
