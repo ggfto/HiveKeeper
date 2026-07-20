@@ -62,6 +62,7 @@ export default defineConfig({
         { label: 'Device configuration', link: '/device-configuration/' },
         { label: 'Deployment (dev stack)', link: '/deployment/' },
         { label: 'Running in production', link: '/production/' },
+        { label: 'Portainer + Cloudflare Tunnel', link: '/portainer-cloudflare/' },
         { label: 'Architecture', link: '/architecture/' },
         { label: 'Agent ⇄ gateway protocol', link: '/agent-protocol/' },
         { label: 'PPSK via RADIUS — design', link: '/ppsk-radius-design/' },
