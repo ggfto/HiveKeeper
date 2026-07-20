@@ -1,0 +1,94 @@
+# The on-prem agent — run this on a machine INSIDE the network your access points are on, NOT on the host
+# running docker-compose.portainer.yml.
+#
+#   1. cp agent.env.example .env   and fill it in (enrollment token, vault key, hostnames)
+#   2. save ca.pem next to this file — copy it out of the pki-init container's log in Portainer
+#   3. docker compose -f agent-compose.yml up -d
+#
+# Everything is configured by environment variable. The image ships its own /etc/hivekeeper/agent.conf and
+# the environment overrides it (see hive-agent/agent.conf.example), so there is no config file to mount.
+#
+# The agent opens no inbound port. It dials OUT — to Cloudflare, not even to your server directly.
+
+name: hivekeeper-agent
+
+services:
+  # The other end of the tunnel's `tcp://gateway:9443` ingress. `access tcp` is a raw byte pipe: the TLS
+  # session runs end to end between the agent and the gateway, so the agent's CLIENT CERTIFICATE survives
+  # the trip. An ordinary https:// ingress would terminate TLS at Cloudflare's edge and swallow it, and
+  # every handshake and certificate renewal would fail closed.
+  gateway-tunnel:
+    image: cloudflare/cloudflared:${CLOUDFLARED_VERSION:-latest}
+    command: access tcp --hostname ${HIVEKEEPER_AGENT_DOMAIN:?set it} --url 0.0.0.0:9443
+    environment:
+      # `access tcp` is a Zero Trust client, not a plain socket: it authenticates to the Cloudflare edge
+      # before the edge will broker the stream to your tunnel. Protect the agent hostname with an Access
+      # application whose policy is Action=Service Auth + a service token, and put the token here — without
+      # one, cloudflared tries to open a BROWSER for interactive login, which never completes on a headless
+      # agent and leaves the uplink permanently down.
+      #
+      # This is a second, independent credential in front of mTLS rather than a replacement for it.
+      TUNNEL_SERVICE_TOKEN_ID: ${CF_ACCESS_CLIENT_ID:?set it — Zero Trust > Access > Service Auth}
+      TUNNEL_SERVICE_TOKEN_SECRET: ${CF_ACCESS_CLIENT_SECRET:?set it}
+    networks:
+      default:
+        # The alias is what makes the certificate check work. The agent dials the real hostname, Docker's
+        # embedded DNS points it at this sidecar, and the gateway's certificate — whose SAN is that same
+        # hostname — validates. Hostname verification is on (Java-WebSocket sets
+        # endpointIdentificationAlgorithm=HTTPS), so pointing the agent at `localhost` instead would fail.
+        aliases:
+          - ${HIVEKEEPER_AGENT_DOMAIN:?set it}
+    restart: unless-stopped
+
+  agent:
+    image: ${HIVEKEEPER_REGISTRY:-ghcr.io/ggfto}/hivekeeper-agent:${HIVEKEEPER_TAG:?pin the same version as the gateway}
+    environment:
+      HIVEKEEPER_AGENT_ID: ${HIVEKEEPER_AGENT_ID:-hive-agent}
+
+      # Both go through the sidecar. enrollment.url must NOT point at the public console URL: renewal is
+      # authenticated by the agent's current client certificate, so it has to reach the gateway
+      # unterminated — through this same tcp pipe — or it fails with 401 once the first certificate nears
+      # expiry, months after everything appeared to work.
+      HIVEKEEPER_GATEWAY_URL: wss://${HIVEKEEPER_AGENT_DOMAIN:?set it}:9443/agent
+      HIVEKEEPER_ENROLLMENT_URL: https://${HIVEKEEPER_AGENT_DOMAIN:?set it}:9443
+      # The gateway's certificate on 9443 is issued by HiveKeeper's private CA, which the JVM has no reason
+      # to trust. Note this REPLACES the default trust store rather than adding to it.
+      HIVEKEEPER_ENROLLMENT_CACERT: /etc/hivekeeper/ca.pem
+      # One-time, from the console: Fleet -> Agents -> Enroll. Spent on first use; after that the agent
+      # renews over mTLS with no token.
+      HIVEKEEPER_ENROLLMENT_TOKEN: ${HIVEKEEPER_ENROLLMENT_TOKEN:-}
+
+      # These four MUST be redirected into /data. The image's defaults put them under /var/lib/hivekeeper,
+      # which is not a volume — leave them and the agent loses its identity, its pinned SSH host keys and
+      # its credential vault on every container recreate, then silently re-enrols as a stranger.
+      HIVEKEEPER_TLS_KEYSTORE: /data/agent.p12
+      HIVEKEEPER_TLS_KEYSTORE_PASSWORD: ${HIVEKEEPER_AGENT_STORE_PASSWORD:?set it — openssl rand -hex 24}
+      HIVEKEEPER_TLS_TRUSTSTORE: /data/truststore.p12
+      HIVEKEEPER_TLS_TRUSTSTORE_PASSWORD: ${HIVEKEEPER_AGENT_STORE_PASSWORD:?set it}
+      HIVEKEEPER_CREDENTIAL_VAULT: /data/vault.properties
+      HIVEKEEPER_KNOWN_HOSTS: /data/known_hosts
+
+      # base64 AES-256 key (openssl rand -base64 32) encrypting the vault AT REST. Without it the vault is
+      # written in plaintext. Losing it loses the vault: back it up somewhere other than this machine.
+      HIVEKEEPER_VAULT_KEY: ${HIVEKEEPER_VAULT_KEY:-}
+
+      # Fleet-wide fallback SSH credentials, used only when a device has no vault entry. They are resolved
+      # HERE and never leave this machine — the gateway only ever sends a reference.
+      HIVEKEEPER_DEFAULT_USER: ${HIVEKEEPER_DEFAULT_USER:-admin}
+      HIVEKEEPER_DEFAULT_PASSWORD: ${HIVEKEEPER_DEFAULT_PASSWORD:-}
+
+      # tofu (default) pins an AP's host key on first sight and refuses a changed one. accept-all disables
+      # verification entirely — a lab escape hatch, never production.
+      HIVEKEEPER_SSH_HOSTKEY: ${HIVEKEEPER_SSH_HOSTKEY:-tofu}
+    volumes:
+      # BACK THIS UP. It holds the agent's identity, the credential vault, the pinned SSH host keys, and the
+      # git history of every device config — which is your rollback path.
+      - agent-data:/data
+      # The CA certificate. Public, not a secret; copy it from the pki-init container's log in Portainer.
+      - ./ca.pem:/etc/hivekeeper/ca.pem:ro
+    depends_on:
+      - gateway-tunnel
+    restart: unless-stopped
+
+volumes:
+  agent-data:

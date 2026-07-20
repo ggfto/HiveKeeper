@@ -11,6 +11,12 @@ what you must not run in production.
 The production stack refuses those defaults rather than inheriting them: `docker-compose.prod.yml` is
 self-contained, and every secret is a required variable. If one is missing it will not start.
 
+:::note[No public ports, or deploying through Portainer?]
+This page assumes a machine with a domain pointed at it and ports 80, 443 and 9443 open. If you would
+rather publish nothing at all, [Portainer + Cloudflare Tunnel](/portainer-cloudflare/) covers the same
+stack with `cloudflared` as the only ingress.
+:::
+
 ## The shape of it
 
 Two machines, and the split is the whole point.

@@ -49,3 +49,6 @@ captures/local/
 dev-pki/
 test-restore/
 test-backups/
+
+# Live-AP exploration dumps (scratch output from scripts/hk-cli-explore.py and the capture command)
+captures/

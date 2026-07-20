@@ -13,6 +13,8 @@ const ORDER = [
   'authentication',
   'device-configuration',
   'deployment',
+  'production',
+  'portainer-cloudflare',
   'architecture',
   'agent-protocol',
   'ppsk-radius-design',

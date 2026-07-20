@@ -1,0 +1,251 @@
+# HiveKeeper — production stack for a Portainer Git stack, fronted by a Cloudflare Tunnel.
+#
+# Same shape as docker-compose.prod.yml, adapted to three constraints of that target:
+#
+#   1. NO PUBLISHED PORTS. cloudflared is the only ingress; it dials out to Cloudflare, so the host needs
+#      no inbound firewall rule and no public IP. Caddy is gone — the tunnel terminates TLS at the edge and
+#      the `path` ingress rule does the /auth mux that the Caddyfile used to do.
+#   2. NO BIND MOUNTS. A Portainer Git stack checks the repo out somewhere the Docker daemon cannot bind
+#      from, so `./deploy/...:/somewhere` silently mounts an empty directory. Every script that
+#      docker-compose.prod.yml bind-mounts is COPYed into a small image here instead (deploy/portainer/*),
+#      and the PKI is generated into a volume by pki-init rather than copied in by hand.
+#   3. THE AGENT PORT IS A tcp: INGRESS. 9443 carries mutual TLS; agents authenticate with a client
+#      certificate the gateway reads off the connection itself. An http: ingress would terminate TLS at
+#      Cloudflare's edge and swallow it. See deploy/portainer/cloudflared/init.sh.
+#
+# Deploy: Portainer -> Stacks -> Add stack -> Repository, this file, and paste the variables from
+# deploy/portainer/stack.env.example into the Environment variables panel. See docs/portainer.md.
+#
+# HIVEKEEPER_SOLO appears nowhere here, and must never be added: it turns every unauthenticated request
+# into the owner of the organization.
+
+name: hivekeeper
+
+services:
+  # Mints the CA, the truststore and the gateway's server certificate into the `pki` volume — but only if
+  # they are absent. Runs to completion on every `up` and exits 0; `restart: "no"` keeps that from looking
+  # like a crash. It also prints ca.pem to its log every time, which is how you get the certificate onto a
+  # new agent machine without a shell on the host.
+  pki-init:
+    build:
+      context: .
+      dockerfile: deploy/portainer/pki-init.Dockerfile
+    environment:
+      HIVEKEEPER_AGENT_DOMAIN: ${HIVEKEEPER_AGENT_DOMAIN:?set it — the hostname agents dial, e.g. agents.example.org}
+      HIVEKEEPER_PKI_STORE_PASSWORD: ${HIVEKEEPER_PKI_STORE_PASSWORD:?set it — openssl rand -hex 24}
+    volumes:
+      - pki:/pki
+    restart: "no"
+
+  gateway:
+    image: ${HIVEKEEPER_REGISTRY:-ghcr.io/ggfto}/hivekeeper-gateway:${HIVEKEEPER_TAG:?pin a version — never :latest in production}
+    environment:
+      # postgres = durable jobs + RLS multi-tenancy; oidc = per-user login; mtls = the agent TLS listener.
+      SPRING_PROFILES_ACTIVE: postgres,oidc,mtls
+      SERVER_ADDRESS: 0.0.0.0
+
+      # Not variables, deliberately. Both are switches that turn a hardened deployment back into a
+      # development one, and neither belongs somewhere it can be flipped by a typo in a web form.
+      # With the static tenant key on, one leaked header value is an owner of the whole organization.
+      HIVEKEEPER_TENANTKEY_ENABLED: "false"
+      HIVEKEEPER_CRYPTO_ALLOW_INSECURE_DEV_KEY: "false"
+
+      HIVEKEEPER_DB_URL: jdbc:postgresql://postgres:5432/hivekeeper
+      HIVEKEEPER_DB_USER: hivekeeper_app
+      HIVEKEEPER_DB_PASSWORD: ${HIVEKEEPER_DB_PASSWORD:?set it}
+      HIVEKEEPER_DB_ADMIN_USER: postgres
+      HIVEKEEPER_DB_ADMIN_PASSWORD: ${HIVEKEEPER_DB_ADMIN_PASSWORD:?set it}
+
+      # Encrypts secrets at rest in the database. BACK THIS UP: losing it does not lose the data, it makes
+      # the data permanently unreadable, which is worse because it looks fine until you try to open it.
+      HIVEKEEPER_CRYPTO_KEY: ${HIVEKEEPER_CRYPTO_KEY:?set it — openssl rand -base64 32}
+
+      # The issuer is what the BROWSER logs in at — Keycloak lives under /auth on the same hostname, muxed
+      # by the tunnel's path rule. The console reads this back from /api/mode, so nothing is baked into
+      # its bundle.
+      HIVEKEEPER_OIDC_ISSUER: https://${HIVEKEEPER_DOMAIN:?set it}/auth/realms/hivekeeper
+      # ...while the gateway itself reaches Keycloak over the internal network, by service name.
+      HIVEKEEPER_OIDC_JWK_SET_URI: http://keycloak:8080/auth/realms/hivekeeper/protocol/openid-connect/certs
+      HIVEKEEPER_OIDC_AUDIENCE: hive-gateway
+      HIVEKEEPER_KEYCLOAK_BASE_URL: http://keycloak:8080/auth
+      HIVEKEEPER_KEYCLOAK_REALM: hivekeeper
+      HIVEKEEPER_KEYCLOAK_ADMIN_USERNAME: ${KEYCLOAK_ADMIN:?set it}
+      HIVEKEEPER_KEYCLOAK_ADMIN_PASSWORD: ${KEYCLOAK_ADMIN_PASSWORD:?set it}
+
+      # The agent-facing TLS listener (9443) and the CA that signs agent certificates. One password for all
+      # three stores, the same one pki-init generated them with.
+      HIVEKEEPER_TLS_KEYSTORE: /pki/gateway.p12
+      HIVEKEEPER_TLS_KEYSTORE_PASSWORD: ${HIVEKEEPER_PKI_STORE_PASSWORD:?set it}
+      HIVEKEEPER_TLS_TRUSTSTORE: /pki/truststore.p12
+      HIVEKEEPER_TLS_TRUSTSTORE_PASSWORD: ${HIVEKEEPER_PKI_STORE_PASSWORD:?set it}
+      HIVEKEEPER_CA_KEYSTORE: /pki/ca.p12
+      HIVEKEEPER_CA_KEYSTORE_PASSWORD: ${HIVEKEEPER_PKI_STORE_PASSWORD:?set it}
+    volumes:
+      # Read-only: the gateway signs with the CA key but must never rewrite the PKI.
+      - pki:/pki:ro
+    depends_on:
+      pki-init:
+        condition: service_completed_successfully
+      postgres:
+        condition: service_healthy
+      keycloak:
+        condition: service_healthy
+    restart: unless-stopped
+
+  web:
+    image: ${HIVEKEEPER_REGISTRY:-ghcr.io/ggfto}/hivekeeper-web:${HIVEKEEPER_TAG:?pin a version}
+    environment:
+      HIVEKEEPER_GATEWAY_ORIGIN: http://gateway:8090
+    depends_on:
+      gateway:
+        condition: service_healthy
+    restart: unless-stopped
+
+  postgres:
+    build:
+      context: .
+      dockerfile: deploy/portainer/postgres.Dockerfile
+    environment:
+      POSTGRES_PASSWORD: ${HIVEKEEPER_DB_ADMIN_PASSWORD:?set it}
+      POSTGRES_DB: hivekeeper
+      # The restricted role the app connects as (NOSUPERUSER, NOBYPASSRLS): row-level security is the hard
+      # wall between organizations, and it does not apply to a superuser.
+      HIVEKEEPER_DB_PASSWORD: ${HIVEKEEPER_DB_PASSWORD:?set it}
+    volumes:
+      - pg-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d hivekeeper"]
+      interval: 10s
+      timeout: 5s
+      retries: 20
+    restart: unless-stopped
+
+  keycloak:
+    image: quay.io/keycloak/keycloak:26.0
+    # `start`, not `start-dev`: production mode. It runs plain HTTP behind the tunnel, which terminates TLS
+    # at Cloudflare's edge — hence hostname-strict-https=false and proxy-headers. KC_HOSTNAME is set
+    # explicitly rather than inferred, because cloudflared does not send X-Forwarded-Host the way Caddy did
+    # and an inferred issuer that disagrees with the browser's URL fails validation at the gateway.
+    command: ["start", "--optimized=false", "--http-enabled=true", "--hostname-strict-https=false", "--proxy-headers=xforwarded"]
+    environment:
+      KC_DB: postgres
+      KC_DB_URL: jdbc:postgresql://keycloak-db:5432/keycloak
+      KC_DB_USERNAME: keycloak
+      KC_DB_PASSWORD: ${KEYCLOAK_DB_PASSWORD:?set it}
+      KC_HOSTNAME: https://${HIVEKEEPER_DOMAIN:?set it}/auth
+      KC_HTTP_RELATIVE_PATH: /auth
+      KC_HEALTH_ENABLED: "true"
+      KC_BOOTSTRAP_ADMIN_USERNAME: ${KEYCLOAK_ADMIN:?set it}
+      KC_BOOTSTRAP_ADMIN_PASSWORD: ${KEYCLOAK_ADMIN_PASSWORD:?set it}
+    healthcheck:
+      # Keycloak serves health on the management port (9000), not the HTTP one. No curl in the image, so
+      # use the JVM's own client.
+      test: ["CMD-SHELL", "exec 3<>/dev/tcp/127.0.0.1/9000 && echo -e 'GET /health/ready HTTP/1.1\\r\\nHost: localhost\\r\\nConnection: close\\r\\n\\r\\n' >&3 && grep -q '\"UP\"' <&3"]
+      interval: 10s
+      timeout: 5s
+      retries: 30
+      start_period: 60s
+    depends_on:
+      keycloak-db:
+        condition: service_healthy
+    restart: unless-stopped
+
+  # Creates the realm, the console's public client (auth-code + PKCE) and — given credentials — the GitHub
+  # identity provider. Idempotent, so it runs on every `up` and reconciles any drift.
+  keycloak-init:
+    build:
+      context: .
+      dockerfile: deploy/portainer/keycloak-init.Dockerfile
+    environment:
+      KC_URL: http://keycloak:8080/auth
+      KEYCLOAK_ADMIN: ${KEYCLOAK_ADMIN:?set it}
+      KEYCLOAK_ADMIN_PASSWORD: ${KEYCLOAK_ADMIN_PASSWORD:?set it}
+      HIVEKEEPER_CONSOLE_URL: https://${HIVEKEEPER_DOMAIN:?set it}
+      HIVEKEEPER_REALM: hivekeeper
+      HIVEKEEPER_OIDC_CLIENT_ID: hive-gateway
+      # Leave empty for username + password sign-in only. The GitHub OAuth App's callback URL must be
+      # exactly https://${HIVEKEEPER_DOMAIN}/auth/realms/hivekeeper/broker/github/endpoint
+      HIVEKEEPER_GITHUB_CLIENT_ID: ${HIVEKEEPER_GITHUB_CLIENT_ID:-}
+      HIVEKEEPER_GITHUB_CLIENT_SECRET: ${HIVEKEEPER_GITHUB_CLIENT_SECRET:-}
+    depends_on:
+      keycloak:
+        condition: service_healthy
+    restart: "no"
+
+  keycloak-db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: keycloak
+      POSTGRES_USER: keycloak
+      POSTGRES_PASSWORD: ${KEYCLOAK_DB_PASSWORD:?set it}
+    volumes:
+      - keycloak-db-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U keycloak -d keycloak"]
+      interval: 10s
+      timeout: 5s
+      retries: 20
+    restart: unless-stopped
+
+  # Periodic pg_dump of BOTH databases. Both, because either alone is useless: restore the gateway's
+  # without Keycloak's and every role grant points at a user id that no longer exists — nobody can sign in,
+  # you included.
+  backup:
+    build:
+      context: .
+      dockerfile: deploy/portainer/backup.Dockerfile
+    environment:
+      HIVEKEEPER_DB_ADMIN_PASSWORD: ${HIVEKEEPER_DB_ADMIN_PASSWORD:?set it}
+      KEYCLOAK_DB_PASSWORD: ${KEYCLOAK_DB_PASSWORD:?set it}
+      HIVEKEEPER_BACKUP_INTERVAL_HOURS: ${HIVEKEEPER_BACKUP_INTERVAL_HOURS:-24}
+      HIVEKEEPER_BACKUP_RETENTION_DAYS: ${HIVEKEEPER_BACKUP_RETENTION_DAYS:-14}
+    volumes:
+      - pg-backups:/backups
+    depends_on:
+      postgres:
+        condition: service_healthy
+      keycloak-db:
+        condition: service_healthy
+    restart: unless-stopped
+
+  # Creates the tunnel through the Cloudflare API (idempotent), renders the ingress from the hostname
+  # variables, and upserts a proxied CNAME per hostname. Exits 0; the runner starts after it.
+  cloudflared-init:
+    build:
+      context: .
+      dockerfile: deploy/portainer/cloudflared-init.Dockerfile
+    environment:
+      # Scopes it needs: Account > Cloudflare Tunnel > Edit, and Zone > DNS > Edit on the zone below.
+      CF_API_TOKEN: ${CF_API_TOKEN:?set it — see the scopes in the comment above}
+      CF_ACCOUNT_ID: ${CF_ACCOUNT_ID:?set it}
+      CF_ZONE_ID: ${CF_ZONE_ID:?set it}
+      TUNNEL_NAME: ${TUNNEL_NAME:-hivekeeper}
+      HIVEKEEPER_DOMAIN: ${HIVEKEEPER_DOMAIN:?set it}
+      HIVEKEEPER_AGENT_DOMAIN: ${HIVEKEEPER_AGENT_DOMAIN:?set it}
+    volumes:
+      - cf-runtime:/etc/cloudflared
+    restart: "no"
+
+  cloudflared:
+    image: cloudflare/cloudflared:${CLOUDFLARED_VERSION:-latest}
+    command: tunnel --no-autoupdate --config /etc/cloudflared/config.yml run
+    volumes:
+      # Read-only: only the init container writes here.
+      - cf-runtime:/etc/cloudflared:ro
+    depends_on:
+      cloudflared-init:
+        condition: service_completed_successfully
+      web:
+        condition: service_started
+      gateway:
+        condition: service_started
+      keycloak:
+        condition: service_started
+    restart: unless-stopped
+
+volumes:
+  pki:
+  pg-data:
+  pg-backups:
+  keycloak-db-data:
+  cf-runtime:
