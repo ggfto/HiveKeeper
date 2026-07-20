@@ -62,6 +62,15 @@ public interface TenantStore {
         return Optional.empty();
     }
 
+    /**
+     * Every agent enrolled to a site (excluding revoked ones), sorted so the ordering is stable. Two agents
+     * on one site are the active/standby pair: intersect this with the connected set and the first is the
+     * primary. The in-memory default returns none, so dev/demo keeps the single-pinned-agent behaviour.
+     */
+    default List<String> agentIdsForSite(String tenantId, String siteId) {
+        return List.of();
+    }
+
     /** Every tenant — used by the background fleet poller to scan each org in turn. Cross-tenant by nature
      *  (the poller runs unattended, not on behalf of one caller). The in-memory default returns none. */
     default List<Tenant> listAllTenants() {

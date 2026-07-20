@@ -43,7 +43,7 @@ class FleetPollerTest {
 
     @BeforeEach
     void setup() {
-        poller = new FleetPoller(tenants, fleet, registry, alerts, notifier);
+        poller = new FleetPoller(tenants, fleet, registry, alerts, notifier, new SitePrimary(registry, tenants));
         // a tenant with one enabled webhook channel and the poller on
         alerts.addChannel("acme", "webhook", "https://hook", "warning");
         when(fleet.devicesFor("acme", null, null)).thenReturn(List.of(DEV));
@@ -114,7 +114,7 @@ class FleetPollerTest {
     @Test
     void skipsEntirelyWhenThereAreNoEnabledChannels() {
         InMemoryAlertService empty = new InMemoryAlertService();   // no channels
-        FleetPoller p = new FleetPoller(tenants, fleet, registry, empty, notifier);
+        FleetPoller p = new FleetPoller(tenants, fleet, registry, empty, notifier, new SitePrimary(registry, tenants));
         p.scanTenant("acme");
         verify(fleet, never()).devicesFor(any(), any(), any());   // never touched the fleet
         verify(notifier, never()).notify(any(), any());

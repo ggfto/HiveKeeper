@@ -50,13 +50,16 @@ public class FleetPoller {
     private final AlertService alerts;
     private final AlertNotifier notifier;
 
+    private final SitePrimary sitePrimary;
+
     public FleetPoller(TenantStore tenants, FleetService fleet, AgentRegistry registry, AlertService alerts,
-                       AlertNotifier notifier) {
+                       AlertNotifier notifier, SitePrimary sitePrimary) {
         this.tenants = tenants;
         this.fleet = fleet;
         this.registry = registry;
         this.alerts = alerts;
         this.notifier = notifier;
+        this.sitePrimary = sitePrimary;
     }
 
     @Scheduled(fixedDelayString = "${hivekeeper.alert.poll-interval-ms:300000}",
@@ -128,10 +131,13 @@ public class FleetPoller {
 
     private List<AlertRules.Alert> evaluateDevice(String tenantId, FleetService.Device d, Set<String> connected,
                                                   AlertRules.Thresholds thresholds) {
-        if (!connected.contains(d.agentId())) {
-            return AlertRules.evaluate(false, null, thresholds);   // agent-offline
+        // Poll through the site's current primary, not the pinned agent: with an active/standby pair, the
+        // device is still reachable via the standby when the primary is down, so it must not alert offline.
+        String agent = sitePrimary.servingAgent(tenantId, d.siteId(), d.agentId());
+        if (agent == null || !connected.contains(agent)) {
+            return AlertRules.evaluate(false, null, thresholds);   // no agent on the site can reach it
         }
-        Optional<RemoteEngine> engine = registry.engine(tenantId, d.agentId());
+        Optional<RemoteEngine> engine = registry.engine(tenantId, agent);
         if (engine.isEmpty() || d.mgmtIp() == null) {
             return AlertRules.evaluate(false, null, thresholds);
         }

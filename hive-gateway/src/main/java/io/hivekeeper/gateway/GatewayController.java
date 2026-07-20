@@ -220,6 +220,7 @@ public class GatewayController {
     private final Optional<AlertService> alerts;
     private final BackupDestinationService backupDestinations;
     private final BackupDestinationProvisioner provisioner;
+    private final SitePrimary sitePrimary;
     private final ExecutorService sseExecutor = Executors.newFixedThreadPool(8, runnable -> {
         Thread thread = new Thread(runnable, "gw-sse");
         thread.setDaemon(true);
@@ -230,7 +231,7 @@ public class GatewayController {
                              Optional<OperationLog> operationLog, Optional<JobGateway> jobGateway,
                              Optional<FleetService> fleet, Optional<PpskUserService> ppskUsers,
                              Optional<AlertService> alerts, BackupDestinationService backupDestinations,
-                             BackupDestinationProvisioner provisioner) {
+                             BackupDestinationProvisioner provisioner, SitePrimary sitePrimary) {
         this.registry = registry;
         this.guard = guard;
         this.tenants = tenants;
@@ -241,6 +242,7 @@ public class GatewayController {
         this.alerts = alerts;
         this.backupDestinations = backupDestinations;
         this.provisioner = provisioner;
+        this.sitePrimary = sitePrimary;
     }
 
     /** Submit a DURABLE job: persisted, dispatched if the agent is connected, and redelivered on reconnect.
@@ -1104,9 +1106,12 @@ public class GatewayController {
                 results.add(new BulkOutcome(d.deviceId(), d.serial(), d.mgmtIp(), "skipped", "no agent or host"));
                 continue;
             }
-            Optional<RemoteEngine> engine = registry.engine(p.tenantId(), d.agentId());
+            // Run on the site's current primary — so a second agent covers the site when the pinned one is
+            // down, and exactly one agent runs each device's task rather than every agent on the site.
+            String agent = sitePrimary.servingAgent(p.tenantId(), d.siteId(), d.agentId());
+            Optional<RemoteEngine> engine = registry.engine(p.tenantId(), agent);
             if (engine.isEmpty()) {
-                results.add(new BulkOutcome(d.deviceId(), d.serial(), d.mgmtIp(), "agent_offline", d.agentId()));
+                results.add(new BulkOutcome(d.deviceId(), d.serial(), d.mgmtIp(), "agent_offline", agent));
                 continue;
             }
             try {
@@ -1169,9 +1174,12 @@ public class GatewayController {
                 results.add(new BulkOutcome(d.deviceId(), d.serial(), d.mgmtIp(), "skipped", "no agent or host"));
                 continue;
             }
-            Optional<RemoteEngine> engine = registry.engine(p.tenantId(), d.agentId());
+            // Run on the site's current primary — so a second agent covers the site when the pinned one is
+            // down, and exactly one agent runs each device's task rather than every agent on the site.
+            String agent = sitePrimary.servingAgent(p.tenantId(), d.siteId(), d.agentId());
+            Optional<RemoteEngine> engine = registry.engine(p.tenantId(), agent);
             if (engine.isEmpty()) {
-                results.add(new BulkOutcome(d.deviceId(), d.serial(), d.mgmtIp(), "agent_offline", d.agentId()));
+                results.add(new BulkOutcome(d.deviceId(), d.serial(), d.mgmtIp(), "agent_offline", agent));
                 continue;
             }
             try {

@@ -95,6 +95,13 @@ The gateway:
 
 - **Discover** APs on a subnet (SSH banner sweep), then **adopt** them into a managed fleet.
 - Organize devices into **sites** and **groups**; run **bulk** inventory/backup across org/site/group scopes.
+- **Active/standby agents per site.** Enrol a second agent on a site's LAN and the two become a redundant
+  pair: exactly one — the primary — runs each device's unattended task, so a backup capture never runs twice,
+  and if the primary goes offline the standby takes over the next dispatch on its own. The primary is the
+  connected agent whose id sorts first, so you choose it by naming (e.g. `site-a-01` ahead of `site-a-02`);
+  election and failover are the gateway's, and the agents never talk to each other. This governs the
+  background poller and scope-targeted bulk operations — the unattended work; a single-device console
+  operation still runs on the agent you pick.
 - A **backup destination** for the organization: one git repository every agent pushes its config history to,
   set from the console so no one has to touch an agent's machine. The token is sealed to each agent's own key
   on the way out and held encrypted at rest on both ends. **A failed push is not a failed backup** — the local

@@ -232,6 +232,26 @@ class GatewayPostgresIT {
         assertFalse(tenants.markEnrollmentConsumed(token), "a consumed token cannot be consumed again");
     }
 
+    @Test
+    void agentIdsForSiteOrdersThemAndExcludesRevoked() {
+        // Two agents on one site are the active/standby pair. The query must return them in a stable order
+        // (so the primary is deterministic) and must never offer a revoked agent as a candidate.
+        String site = fleet.createSite("acme", "Two-agent site");
+        fleet.createEnrollment("acme", "site-x-02", site);
+        fleet.createEnrollment("acme", "site-x-01", site);   // enrolled second, but sorts first
+        fleet.createEnrollment("acme", "site-x-03", site);
+
+        assertEquals(List.of("site-x-01", "site-x-02", "site-x-03"),
+                tenants.agentIdsForSite("acme", site), "ordered by agent id, so the first is the primary");
+
+        tenants.revokeAgent("acme", "site-x-01", "decommissioned");
+        assertEquals(List.of("site-x-02", "site-x-03"), tenants.agentIdsForSite("acme", site),
+                "a revoked agent is no longer a candidate — the standby becomes primary");
+
+        // Another tenant cannot see this site's agents.
+        assertTrue(tenants.agentIdsForSite("globex", site).isEmpty());
+    }
+
     private static Set<String> serials(List<FleetService.Device> devices) {
         return devices.stream().map(FleetService.Device::serial).collect(Collectors.toSet());
     }

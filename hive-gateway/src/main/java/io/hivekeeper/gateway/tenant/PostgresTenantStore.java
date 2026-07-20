@@ -126,6 +126,19 @@ public class PostgresTenantStore implements TenantStore {
     }
 
     @Override
+    public List<String> agentIdsForSite(String tenantId, String siteId) {
+        if (siteId == null) {
+            return List.of();
+        }
+        // Ordered by agent_id so the primary is deterministic: intersected with the connected set, the first
+        // is the active agent and the rest are standby. A revoked agent is never a candidate.
+        return jdbc.queryForList(
+                "select agent_id from agent_enrollment where tenant_id = ? and site_id = ? "
+                        + "and revoked_at is null order by agent_id",
+                String.class, tenantId, siteId);
+    }
+
+    @Override
     public List<Tenant> listAllTenants() {
         return jdbc.query("select tenant_id, name, operator_api_key, operator_role from tenant order by tenant_id",
                 TENANT);

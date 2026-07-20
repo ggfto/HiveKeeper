@@ -76,6 +76,8 @@ class GatewayControllerSecurityTest {
     private BackupDestinationService backupDestinations;
     @MockitoBean
     private BackupDestinationProvisioner backupProvisioner;
+    @MockitoBean
+    private SitePrimary sitePrimary;
 
     private final Principal principal = Principal.user("acme", "usr-1");
 
@@ -85,6 +87,9 @@ class GatewayControllerSecurityTest {
         // lab-agent belongs to the caller's tenant (acme) and is on site-1
         when(tenants.enrollmentByAgentId("lab-agent")).thenReturn(Optional.of(new AgentEnrollment("t", "lab-agent", "acme")));
         when(tenants.agentSiteId("lab-agent")).thenReturn(Optional.of("site-1"));
+        // These tests predate active/standby: the serving agent is just the device's pinned one. (The election
+        // itself is covered by SitePrimaryTest.)
+        when(sitePrimary.servingAgent(any(), any(), any())).thenAnswer(i -> i.getArgument(2));
     }
 
     // -- role per endpoint ------------------------------------------------------

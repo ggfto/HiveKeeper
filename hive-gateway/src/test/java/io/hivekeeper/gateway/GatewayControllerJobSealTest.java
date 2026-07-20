@@ -49,6 +49,8 @@ class GatewayControllerJobSealTest {
     private BackupDestinationService backupDestinations;
     @MockitoBean
     private BackupDestinationProvisioner backupProvisioner;
+    @MockitoBean
+    private SitePrimary sitePrimary;
 
     private final Principal principal = Principal.user("acme", "usr-1");
 
