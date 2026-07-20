@@ -12,7 +12,7 @@ import java.util.UUID;
  *  network-scoped result the deviceId is the scan scope, e.g. the CIDR). */
 public sealed interface Result
         permits Result.Inventory, Result.Backup, Result.RawCapture, Result.Discovered, Result.ConfigApplied,
-        Result.ChannelsScanned,
+        Result.ChannelsScanned, Result.BackupDestinationSet,
                 Result.FirmwareUpgraded, Result.CredentialSet, Result.PpskUserManaged {
 
     UUID commandId();
@@ -31,6 +31,11 @@ public sealed interface Result
     }
 
     /** Reachable hosts found by a {@link Command.Discover} sweep. */
+    /** The agent stored a new backup destination. Metadata only — the token never travels back. */
+    record BackupDestinationSet(UUID commandId, DeviceId deviceId, String repoUrl, String branch,
+                                boolean cleared) implements Result {
+    }
+
     /** One {@link io.hivekeeper.core.model.ChannelScan} per radio, in the order the device reported them. */
     record ChannelsScanned(UUID commandId, DeviceId deviceId, List<io.hivekeeper.core.model.ChannelScan> scans)
             implements Result {

@@ -31,8 +31,7 @@ final class KeystoreSecretUnsealer implements SecretUnsealer {
     }
 
     @Override
-    public Credentials unseal(String sealedToken) {
-        byte[] plaintext = envelope.unseal(privateKey, sealedToken);
-        return CredentialPayload.decode(plaintext);
+    public byte[] unsealRaw(String sealedToken) {
+        return envelope.unseal(privateKey, sealedToken);
     }
 }

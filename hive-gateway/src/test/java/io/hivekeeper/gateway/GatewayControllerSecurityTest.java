@@ -7,6 +7,7 @@ import io.hivekeeper.core.model.DeviceRef;
 import io.hivekeeper.gateway.access.AccessException;
 import io.hivekeeper.gateway.access.AccessExceptionAdvice;
 import io.hivekeeper.gateway.access.AccessGuard;
+import io.hivekeeper.gateway.backup.BackupDestinationService;
 import io.hivekeeper.gateway.access.Principal;
 import io.hivekeeper.gateway.access.ResourceScope;
 import io.hivekeeper.gateway.access.Role;
@@ -71,6 +72,10 @@ class GatewayControllerSecurityTest {
     private TenantStore tenants;
     @MockitoBean
     private FleetService fleet;
+    @MockitoBean
+    private BackupDestinationService backupDestinations;
+    @MockitoBean
+    private BackupDestinationProvisioner backupProvisioner;
 
     private final Principal principal = Principal.user("acme", "usr-1");
 

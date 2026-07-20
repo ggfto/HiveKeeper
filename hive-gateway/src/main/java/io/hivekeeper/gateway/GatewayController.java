@@ -12,6 +12,7 @@ import io.hivekeeper.core.model.HiveSpec;
 import io.hivekeeper.core.model.SsidSpec;
 import io.hivekeeper.gateway.access.AccessException;
 import io.hivekeeper.gateway.access.AccessGuard;
+import io.hivekeeper.gateway.backup.BackupDestinationService;
 import io.hivekeeper.gateway.access.Principal;
 import io.hivekeeper.gateway.access.ResourceScope;
 import io.hivekeeper.gateway.access.Role;
@@ -217,6 +218,8 @@ public class GatewayController {
     private final Optional<FleetService> fleet;
     private final Optional<PpskUserService> ppskUsers;
     private final Optional<AlertService> alerts;
+    private final BackupDestinationService backupDestinations;
+    private final BackupDestinationProvisioner provisioner;
     private final ExecutorService sseExecutor = Executors.newFixedThreadPool(8, runnable -> {
         Thread thread = new Thread(runnable, "gw-sse");
         thread.setDaemon(true);
@@ -226,7 +229,8 @@ public class GatewayController {
     public GatewayController(AgentRegistry registry, AccessGuard guard, TenantStore tenants,
                              Optional<OperationLog> operationLog, Optional<JobGateway> jobGateway,
                              Optional<FleetService> fleet, Optional<PpskUserService> ppskUsers,
-                             Optional<AlertService> alerts) {
+                             Optional<AlertService> alerts, BackupDestinationService backupDestinations,
+                             BackupDestinationProvisioner provisioner) {
         this.registry = registry;
         this.guard = guard;
         this.tenants = tenants;
@@ -235,6 +239,8 @@ public class GatewayController {
         this.fleet = fleet;
         this.ppskUsers = ppskUsers;
         this.alerts = alerts;
+        this.backupDestinations = backupDestinations;
+        this.provisioner = provisioner;
     }
 
     /** Submit a DURABLE job: persisted, dispatched if the agent is connected, and redelivered on reconnect.
@@ -635,6 +641,80 @@ public class GatewayController {
             log.warn("set-credential via agent '{}' failed: {}", agentId, e.getMessage());
             return status(502, new ApiError(e.getClass().getSimpleName(), e.getMessage() == null ? "" : e.getMessage()));
         }
+    }
+
+    // -- backup destination: where the org's config history is pushed ------------------------------------
+
+    /** What the browser sends. The token is write-only: it goes in, and it never comes back out. */
+    record BackupDestinationRequest(String repoUrl, String branch, String username, String token) {
+    }
+
+    /** What the browser gets back. Deliberately has no token field at all, so none can leak by accident. */
+    record BackupDestinationResponse(String repoUrl, String branch, String username, String updatedAt,
+                                     String updatedBy, boolean configured, List<AgentDelivery> agents) {
+    }
+
+    /** Whether each agent in the org actually received the destination. */
+    record AgentDelivery(String agentId, boolean delivered, String error) {
+    }
+
+    @GetMapping("/api/backup-destination")
+    public ResponseEntity<String> getBackupDestination() {
+        Principal p = guard.authenticate();
+        guard.require(p, Role.VIEWER, ResourceScope.org());
+        return backupDestinations.get(p.tenantId())
+                .map(d -> json(new BackupDestinationResponse(d.repoUrl(), d.branch(), d.username(),
+                        d.updatedAt() == null ? null : d.updatedAt().toString(), d.updatedBy(), true, List.of())))
+                .orElseGet(() -> json(new BackupDestinationResponse(null, null, null, null, null, false, List.of())));
+    }
+
+    /**
+     * Sets the organization's backup destination and pushes it to every connected agent.
+     *
+     * <p>The token is stored encrypted so an agent that is offline right now — or enrolled next month — can
+     * still be given it later without an operator re-typing anything. It is sealed separately to each agent's
+     * own public key on the way out, so it is never in the clear on the wire.
+     *
+     * <p>Delivery is reported per agent rather than folded into one pass/fail: a fleet where two of three
+     * agents took the change is a real state, and hiding it behind a single error would leave the operator
+     * unable to tell which site is still writing nowhere.
+     */
+    @PostMapping("/api/backup-destination")
+    public ResponseEntity<String> setBackupDestination(@RequestBody BackupDestinationRequest req) {
+        Principal p = guard.authenticate();
+        guard.require(p, Role.ADMIN, ResourceScope.org());
+
+        if (req.repoUrl() == null || req.repoUrl().isBlank()) {
+            return status(400, new ApiError("repo_url_required", "a repository URL is required"));
+        }
+        if (req.token() == null || req.token().isBlank()) {
+            return status(400, new ApiError("token_required", "a token is required to push to the repository"));
+        }
+        String branch = req.branch() == null || req.branch().isBlank() ? "main" : req.branch().trim();
+        String username = req.username() == null || req.username().isBlank()
+                ? "hivekeeper" : req.username().trim();
+
+        backupDestinations.save(p.tenantId(), req.repoUrl().trim(), branch, username, req.token(), p.userId());
+        record(p.tenantId(), null, "set-backup-destination", req.repoUrl().trim(), "ok");
+
+        List<AgentDelivery> delivered = provisioner.deliverToAll(p.tenantId()).stream()
+                .map(d -> new AgentDelivery(d.agentId(), d.delivered(), d.error()))
+                .toList();
+        return json(new BackupDestinationResponse(req.repoUrl().trim(), branch, username, null, p.userId(),
+                true, delivered));
+    }
+
+    /** Clears the destination. Agents keep committing locally; they just stop pushing. */
+    @DeleteMapping("/api/backup-destination")
+    public ResponseEntity<String> clearBackupDestination() {
+        Principal p = guard.authenticate();
+        guard.require(p, Role.ADMIN, ResourceScope.org());
+        backupDestinations.clear(p.tenantId());
+        record(p.tenantId(), null, "clear-backup-destination", null, "ok");
+        List<AgentDelivery> delivered = provisioner.deliverToAll(p.tenantId()).stream()
+                .map(d -> new AgentDelivery(d.agentId(), d.delivered(), d.error()))
+                .toList();
+        return json(new BackupDestinationResponse(null, null, null, null, null, false, delivered));
     }
 
     // -- agent certificate lifecycle: revoke / re-enroll (slice 2 of automated enrollment) -----------------

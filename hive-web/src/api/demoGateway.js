@@ -390,6 +390,32 @@ export function createDemoGateway() {
       logOp('set-credential', body.host, `credential set${body.alsoSetOnDevice ? ' · AP password changed' : ''}`, agentId)
       return ok({ credRef, vaultUpdated: true, deviceUpdated: !!body.alsoSetOnDevice })
     },
+    // The org's backup destination. The demo keeps the token in memory and, like the real gateway, never
+    // hands it back — the read reports only that one is configured.
+    getBackupDestination: () =>
+      ok(
+        db.backupDestination
+          ? { ...db.backupDestination, token: undefined, configured: true }
+          : { configured: false },
+      ),
+    setBackupDestination: (body = {}) => {
+      db.backupDestination = {
+        repoUrl: body.repoUrl,
+        branch: body.branch || 'main',
+        username: body.username || 'hivekeeper',
+        updatedAt: new Date().toISOString(),
+        updatedBy: 'demo',
+      }
+      return ok({
+        ...db.backupDestination,
+        configured: true,
+        agents: (db.agents || []).map((a) => ({ agentId: a.agentId, delivered: !!a.connected })),
+      })
+    },
+    clearBackupDestination: () => {
+      db.backupDestination = null
+      return ok({ configured: false, agents: [] })
+    },
     ppskUsers: (agentId) => ok({ users: (db.ppsk || []).filter((u) => u.agentId === agentId) }),
     createPpskUser: (agentId, body = {}) => {
       if (!connected(agentId)) return fail('the device agent is offline', 503)

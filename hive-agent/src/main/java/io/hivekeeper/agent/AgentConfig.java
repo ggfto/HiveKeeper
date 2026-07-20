@@ -88,7 +88,8 @@ import java.util.function.UnaryOperator;
 @Slf4j
 public record AgentConfig(URI gatewayUri, String agentId, String defaultUser, String defaultPassword,
                           String credentialVault, String vaultKey, String ppskStore, String radiusDir,
-                          String backupDir, String tlsKeystore, String tlsKeystorePassword,
+                          String backupDir, String backupDestinationStore,
+                          String tlsKeystore, String tlsKeystorePassword,
                           String tlsTruststore, String tlsTruststorePassword,
                           HostKeyPolicy sshHostKeyPolicy, String knownHostsPath,
                           String enrollmentToken, String enrollmentUrl, String enrollmentCaCert,
@@ -104,7 +105,8 @@ public record AgentConfig(URI gatewayUri, String agentId, String defaultUser, St
     /** Every file key the agent understands — anything else in the file is a typo worth warning about. */
     static final Set<String> KNOWN_KEYS = new TreeSet<>(Set.of(
             "gateway.url", "agent.id", "default.user", "default.password", "credential.vault", "vault.key",
-            "ppsk.store", "radius.dir", "backup.dir", "tls.keystore", "tls.keystore.password", "tls.truststore",
+            "ppsk.store", "radius.dir", "backup.dir", "backup.destination", "tls.keystore",
+            "tls.keystore.password", "tls.truststore",
             "tls.truststore.password", "ssh.hostkey", "known.hosts", "enrollment.token", "enrollment.url",
             "enrollment.cacert", "cert.renew.window.days", "cert.renew.check.hours", "health.file"));
 
@@ -151,6 +153,7 @@ public record AgentConfig(URI gatewayUri, String agentId, String defaultUser, St
                 cfg.get("HIVEKEEPER_PPSK_STORE", null),
                 cfg.get("HIVEKEEPER_RADIUS_DIR", null),
                 cfg.get("HIVEKEEPER_BACKUP_DIR", "hivekeeper-backups"),
+                cfg.get("HIVEKEEPER_BACKUP_DESTINATION", "hivekeeper-backup-destination.properties"),
                 cfg.get("HIVEKEEPER_TLS_KEYSTORE", null),
                 cfg.get("HIVEKEEPER_TLS_KEYSTORE_PASSWORD", "changeit"),
                 cfg.get("HIVEKEEPER_TLS_TRUSTSTORE", null),

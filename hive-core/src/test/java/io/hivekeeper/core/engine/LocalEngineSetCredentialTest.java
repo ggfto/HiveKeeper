@@ -126,7 +126,8 @@ class LocalEngineSetCredentialTest {
     // The "current" credential the engine authenticates the on-device change with.
     private final CredentialProvider current = ref -> Optional.of(new Credentials("admin", "oldpass"));
     // The unsealer hands back the NEW credential (stands in for EnvelopeCipher + private key).
-    private final SecretUnsealer unsealer = token -> new Credentials("admin", "newpass");
+    private final SecretUnsealer unsealer =
+            token -> io.hivekeeper.core.crypto.CredentialPayload.encode("admin", "newpass");
 
     @Test
     void vaultOnlyWriteStoresTheCredentialWithoutTouchingTheDevice() {

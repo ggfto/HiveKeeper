@@ -95,6 +95,13 @@ The gateway:
 
 - **Discover** APs on a subnet (SSH banner sweep), then **adopt** them into a managed fleet.
 - Organize devices into **sites** and **groups**; run **bulk** inventory/backup across org/site/group scopes.
+- A **backup destination** for the organization: one git repository every agent pushes its config history to,
+  set from the console so no one has to touch an agent's machine. The token is sealed to each agent's own key
+  on the way out and held encrypted at rest on both ends. **A failed push is not a failed backup** — the local
+  commit is the rollback path and happens first; pending commits go out with the next capture. Because the
+  gateway must be able to hand the destination to an agent that was offline when it was set (or enrolled
+  later), it stores the token encrypted with `HIVEKEEPER_CRYPTO_KEY`: scope that token to the backup
+  repository and nothing else.
 - **Config templates** — apply a set of HiveOS CLI lines to every device in a scope in one bulk write
   (operator-level, each device re-authorized server-side, per-device outcomes); named templates saved locally.
 - **Alerts** — an on-demand fleet **scan** flags APs that breach a threshold (agent offline, still cloud-managed,

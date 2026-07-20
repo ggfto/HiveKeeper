@@ -95,6 +95,11 @@ export function createGateway({ getAuth = () => ({}), fetchImpl = fetch, baseUrl
     // set/rotate a device's SSH credential. The secret is sealed to the agent's key at the gateway and never
     // persisted in the cloud; `alsoSetOnDevice` also changes the admin password on the AP itself.
     setCredential: (agentId, body) => req(`/api/agents/${agentId}/set-credential`, { method: 'POST', body }),
+    // The organization's backup destination: one git repository the whole fleet pushes its config history to.
+    // The token is write-only — it goes up, is sealed to each agent, and is never returned by the read.
+    getBackupDestination: () => req('/api/backup-destination'),
+    setBackupDestination: (body) => req('/api/backup-destination', { method: 'POST', body }),
+    clearBackupDestination: () => req('/api/backup-destination', { method: 'DELETE' }),
     // PPSK users (Caminho B): mint/rotate/revoke per-user Private PSKs owned on-prem by the agent's RADIUS.
     // list returns metadata only; create/rotate return the generated PSK ONCE (the cloud never stores it).
     ppskUsers: (agentId) => req(`/api/agents/${agentId}/ppsk-users`),

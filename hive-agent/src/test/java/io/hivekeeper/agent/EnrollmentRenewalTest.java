@@ -105,7 +105,7 @@ class EnrollmentRenewalTest {
     private static AgentConfig config(Path keystore, Path truststore) {
         return new AgentConfig(
                 java.net.URI.create("wss://127.0.0.1:9443/agent"), "lab-agent", "admin", "",
-                null, null, null, null, "hivekeeper-backups",
+                null, null, null, null, "hivekeeper-backups", "hivekeeper-backup-destination.properties",
                 keystore.toString(), "changeit", truststore.toString(), "changeit",
                 HostKeyPolicy.TOFU, "hivekeeper-known_hosts",
                 null, "https://127.0.0.1:9443", null, 30, 12, "hivekeeper-agent.health");

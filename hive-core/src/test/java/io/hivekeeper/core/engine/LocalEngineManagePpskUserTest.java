@@ -37,7 +37,8 @@ class LocalEngineManagePpskUserTest {
     private final DriverRegistry drivers = new DriverRegistry(List.of());
     private final BackupStore store = snapshot -> null;
     // The unsealer stands in for EnvelopeCipher + private key: it recovers username\npsk from the token.
-    private final SecretUnsealer unsealer = token -> new Credentials("alice", "RECOVERED-" + token);
+    private final SecretUnsealer unsealer =
+            token -> io.hivekeeper.core.crypto.CredentialPayload.encode("alice", "RECOVERED-" + token);
 
     /** An in-memory PPSK store keyed by security-object + username. */
     private static final class MemoryPpskStore implements PpskUserStore {
