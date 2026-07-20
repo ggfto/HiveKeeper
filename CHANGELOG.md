@@ -1,3 +1,10 @@
+# [0.10.0](https://github.com/ggfto/HiveKeeper/compare/v0.9.0...v0.10.0) (2026-07-20)
+
+
+### Features
+
+* **agent:** opt-in auto-update, and drain in-flight jobs on shutdown ([63c7097](https://github.com/ggfto/HiveKeeper/commit/63c7097dfa4d88da663f22b2f8126cf475e357e0))
+
 # [0.9.0](https://github.com/ggfto/HiveKeeper/compare/v0.8.1...v0.9.0) (2026-07-20)
 
 
