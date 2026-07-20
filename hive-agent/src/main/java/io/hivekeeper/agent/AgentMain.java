@@ -92,8 +92,13 @@ public final class AgentMain {
         SshTransport transport = new SshjTransport(config.sshHostKeyPolicy(), Path.of(config.knownHostsPath()));
         log.info("SSH host-key policy: {} (known_hosts: {})", config.sshHostKeyPolicy(), config.knownHostsPath());
 
-        BackupStore backupStore = new GitBackupStore(Path.of(config.backupDir()));
-        Engine engine = HiveCore.localEngine(transport, credentials, backupStore, writableCredentials, unsealer, ppskUsers);
+        // The destination is configured from the console and persisted here, so a restart keeps pushing and
+        // a token rotation takes effect on the next backup — the store is read per capture, not cached.
+        FileBackupDestinationStore backupDestinations =
+                FileBackupDestinationStore.fromFile(Path.of(config.backupDestinationStore()), vaultCipher);
+        BackupStore backupStore = new GitBackupStore(Path.of(config.backupDir()), backupDestinations::get);
+        Engine engine = HiveCore.localEngine(transport, credentials, backupStore, writableCredentials, unsealer,
+                ppskUsers, backupDestinations);
         // Unwrap commands the gateway sealed to this agent's key (durable-job secrets) before the engine runs
         // them; plain commands pass straight through.
         engine = new UnsealingEngine(engine, agentKey, new EnvelopeCipher(), new io.hivekeeper.wire.JsonCodec());

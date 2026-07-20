@@ -24,6 +24,8 @@ import io.hivekeeper.core.session.CommandRunner;
 import io.hivekeeper.core.spi.BackupStore;
 import io.hivekeeper.core.spi.CredentialProvider;
 import io.hivekeeper.core.spi.Credentials;
+import io.hivekeeper.core.model.BackupRemote;
+import io.hivekeeper.core.spi.BackupDestinationStore;
 import io.hivekeeper.core.spi.PpskUserStore;
 import io.hivekeeper.core.spi.SecretUnsealer;
 import io.hivekeeper.core.spi.WritableCredentialProvider;
@@ -55,16 +57,17 @@ public final class LocalEngine implements Engine {
     private final WritableCredentialProvider writableCredentials;   // nullable — credential mgmt off when null
     private final SecretUnsealer unsealer;                          // nullable — credential/PPSK mgmt off when null
     private final PpskUserStore ppskUsers;                          // nullable — PPSK mgmt off when null
+    private final BackupDestinationStore backupDestinations;        // nullable — remote backup config off when null
 
     public LocalEngine(SshTransport transport, CredentialProvider credentials, DriverRegistry drivers,
                        BackupStore backupStore, Scanner scanner) {
-        this(transport, credentials, drivers, backupStore, scanner, null, null, null);
+        this(transport, credentials, drivers, backupStore, scanner, null, null, null, null);
     }
 
     public LocalEngine(SshTransport transport, CredentialProvider credentials, DriverRegistry drivers,
                        BackupStore backupStore, Scanner scanner,
                        WritableCredentialProvider writableCredentials, SecretUnsealer unsealer) {
-        this(transport, credentials, drivers, backupStore, scanner, writableCredentials, unsealer, null);
+        this(transport, credentials, drivers, backupStore, scanner, writableCredentials, unsealer, null, null);
     }
 
     /**
@@ -77,6 +80,19 @@ public final class LocalEngine implements Engine {
                        BackupStore backupStore, Scanner scanner,
                        WritableCredentialProvider writableCredentials, SecretUnsealer unsealer,
                        PpskUserStore ppskUsers) {
+        this(transport, credentials, drivers, backupStore, scanner, writableCredentials, unsealer, ppskUsers, null);
+    }
+
+    /**
+     * Full constructor. {@code backupDestinations} enables {@link Command.ConfigureBackupDestination} — the
+     * on-prem agent passes one; everything else passes null and the command is refused rather than silently
+     * doing nothing.
+     */
+    public LocalEngine(SshTransport transport, CredentialProvider credentials, DriverRegistry drivers,
+                       BackupStore backupStore, Scanner scanner,
+                       WritableCredentialProvider writableCredentials, SecretUnsealer unsealer,
+                       PpskUserStore ppskUsers, BackupDestinationStore backupDestinations) {
+        this.backupDestinations = backupDestinations;
         this.transport = transport;
         this.credentials = credentials;
         this.drivers = drivers;
@@ -99,6 +115,9 @@ public final class LocalEngine implements Engine {
         }
         if (command instanceof Command.ManagePpskUser managePpskUser) {
             return managePpskUser(id, managePpskUser, sink);
+        }
+        if (command instanceof Command.ConfigureBackupDestination backupDestination) {
+            return configureBackupDestination(id, backupDestination, sink);
         }
 
         DeviceRef ref = deviceRefOf(command);
@@ -204,6 +223,48 @@ public final class LocalEngine implements Engine {
     }
 
     /**
+     * Points this agent's config backups at a git repository. Agent-control, not a device command: no SSH
+     * session is opened and no AP is touched. The token arrives sealed to this node's key and is unsealed
+     * here, so the gateway that forwarded it never held a usable one.
+     *
+     * <p>A blank token clears the destination — the agent keeps committing locally, it just stops pushing.
+     * That is a deliberate way out, not an error: local history is the rollback path and stays useful.
+     */
+    private Result configureBackupDestination(UUID id, Command.ConfigureBackupDestination cmd, EventSink sink)
+            throws HiveException {
+        DeviceId scope = DeviceId.of("backup-destination");
+        sink.emit(new Event.Started(id, scope, "ConfigureBackupDestination"));
+        try {
+            if (backupDestinations == null) {
+                throw new IllegalStateException("backup destinations are not configurable on this engine");
+            }
+            boolean clearing = cmd.repoUrl() == null || cmd.repoUrl().isBlank()
+                    || cmd.sealedToken() == null || cmd.sealedToken().isBlank();
+            if (clearing) {
+                backupDestinations.set(null);
+                sink.emit(new Event.Progress(id, scope, "Cleared the backup destination; backups stay local", 100));
+                Result cleared = new Result.BackupDestinationSet(id, scope, null, null, true);
+                sink.emit(new Event.Completed(id, scope, cleared));
+                return cleared;
+            }
+            if (unsealer == null) {
+                throw new IllegalStateException("no unsealer: cannot recover the sealed token on this engine");
+            }
+            String token = new String(unsealer.unsealRaw(cmd.sealedToken()), StandardCharsets.UTF_8);
+            backupDestinations.set(new BackupRemote(cmd.repoUrl(), cmd.username(), token, cmd.branch()));
+            sink.emit(new Event.Progress(id, scope, "Stored the backup destination in the agent", 100));
+            Result result = new Result.BackupDestinationSet(id, scope, cmd.repoUrl(), cmd.branch(), false);
+            sink.emit(new Event.Completed(id, scope, result));
+            return result;
+        } catch (Exception e) {
+            String detail = e.getMessage() == null ? "" : e.getMessage();
+            log.warn("configure backup destination failed: {}", detail);
+            sink.emit(new Event.Failed(id, scope, e.getClass().getSimpleName(), detail));
+            throw new HiveException(id, scope, "configure backup destination failed: " + detail, e);
+        }
+    }
+
+    /**
      * Manages a Private-PSK user in the on-prem RADIUS store. Like {@link #setCredential} this is an
      * agent-control operation, not a device CLI command: the PSK arrives sealed to this node's key, is
      * unsealed locally, and written to the local store — the cloud never holds the usable key, and the AP
@@ -274,12 +335,18 @@ public final class LocalEngine implements Engine {
                 }
                 yield new Result.RawCapture(id, deviceId, outputs);
             }
+            case Command.ScanChannels ignored -> {
+                progress.report(10, "Scanning the air");
+                yield new Result.ChannelsScanned(id, deviceId, driver.channelScans(exec, progress));
+            }
             case Command.ApplyConfig c -> {
                 List<String> outputs = driver.applyConfig(deviceId, exec, c.commands(), c.save(), progress);
                 yield new Result.ConfigApplied(id, deviceId, c.commands(), outputs, c.save());
             }
             case Command.ConfigureSsid c -> {
-                List<String> lines = driver.ssidCommands(c.spec());
+                // Ask the device what radios it has before deciding what to bind the SSID to — an AP410C-1
+                // has three, and a hardcoded pair would leave the third silently off the air.
+                List<String> lines = driver.ssidCommands(c.spec(), driver.radioInterfaces(exec));
                 List<String> outputs = driver.applyConfig(deviceId, exec, lines, true, progress);
                 yield new Result.ConfigApplied(id, deviceId, lines, outputs, true);
             }
@@ -310,12 +377,15 @@ public final class LocalEngine implements Engine {
                     throw new IllegalStateException("manage-ppsk-user is handled before SSH dispatch");
             case Command.Sealed ignored ->
                     throw new IllegalStateException("sealed commands are unwrapped by the agent before the engine");
+            case Command.ConfigureBackupDestination ignored ->
+                    throw new IllegalStateException("agent-scoped commands are handled before dispatch");
         };
     }
 
     private static DeviceRef deviceRefOf(Command command) {
         return switch (command) {
             case Command.Inventory c -> c.device();
+            case Command.ScanChannels c -> c.device();
             case Command.BackupConfig c -> c.device();
             case Command.RunRaw c -> c.device();
             case Command.ApplyConfig c -> c.device();
@@ -329,6 +399,8 @@ public final class LocalEngine implements Engine {
                     throw new IllegalStateException("set-credential is handled before deviceRefOf");
             case Command.ManagePpskUser ignored ->
                     throw new IllegalStateException("manage-ppsk-user is handled before deviceRefOf");
+            case Command.ConfigureBackupDestination ignored ->
+                    throw new IllegalStateException("configure-backup-destination is handled before deviceRefOf");
             case Command.Sealed ignored ->
                     throw new IllegalStateException("sealed commands are unwrapped by the agent before deviceRefOf");
         };

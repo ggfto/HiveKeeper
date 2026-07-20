@@ -25,18 +25,27 @@ const RATE_OPTS = {
   5: ['6', '9', '12', '18', '24', '36', '48', '54'],
 }
 
-// Security suites the guided form offers (grammar confirmed live on an AP230). `open` carries no key; WPA2-PSK
-// and WPA3-SAE take a passphrase; the enterprise 802.1X suites bind a RADIUS server (IP + shared secret) instead.
+// Security suites the guided form offers. `open` and `owe` carry no key; WPA2-PSK and WPA3-SAE take a
+// passphrase; the enterprise 802.1X suites bind a RADIUS server (IP + shared secret) instead.
+//
+// OWE and WPA3-Enterprise 192-bit were confirmed on an AP630 and AP410C-1 (HiveOS 10.6r6); the rest on an
+// AP230 (10.6r1a), which does not offer OWE. Offering them everywhere and letting an older AP refuse the line
+// beats hiding a capability the operator's newer hardware has.
 const SUITES = [
   { value: 'wpa2-aes-psk', label: 'WPA2-PSK (AES)' },
   { value: 'wpa3-sae', label: 'WPA3-SAE' },
   { value: 'wpa2-aes-8021x', label: 'WPA2-Enterprise (802.1X)' },
   { value: 'wpa3-aes-8021x-std', label: 'WPA3-Enterprise (802.1X)' },
-  { value: 'open', label: 'Open (no auth)' },
+  { value: 'wpa3-aes-8021x-suite-b-192', label: 'WPA3-Enterprise 192-bit (Suite B)' },
+  { value: 'owe', label: 'Enhanced Open / OWE (encrypted, no password)' },
+  { value: 'open', label: 'Open (no auth, unencrypted)' },
 ]
-const ENTERPRISE_SUITES = new Set(['wpa2-aes-8021x', 'wpa3-aes-8021x-std'])
+const ENTERPRISE_SUITES = new Set(['wpa2-aes-8021x', 'wpa3-aes-8021x-std', 'wpa3-aes-8021x-suite-b-192'])
+// Keyless: asks the user for nothing. OWE still encrypts — it negotiates a per-client key instead of sharing
+// one — so it is a drop-in upgrade for a guest SSID rather than a different flow.
+const KEYLESS_SUITES = new Set(['open', 'owe'])
 const isEnterprise = (suite) => ENTERPRISE_SUITES.has(suite)
-const isKeyed = (suite) => suite !== 'open' && !isEnterprise(suite)
+const isKeyed = (suite) => !KEYLESS_SUITES.has(suite) && !isEnterprise(suite)
 
 function Field({ label, value, onChange, placeholder }) {
   return (
@@ -205,7 +214,10 @@ function ToggleSelect({ id, label, value, onChange, hint }) {
  * it as the negation of inter-station-traffic) so the operator does not have to reason about the inversion.
  */
 function HardeningBlock({ ssids, onApply, busy }) {
-  const empty = { hideSsid: '', maxClient: '', clientIsolation: '', dtimPeriod: '', schedule: '', rrm: '', wnm: '' }
+  const empty = {
+    hideSsid: '', maxClient: '', clientIsolation: '', dtimPeriod: '', schedule: '',
+    rrm: '', wnm: '', ft: '', ftMobilityDomainId: '',
+  }
   const [name, setName] = useState(ssids[0]?.name || '')
   const [form, setForm] = useState(empty)
   const set = (k) => (v) => setForm((f) => ({ ...f, [k]: v }))
@@ -228,7 +240,8 @@ function HardeningBlock({ ssids, onApply, busy }) {
       </span>
       <p className="text-xs text-muted-foreground">
         Per-SSID controls. Only the fields you change are applied. Client isolation blocks traffic between clients
-        on the SSID (guest networks); 802.11k/v help clients roam.
+        on the SSID (guest networks); 802.11k/v/r help clients roam. Give every AP a client should roam between
+        the same mobility domain id, or 802.11r cannot hand the client over without a full reauth.
       </p>
       <div className="grid gap-2 sm:grid-cols-3">
         <label className="flex flex-col gap-1" htmlFor="hd-ssid">
@@ -248,6 +261,13 @@ function HardeningBlock({ ssids, onApply, busy }) {
         <Field label="Schedule name" value={form.schedule} onChange={set('schedule')} placeholder="—" />
         <ToggleSelect id="hd-rrm" label="802.11k (RRM)" value={form.rrm} onChange={set('rrm')} />
         <ToggleSelect id="hd-wnm" label="802.11v (WNM)" value={form.wnm} onChange={set('wnm')} />
+        <ToggleSelect id="hd-ft" label="802.11r (fast roaming)" value={form.ft} onChange={set('ft')} />
+        <Field
+          label="Mobility domain id"
+          value={form.ftMobilityDomainId}
+          onChange={set('ftMobilityDomainId')}
+          placeholder="—"
+        />
       </div>
       <MriButton size="sm" disabled={busy || !name} onClick={apply}>
         Apply hardening

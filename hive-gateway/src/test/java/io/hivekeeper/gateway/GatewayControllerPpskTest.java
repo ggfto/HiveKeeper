@@ -5,6 +5,7 @@ import io.hivekeeper.core.api.Result;
 import io.hivekeeper.core.model.DeviceId;
 import io.hivekeeper.gateway.access.AccessExceptionAdvice;
 import io.hivekeeper.gateway.access.AccessGuard;
+import io.hivekeeper.gateway.backup.BackupDestinationService;
 import io.hivekeeper.gateway.access.Principal;
 import io.hivekeeper.gateway.access.ResourceScope;
 import io.hivekeeper.gateway.access.Role;
@@ -67,6 +68,10 @@ class GatewayControllerPpskTest {
     private FleetService fleet;
     @MockitoBean
     private PpskUserService ppskUsers;
+    @MockitoBean
+    private BackupDestinationService backupDestinations;
+    @MockitoBean
+    private BackupDestinationProvisioner backupProvisioner;
 
     private final Principal principal = Principal.user("acme", "usr-1");
 

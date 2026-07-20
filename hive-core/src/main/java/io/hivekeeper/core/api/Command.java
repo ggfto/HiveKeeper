@@ -14,9 +14,10 @@ import java.util.UUID;
  */
 public sealed interface Command
         permits Command.Inventory, Command.BackupConfig, Command.RunRaw, Command.Discover,
+                Command.ScanChannels,
                 Command.ApplyConfig, Command.ConfigureSsid, Command.ConfigureHive, Command.Reboot,
                 Command.RestoreConfig, Command.FirmwareUpgrade, Command.SetCredential,
-                Command.ManagePpskUser, Command.Sealed {
+                Command.ManagePpskUser, Command.ConfigureBackupDestination, Command.Sealed {
 
     UUID commandId();
 
@@ -24,6 +25,39 @@ public sealed interface Command
     record Inventory(UUID commandId, DeviceRef device) implements Command {
         public static Inventory of(DeviceRef device) {
             return new Inventory(UUID.randomUUID(), device);
+        }
+    }
+
+    /**
+     * Read the AP's own view of the air: the cost it assigns each candidate channel, and the neighbouring
+     * BSSIDs it heard. Read-only — it reports what automatic channel selection already measured so a human
+     * can decide, and changes nothing.
+     */
+    record ScanChannels(UUID commandId, DeviceRef device) implements Command {
+        public static ScanChannels of(DeviceRef device) {
+            return new ScanChannels(UUID.randomUUID(), device);
+        }
+    }
+
+    /**
+     * Point this agent's config backups at a git repository. Agent-scoped: it configures the AGENT, never a
+     * device, so it carries no {@link DeviceRef} and opens no SSH session.
+     *
+     * <p>{@code sealedToken} is sealed to this agent's public key, so the gateway that forwards it cannot
+     * read it. A null or blank token clears the destination and returns the agent to local-only backups.
+     */
+    record ConfigureBackupDestination(UUID commandId, String repoUrl, String branch, String username,
+                                      String sealedToken) implements Command {
+
+        public static ConfigureBackupDestination of(String repoUrl, String branch, String username,
+                                                    String sealedToken) {
+            return new ConfigureBackupDestination(UUID.randomUUID(), repoUrl, branch, username, sealedToken);
+        }
+
+        /** Never log the sealed token: it is opaque, but it is still the secret. */
+        @Override
+        public String toString() {
+            return "ConfigureBackupDestination[repoUrl=" + repoUrl + ", branch=" + branch + ", token=***]";
         }
     }
 

@@ -56,6 +56,7 @@ public final class RemoteEngine implements Engine {
     private static DeviceId deviceIdOf(Command command) {
         return switch (command) {
             case Command.Inventory c -> c.device().id();
+            case Command.ScanChannels c -> c.device().id();
             case Command.BackupConfig c -> c.device().id();
             case Command.RunRaw c -> c.device().id();
             case Command.ApplyConfig c -> c.device().id();
@@ -66,6 +67,7 @@ public final class RemoteEngine implements Engine {
             case Command.FirmwareUpgrade c -> c.device().id();
             case Command.SetCredential c -> c.device() != null ? c.device().id() : DeviceId.of(c.credRef());
             case Command.ManagePpskUser c -> DeviceId.of("ppsk:" + c.securityObject());
+            case Command.ConfigureBackupDestination ignored -> DeviceId.of("backup-destination");
             case Command.Sealed ignored -> throw new IllegalStateException(
                     "sealed commands are dispatched as durable jobs, not through RemoteEngine");
             case Command.Discover c -> DeviceId.of(c.cidr());

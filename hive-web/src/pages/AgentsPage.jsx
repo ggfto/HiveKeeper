@@ -6,6 +6,7 @@ import { useAuth } from '../context/AuthProvider'
 import { useToast } from '../context/ToastProvider'
 import { AgentsList } from '../components/organisms/AgentsList'
 import { AddAgentForm } from '../components/organisms/AddAgentForm'
+import { BackupDestinationForm } from '../components/organisms/BackupDestinationForm'
 import { DiscoveredHosts } from '../components/organisms/DiscoveredHosts'
 import { siteName } from '../lib/fleet'
 
@@ -147,6 +148,10 @@ export function AgentsPage() {
         busy={busy}
       />
       <AddAgentForm sites={sites} createEnrollment={createEnrollment} busy={busy} />
+      {/* Org-wide, so it lives beside the agent list rather than on any one agent. */}
+      <section className="rounded-md border border-border bg-card p-3">
+        <BackupDestinationForm gateway={gateway} busy={busy} />
+      </section>
       {discovered.length > 0 && (
         <section className="space-y-2">
           <h2 className="text-sm font-semibold text-muted-foreground">Discovered on {discoverAgent}</h2>

@@ -21,6 +21,9 @@ class HiveOsDriverTest {
     private final HiveOsDriver driver = new HiveOsDriver();
     private final CliExecutor ap230 = new FakeAp230Cli();
 
+    /** The classic two-radio layout (AP230, AP630). Named so the radio count of each case is explicit. */
+    private static final List<String> TWO_RADIOS = List.of("wifi0", "wifi1");
+
     @Test
     void recognizesHiveOsButNotOtherVendors() throws Exception {
         assertTrue(driver.recognizes(ap230));
@@ -88,7 +91,7 @@ class HiveOsDriverTest {
 
     @Test
     void buildsSsidCreateCommandsWithVlan() {
-        List<String> commands = driver.ssidCommands(SsidSpec.create("HK", "secretpass", 30));
+        List<String> commands = driver.ssidCommands(SsidSpec.create("HK", "secretpass", 30), TWO_RADIOS);
 
         assertTrue(commands.contains("security-object HK"));
         assertTrue(commands.stream().anyMatch(c -> c.contains("ascii-key secretpass")));
@@ -100,7 +103,7 @@ class HiveOsDriverTest {
 
     @Test
     void buildsWpa3SaeSsidWithAsciiKey() {
-        List<String> commands = driver.ssidCommands(SsidSpec.create("HK3", "secretpass", null, SsidSpec.WPA3_SAE));
+        List<String> commands = driver.ssidCommands(SsidSpec.create("HK3", "secretpass", null, SsidSpec.WPA3_SAE), TWO_RADIOS);
 
         assertTrue(commands.contains("security-object HK3 security protocol-suite wpa3-sae ascii-key secretpass"));
         assertTrue(commands.contains("ssid HK3 security-object HK3"));
@@ -108,7 +111,7 @@ class HiveOsDriverTest {
 
     @Test
     void buildsOpenSsidWithoutAKey() {
-        List<String> commands = driver.ssidCommands(SsidSpec.create("HKguest", null, null, SsidSpec.OPEN));
+        List<String> commands = driver.ssidCommands(SsidSpec.create("HKguest", null, null, SsidSpec.OPEN), TWO_RADIOS);
 
         assertTrue(commands.contains("security-object HKguest security protocol-suite open"));
         assertFalse(commands.stream().anyMatch(c -> c.contains("ascii-key")));
@@ -117,7 +120,7 @@ class HiveOsDriverTest {
     @Test
     void buildsEnterpriseSsidBindingARadiusServer() {
         SsidSpec.RadiusSpec radius = new SsidSpec.RadiusSpec("10.0.0.5", "r4dsecret", 1812);
-        List<String> commands = driver.ssidCommands(SsidSpec.createEnterprise("Corp", null, SsidSpec.WPA2_8021X, radius));
+        List<String> commands = driver.ssidCommands(SsidSpec.createEnterprise("Corp", null, SsidSpec.WPA2_8021X, radius), TWO_RADIOS);
 
         assertTrue(commands.contains("security-object Corp security protocol-suite wpa2-aes-8021x"));
         assertTrue(commands.contains(
@@ -127,10 +130,77 @@ class HiveOsDriverTest {
 
     @Test
     void buildsSsidRemoveCommands() {
-        List<String> commands = driver.ssidCommands(SsidSpec.removal("HK"));
+        List<String> commands = driver.ssidCommands(SsidSpec.removal("HK"), TWO_RADIOS);
 
         assertTrue(commands.contains("no ssid HK"));
         assertTrue(commands.contains("no security-object HK"));
+    }
+
+    @Test
+    void discoversRadioInterfacesFromTheDeviceRatherThanAssumingTwo() throws Exception {
+        // The AP410C-1 reports three physical radios (its second and third are both 5 GHz), interleaved with
+        // the WifiN.x virtual interfaces, which are not radios and must not be bound.
+        CliExecutor ap410c = command -> command.contains("interface")
+                ? io.hivekeeper.core.testsupport.Fixtures.load("/fixtures/ap410c/show_interface.txt")
+                : "";
+
+        assertEquals(List.of("wifi0", "wifi1", "wifi2"), driver.radioInterfaces(ap410c));
+        assertEquals(List.of("wifi0", "wifi1"), driver.radioInterfaces(ap230));
+    }
+
+    @Test
+    void bindsAnSsidToEveryRadioTheDeviceReports() {
+        List<String> commands =
+                driver.ssidCommands(SsidSpec.create("HK", "secretpass", null), List.of("wifi0", "wifi1", "wifi2"));
+
+        assertTrue(commands.contains("interface wifi0 ssid HK"));
+        assertTrue(commands.contains("interface wifi1 ssid HK"));
+        assertTrue(commands.contains("interface wifi2 ssid HK"),
+                "the third radio must carry the SSID too, or half the 5 GHz capacity is silently idle");
+    }
+
+    @Test
+    void bindsAnSsidToAFourthRadioNoHardwareHereHasYet() {
+        // No AP in the lab has four radios. The point of discovering them is that one would need no code
+        // change, so assert that directly rather than waiting for the hardware to exist.
+        List<String> commands = driver.ssidCommands(SsidSpec.create("HK", "secretpass", null),
+                List.of("wifi0", "wifi1", "wifi2", "wifi3"));
+
+        assertTrue(commands.contains("interface wifi3 ssid HK"));
+    }
+
+    @Test
+    void unbindsFromEveryRadioOnRemoval() {
+        List<String> commands = driver.ssidCommands(SsidSpec.removal("HK"), List.of("wifi0", "wifi1", "wifi2"));
+
+        assertTrue(commands.contains("no interface wifi2 ssid HK"),
+                "leaving a binding behind on the third radio orphans the SSID there");
+    }
+
+    @Test
+    void refusesToCreateAnSsidWhenNoRadioWasDiscovered() {
+        // Silently producing an SSID bound to nothing would be the old bug wearing a different hat.
+        assertThrows(IllegalStateException.class,
+                () -> driver.ssidCommands(SsidSpec.create("HK", "secretpass", null), List.of()));
+    }
+
+    @Test
+    void buildsOweSsidWithoutAKey() {
+        List<String> commands = driver.ssidCommands(SsidSpec.create("HKopen", null, null, SsidSpec.OWE), TWO_RADIOS);
+
+        assertTrue(commands.contains("security-object HKopen security protocol-suite owe"));
+        assertFalse(commands.stream().anyMatch(c -> c.contains("ascii-key")));
+    }
+
+    @Test
+    void buildsWpa3Enterprise192SsidBindingARadiusServer() {
+        SsidSpec.RadiusSpec radius = new SsidSpec.RadiusSpec("10.0.0.5", "r4dsecret", null);
+        List<String> commands = driver.ssidCommands(
+                SsidSpec.createEnterprise("Gov", null, SsidSpec.WPA3_8021X_192, radius), TWO_RADIOS);
+
+        assertTrue(commands.contains("security-object Gov security protocol-suite wpa3-aes-8021x-suite-b-192"));
+        assertTrue(commands.contains(
+                "security-object Gov security aaa radius-server primary 10.0.0.5 shared-secret r4dsecret"));
     }
 
     @Test

@@ -6,6 +6,7 @@ import io.hivekeeper.core.discovery.TcpBannerScanner;
 import io.hivekeeper.core.drivers.DriverRegistry;
 import io.hivekeeper.core.spi.BackupStore;
 import io.hivekeeper.core.spi.CredentialProvider;
+import io.hivekeeper.core.spi.BackupDestinationStore;
 import io.hivekeeper.core.spi.PpskUserStore;
 import io.hivekeeper.core.spi.SecretUnsealer;
 import io.hivekeeper.core.spi.WritableCredentialProvider;
@@ -56,9 +57,19 @@ public final class HiveCore {
     public static Engine localEngine(SshTransport transport, CredentialProvider credentials, BackupStore backupStore,
                                      WritableCredentialProvider writableCredentials, SecretUnsealer unsealer,
                                      PpskUserStore ppskUsers) {
+        return localEngine(transport, credentials, backupStore, writableCredentials, unsealer, ppskUsers, null);
+    }
+
+    /**
+     * The full form. {@code backupDestinations} enables configuring the backup repository from the console;
+     * only the on-prem agent passes one.
+     */
+    public static Engine localEngine(SshTransport transport, CredentialProvider credentials, BackupStore backupStore,
+                                     WritableCredentialProvider writableCredentials, SecretUnsealer unsealer,
+                                     PpskUserStore ppskUsers, BackupDestinationStore backupDestinations) {
         DriverRegistry drivers = DriverRegistry.fromServiceLoader();
         Scanner scanner = new TcpBannerScanner();
         return new LocalEngine(transport, credentials, drivers, backupStore, scanner, writableCredentials,
-                unsealer, ppskUsers);
+                unsealer, ppskUsers, backupDestinations);
     }
 }

@@ -25,9 +25,12 @@ Per device, via the web UI ([device configuration](/device-configuration/) expla
   agent's local vault, encrypted at rest. Optionally it also changes the admin password **on the AP itself**
   (`admin root-admin <user> password …`, validated live on an AP230 — HiveOS requires 8–32 chars with a number
   and an uppercase letter); a wrong value can lock you out, so it is confirm-gated.
-- **Wi-Fi** — create / edit / remove SSIDs on a chosen **security suite** (Open, WPA2-PSK, **WPA3-SAE**, or
-  **802.1X Enterprise** — WPA2/WPA3 — bound to a **RADIUS** server), with optional VLAN. Per-SSID **hardening**
-  (hide-SSID, client cap, client isolation, DTIM, schedule, 802.11k/v), a **minimum data rate** that prunes slow
+- **Wi-Fi** — create / edit / remove SSIDs on a chosen **security suite** (Open, **OWE / Enhanced Open**,
+  WPA2-PSK, **WPA3-SAE**, or **802.1X Enterprise** — WPA2 / WPA3 / **WPA3 192-bit Suite B** — bound to a
+  **RADIUS** server), with optional VLAN. An SSID is bound to **every radio the AP reports**, so a three-radio
+  AP410C-1 carries it on all three rather than only the first two. Per-SSID **hardening**
+  (hide-SSID, client cap, client isolation, DTIM, schedule, 802.11k/v and **802.11r** fast roaming with a
+  mobility domain id), a **minimum data rate** that prunes slow
   802.11b basic rates (1/2/5.5/11 Mbps) to reclaim airtime, per-SSID **QoS** (bind a **classifier** / **marker**
   profile and toggle **WMM** for voice/video priority), and **PPSK** (per-user PSK) with the **self-registration**
   model — a HiveAP serves PPSK and hosts the enrolment portal (optionally RADIUS-authenticated) so users register and
@@ -59,13 +62,22 @@ Per device, via the web UI ([device configuration](/device-configuration/) expla
   prompt an interactive Y/N the agent can't answer).
 - **Radio** — per-interface channel, Tx power, operational mode, and **client target power**
   (`tx-power-control`); plus the named **radio profile** that interfaces reference: **channel width**
-  (20/40/80 MHz), **band-steering**, **client load-balancing**, and a per-profile **max-clients** cap.
+  (20/40/80/160 MHz, plus the explicit 40-above / 40-below offsets), **band-steering**, **client
+  load-balancing**, and a per-profile **max-clients** cap.
   Best-practice advisories (channel overlap, wide channels, high power) flag settings likely to hurt latency
-  under client density, right next to the control that fixes them. A profile can be shared across interfaces
+  under client density, right next to the control that fixes them. A **Channel scan** panel (and `hivekeeper
+  scan`) reads `show acsp channel-info` / `show acsp neighbor` to show, per radio, what every candidate
+  channel would cost, how many neighbouring APs sit on it and how loud the nearest one is — then names the
+  cheapest. The costs are the **AP's own**: it runs automatic channel selection and scores the spectrum
+  continuously, so HiveKeeper reports that measurement rather than re-deriving one. Read-only; changing a
+  channel stays a deliberate act in the radio form, because it reconnects every client on that radio. A profile can be shared across interfaces
   and APs, so a profile change has a wider blast radius than a per-interface tweak. An **Advanced RF tuning**
   disclosure exposes the dense-RF knobs: per-radio `rx-sop` / `ed-threshold` / `dfs-backup-channel`, and on the
   profile `dfs`, `short-guard-interval`, `ampdu` / `amsdu`, `frameburst`, `tx-beamforming`, `high-density`,
-  `weak-snr-suppress`, `phymode`, and receive/transmit chain counts. **Note (confirmed live):** HiveOS refuses
+  `weak-snr-suppress`, `phymode` (including `11ax-2g` / `11ax-5g`), and receive/transmit chain counts (1-4).
+  A separate **Wi-Fi 6 (802.11ax)** disclosure exposes `11ax bss-color`, `11ax ofdma-dl` / `ofdma-ul`,
+  `11ax twt` and `mu-mimo` — every one of which HiveOS ships **disabled**, so a Wi-Fi 6 AP runs without them
+  until you turn them on. They need an 11ax phymode, and older hardware rejects the line. **Note (confirmed live):** HiveOS refuses
   edits to the *default* radio profiles (`radio_ac0` / `radio_ng0`) — profile knobs must target a **custom**
   profile (the first setting auto-creates it; the form warns on a default name), and `phymode` must be set
   before channel width / beamforming will take. A **Bind to radio** selector then applies the custom profile to
@@ -83,6 +95,13 @@ The gateway:
 
 - **Discover** APs on a subnet (SSH banner sweep), then **adopt** them into a managed fleet.
 - Organize devices into **sites** and **groups**; run **bulk** inventory/backup across org/site/group scopes.
+- A **backup destination** for the organization: one git repository every agent pushes its config history to,
+  set from the console so no one has to touch an agent's machine. The token is sealed to each agent's own key
+  on the way out and held encrypted at rest on both ends. **A failed push is not a failed backup** — the local
+  commit is the rollback path and happens first; pending commits go out with the next capture. Because the
+  gateway must be able to hand the destination to an agent that was offline when it was set (or enrolled
+  later), it stores the token encrypted with `HIVEKEEPER_CRYPTO_KEY`: scope that token to the backup
+  repository and nothing else.
 - **Config templates** — apply a set of HiveOS CLI lines to every device in a scope in one bulk write
   (operator-level, each device re-authorized server-side, per-device outcomes); named templates saved locally.
 - **Alerts** — an on-demand fleet **scan** flags APs that breach a threshold (agent offline, still cloud-managed,
@@ -101,8 +120,9 @@ Any non-HiveOS vendor (the driver SPI is ready for them). Firmware upgrade and *
 (Caminho B) both ship but are **lab/untested** until validated on real hardware — PPSK-via-RADIUS has a dedicated
 [runbook](/ppsk-radius-runbook/). The project README's Roadmap tracks the current plan.
 
-A few HiveOS features are **not exposed because the AP230 has no running-config grammar for them** (confirmed
-live, so they can't be driven through the SSH/apply-config path HiveKeeper uses):
+A few HiveOS features are **not exposed because no AP in the lab has running-config grammar for them**
+(confirmed live on an AP230, AP410C-1 and AP630, so they can't be driven through the SSH/apply-config path
+HiveKeeper uses):
 
 - **IGMP snooping / multicast** — there is no `igmp` command, no `mgt0` sub-node, and no `show igmp`; the AP
   bridges multicast and IGMP snooping is the upstream switch's job.
@@ -110,3 +130,14 @@ live, so they can't be driven through the SSH/apply-config path HiveKeeper uses)
   a top-level object you can create over SSH (L3 VPN tunneling, out of scope for a standalone AP).
 - **Individual PPSK keys** and **MAC-policy rules** — see Wi-Fi (PPSK) and Policy; MAC rules go through Advanced
   raw-CLI as the combined rule line is rejected.
+
+Not modelled yet, and confirmed present on Wi-Fi 6 hardware: the radio-profile knobs `zerowait-dfs`,
+`dynamic-channel-width`, `radio-balance`, `vht-2g`, `primary-channel-offset`, `beacon-period` and
+`interference-map`, plus the `Agg0` (link aggregation) and `Red0` (redundancy) interfaces. These go through
+Advanced raw-CLI in the meantime.
+
+:::note[Device limits are not platform limits.]
+Some of the ceilings above belong to a particular AP rather than to HiveOS. An AP230 rejects 160 MHz channel
+width and has fewer than four spatial streams; an AP630 or AP410C-1 accepts both. HiveKeeper offers the full
+grammar and lets the device refuse what it cannot do, rather than hiding a capability your newer hardware has.
+:::

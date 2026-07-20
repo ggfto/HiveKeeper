@@ -1,0 +1,16 @@
+State=Operational state; Chan=Channel;
+Radio=Radio profile; U=up; D=down;
+
+Name           MAC addr      Mode       State  Chan(Width)  VLAN   Radio       Hive                  SSID
+----------- -------------- ------------ ----- ------------- ---- ----------- -------------------- ----------
+Mgt0        a4c7:f621:5780    -           U     -              1      -             hive0              -
+Agg0        a4c7:f621:5783 backhaul       D     -              1      -             hive0              -
+Eth0        a4c7:f621:5780 backhaul       U     -              1      -             hive0              -
+Eth1        a4c7:f621:5781 backhaul       D     -              1      -             hive0              -
+Red0        a4c7:f621:5782 backhaul       D     -              1      -             hive0              -
+Wifi0       a4c7:f621:5790 access         U    Down(20MHz)     -  radio_axg0          -                -
+Wifi0.1     a4c7:f621:5794 access         D    Down(20MHz)     -  radio_axg0        hive0              -
+Wifi1       a4c7:f621:57b0 dual           U     165(20MHz)     -  radio_axa0          -                -
+Wifi1.1     a4c7:f621:57b0 backhaul       U     165(20MHz)     1  radio_axa0        hive0              -
+Wifi2       a4c7:f621:57a0 access         U    Down(20MHz)     -  radio_axa0          -                -
+Wifi2.1     a4c7:f621:57a4 access         D    Down(20MHz)     -  radio_axa0        hive0              -

@@ -1,0 +1,27 @@
+
+wifi0 (12): 
+State: RUN
+Lowest cost channel: 1, lowest-cost: 6
+Channel   1 Cost: 6 
+Channel   2 Cost: 32767 (overlap)
+Channel   3 Cost: 32767 (overlap)
+Channel   4 Cost: 32767 (overlap)
+Channel   5 Cost: 32767 (overlap)
+Channel   6 Cost: 43 
+Channel   7 Cost: 32767 (overlap)
+Channel   8 Cost: 32767 (overlap)
+Channel   9 Cost: 32767 (overlap)
+Channel  10 Cost: 32767 (overlap)
+Channel  11 Cost: 20 
+
+wifi1 (13): 
+State: RUN
+Lowest cost channel: 149, lowest-cost: 0
+Channel  36 Cost: 7 
+Channel  40 Cost: 32767 (offset)
+Channel  44 Cost: 27 
+Channel  48 Cost: 32767 (offset)
+Channel 153 Cost: 32767 (offset)
+Channel 157 Cost: 33 
+Channel 161 Cost: 32767 (offset)
+Channel 165 Cost: 32767 (offset)

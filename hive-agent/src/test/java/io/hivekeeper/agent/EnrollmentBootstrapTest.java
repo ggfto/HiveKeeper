@@ -95,7 +95,7 @@ class EnrollmentBootstrapTest {
     private static AgentConfig config(Path keystore, Path truststore, String enrollUrl) {
         return new AgentConfig(
                 java.net.URI.create("ws://127.0.0.1:8090/agent"), "lab-agent", "admin", "",
-                null, null, null, null, "hivekeeper-backups",
+                null, null, null, null, "hivekeeper-backups", "hivekeeper-backup-destination.properties",
                 keystore.toString(), "changeit", truststore.toString(), "changeit",
                 HostKeyPolicy.TOFU, "hivekeeper-known_hosts",
                 "tok", enrollUrl, null, 30, 12, "hivekeeper-agent.health");

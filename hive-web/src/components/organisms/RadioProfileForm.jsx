@@ -3,14 +3,21 @@ import { MriInput, MriButton, MriSectionHeader } from '@mriqbox/ui-kit'
 import { Radio, TriangleAlert } from 'lucide-react'
 import { radioProfileCommands } from '../../lib/hiveosCli'
 import { radioAdvisories } from '../../lib/radioAdvisories'
+import { radioOptions, bandForChannel } from '../../lib/radioInterfaces'
 
 // HiveOS keeps channel width and the density knobs on a NAMED radio profile that the wifiN interfaces reference,
 // not on the interface itself. Defaults confirmed live on an AP230: radio_ng0 (2.4 GHz), radio_ac0 (5 GHz).
+// 160 MHz and the explicit 40-above/40-below offsets are offered by Wi-Fi 6 hardware (confirmed on an AP630
+// and AP410C-1, HiveOS 10.6r6). The AP230 rejects 160 — that is a limit of the AP230's radio, not of HiveOS,
+// so the option is listed and the device is left to refuse it rather than hidden from every AP.
 const WIDTHS = [
   { label: '(unchanged)', value: '' },
   { label: '20 MHz', value: '20' },
   { label: '40 MHz', value: '40' },
+  { label: '40 MHz (above)', value: '40-above' },
+  { label: '40 MHz (below)', value: '40-below' },
   { label: '80 MHz', value: '80' },
+  { label: '160 MHz (Wi-Fi 6)', value: '160' },
 ]
 const TOGGLE = [
   { label: '(unchanged)', value: '' },
@@ -28,23 +35,36 @@ const PHYMODES = [
   { label: '(unchanged)', value: '' },
   { label: '11a', value: '11a' },
   { label: '11ac', value: '11ac' },
+  { label: '11ax — 2.4 GHz', value: '11ax-2g' },
+  { label: '11ax — 5 GHz', value: '11ax-5g' },
   { label: '11b/g', value: '11b/g' },
   { label: '11na', value: '11na' },
   { label: '11ng', value: '11ng' },
 ]
+// The AP630 and AP410C-1 are 4x4 and report `Range: 1-4, Default: 4` — capping the picker at 3 made it
+// impossible to set (or restore) the radio's own default on Wi-Fi 6 hardware.
 const CHAINS = [
   { label: '(unchanged)', value: '' },
   { label: '1', value: '1' },
   { label: '2', value: '2' },
   { label: '3', value: '3' },
+  { label: '4', value: '4' },
 ]
 
-// Infer the band from the profile name so the channel-width advisory knows which band it is judging. radio_ng0
-// is 2.4 GHz (wifi0), radio_ac0 / radio_ax0 are 5 GHz (wifi1). Unknown names get no advisory rather than a guess.
+// Infer the band from the profile name so the channel-width advisory knows which band it is judging.
+//
+// HiveOS names its factory profiles radio_<phy><band-letter><n>, where the band letter follows the 802.11
+// convention: `g` = 2.4 GHz, `a` = 5 GHz. On Wi-Fi 6 hardware that yields radio_axg0 (2.4 GHz) and radio_axa0
+// (5 GHz) — confirmed live on an AP630 and AP410C-1. Matching on a bare `ax` substring therefore read the
+// 2.4 GHz profile as 5 GHz and judged it by the wrong rules (notably, it stopped warning about 40 MHz on
+// 2.4 GHz, which is the one width advisory that matters most). Read the band letter instead of guessing.
 function ifaceForProfile(name) {
   const p = (name || '').toLowerCase()
+  const m = /^radio_([a-z]+?)([ag])\d*$/.exec(p)
+  if (m) return m[2] === 'g' ? 'wifi0' : 'wifi1'
+  // Legacy/short names with no band letter: radio_ng0 is 2.4 GHz, radio_ac0 is 5 GHz.
   if (p.includes('ng')) return 'wifi0'
-  if (p.includes('ac') || p.includes('ax')) return 'wifi1'
+  if (p.includes('ac')) return 'wifi1'
   return null
 }
 
@@ -57,19 +77,29 @@ function isDefaultProfile(name) {
 }
 
 // A profile takes effect on a radio only once it is BOUND to the interface (`interface wifiN radio profile
-// <name>`). Offer the two radios (2.4 GHz = wifi0, 5 GHz = wifi1) plus "don't bind".
-const BIND_TARGETS = [
-  { label: "(don't bind)", value: '' },
-  { label: 'wifi0 (2.4 GHz)', value: 'wifi0' },
-  { label: 'wifi1 (5 GHz)', value: 'wifi1' },
-]
+// <name>`). The radios come from the device, plus "don't bind".
+function bindTargets(device) {
+  return [{ label: "(don't bind)", value: '' }, ...radioOptions(device)]
+}
 
-// Infer the band a phymode belongs to so we can warn on a band mismatch when binding (e.g. an 11ac profile bound
-// to the 2.4 GHz radio). 5 GHz: 11a / 11ac / 11na. 2.4 GHz: 11b/g / 11ng. Unknown → no opinion.
-function ifaceForPhymode(phymode) {
-  if (phymode === '11a' || phymode === '11ac' || phymode === '11na') return 'wifi1'
-  if (phymode === '11b/g' || phymode === '11ng') return 'wifi0'
+// Infer the band a phymode belongs to so we can warn on a band mismatch when binding (e.g. an 11ac profile
+// bound to the 2.4 GHz radio). Returns a BAND rather than an interface name: with three radios, two of which
+// are 5 GHz, "which interface does this phymode want" has no single answer, but "which band" always does.
+function bandForPhymode(phymode) {
+  if (phymode === '11a' || phymode === '11ac' || phymode === '11na' || phymode === '11ax-5g') return '5'
+  if (phymode === '11b/g' || phymode === '11ng' || phymode === '11ax-2g') return '2.4'
   return null
+}
+
+// The band of the radio being bound to. The channel the device reported decides it; failing that (the radio is
+// down, or the device has not been inventoried) fall back to the wifi0 = 2.4 / wifi1 = 5 convention. The
+// fallback is deliberately silent about anything beyond wifi1: on an AP410C-1 wifi2 is a second 5 GHz radio,
+// and guessing from its name would be wrong as often as right.
+function bandOfRadio(device, iface) {
+  const radio = (device?.radios ?? []).find((r) => String(r.name || '').toLowerCase() === iface)
+  const label = bandForChannel(radio?.channel)
+  if (label) return label === '2.4 GHz' ? '2.4' : '5'
+  return iface === 'wifi0' ? '2.4' : iface === 'wifi1' ? '5' : null
 }
 
 /**
@@ -95,6 +125,13 @@ export function RadioProfileForm({ device, onApply, busy }) {
   const [phymode, setPhymode] = useState('')
   const [receiveChain, setReceiveChain] = useState('')
   const [transmitChain, setTransmitChain] = useState('')
+  // Wi-Fi 6 (802.11ax). All ship disabled on HiveOS; blank leaves them alone.
+  const [bssColor, setBssColor] = useState('')
+  const [ofdmaDl, setOfdmaDl] = useState('')
+  const [ofdmaUl, setOfdmaUl] = useState('')
+  const [twt, setTwt] = useState('')
+  const [muMimo, setMuMimo] = useState('')
+  const [muMimoStationReceiveChain, setMuMimoStationReceiveChain] = useState('')
   const [bindInterface, setBindInterface] = useState('')
 
   const apply = () => {
@@ -114,6 +151,12 @@ export function RadioProfileForm({ device, onApply, busy }) {
       phymode,
       receiveChain,
       transmitChain,
+      bssColor: bssColor.trim(),
+      ofdmaDl,
+      ofdmaUl,
+      twt,
+      muMimo,
+      muMimoStationReceiveChain: muMimoStationReceiveChain.trim(),
       bindInterface,
     })
     if (commands.length === 0) return
@@ -121,13 +164,20 @@ export function RadioProfileForm({ device, onApply, busy }) {
   }
 
   // Surface the channel-width best-practice advisory right where the fix lives (the profile that owns the width).
+  // The phymode, when set, names the band outright and beats guessing it from the profile name.
   const advisories = channelWidth
-    ? radioAdvisories({ iface: ifaceForProfile(profile), width: channelWidth })
+    ? radioAdvisories({
+        band: bandForPhymode(phymode) ?? undefined,
+        iface: ifaceForProfile(profile),
+        width: channelWidth,
+      })
     : []
   const defaultProfile = isDefaultProfile(profile)
-  // Warn if binding an N-band profile to the other band's radio (a likely mistake). Only when both are known.
-  const bandForPhymode = ifaceForPhymode(phymode)
-  const bandMismatch = bindInterface && bandForPhymode && bindInterface !== bandForPhymode
+  // Warn if binding an N-band profile to the other band's radio (a likely mistake). Only when both are known —
+  // and the target's band comes from its channel, so a second 5 GHz radio is judged correctly.
+  const wantedBand = bandForPhymode(phymode)
+  const targetBand = bindInterface ? bandOfRadio(device, bindInterface) : null
+  const bandMismatch = Boolean(wantedBand && targetBand && wantedBand !== targetBand)
 
   const selectClass =
     'h-9 rounded-md border border-border bg-background px-2 text-sm text-foreground'
@@ -202,7 +252,7 @@ export function RadioProfileForm({ device, onApply, busy }) {
             value={bindInterface}
             onChange={(e) => setBindInterface(e.target.value)}
           >
-            {BIND_TARGETS.map((o) => (
+            {bindTargets(device).map((o) => (
               <option key={o.value} value={o.value}>
                 {o.label}
               </option>
@@ -252,7 +302,7 @@ export function RadioProfileForm({ device, onApply, busy }) {
               <>
                 {' '}
                 <strong>Band mismatch:</strong> a <code className="font-mono">{phymode}</code> profile targets the{' '}
-                {bandForPhymode === 'wifi1' ? '5 GHz' : '2.4 GHz'} radio, not{' '}
+                {wantedBand === '5' ? '5 GHz' : '2.4 GHz'} radio, not{' '}
                 <code className="font-mono">{bindInterface}</code> — double-check the PHY mode.
               </>
             )}
@@ -418,6 +468,94 @@ export function RadioProfileForm({ device, onApply, busy }) {
                   </option>
                 ))}
               </select>
+            </label>
+          </div>
+        </div>
+      </details>
+      <details className="rounded-md border border-border">
+        <summary className="cursor-pointer px-3 py-2 text-xs font-medium text-muted-foreground">
+          Wi-Fi 6 (802.11ax)
+        </summary>
+        <div className="space-y-3 px-3 pb-3">
+          <p className="text-xs text-muted-foreground">
+            Only on Wi-Fi 6 hardware (AP410C, AP630 and newer), and only once the PHY mode above is{' '}
+            <code className="font-mono">11ax-2g</code> or <code className="font-mono">11ax-5g</code>. HiveOS
+            ships every one of these <strong>disabled</strong>, so a Wi-Fi 6 AP runs without them until you
+            turn them on. An older AP will simply reject the line.
+          </p>
+          <div className="grid gap-2 sm:grid-cols-2">
+            <label className="flex flex-col gap-1" htmlFor="rp-ofdma-dl">
+              <span className="text-xs text-muted-foreground">OFDMA downlink</span>
+              <select
+                id="rp-ofdma-dl"
+                className={selectClass}
+                value={ofdmaDl}
+                onChange={(e) => setOfdmaDl(e.target.value)}
+              >
+                {TOGGLE.map((o) => (
+                  <option key={o.value} value={o.value}>
+                    {o.label}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label className="flex flex-col gap-1" htmlFor="rp-ofdma-ul">
+              <span className="text-xs text-muted-foreground">OFDMA uplink</span>
+              <select
+                id="rp-ofdma-ul"
+                className={selectClass}
+                value={ofdmaUl}
+                onChange={(e) => setOfdmaUl(e.target.value)}
+              >
+                {TOGGLE.map((o) => (
+                  <option key={o.value} value={o.value}>
+                    {o.label}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label className="flex flex-col gap-1" htmlFor="rp-twt">
+              <span className="text-xs text-muted-foreground">TWT (target wake time)</span>
+              <select id="rp-twt" className={selectClass} value={twt} onChange={(e) => setTwt(e.target.value)}>
+                {TOGGLE.map((o) => (
+                  <option key={o.value} value={o.value}>
+                    {o.label}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label className="flex flex-col gap-1" htmlFor="rp-mu-mimo">
+              <span className="text-xs text-muted-foreground">MU-MIMO</span>
+              <select
+                id="rp-mu-mimo"
+                className={selectClass}
+                value={muMimo}
+                onChange={(e) => setMuMimo(e.target.value)}
+              >
+                {TOGGLE.map((o) => (
+                  <option key={o.value} value={o.value}>
+                    {o.label}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label className="flex flex-col gap-1" htmlFor="rp-bss-color">
+              <span className="text-xs text-muted-foreground">BSS color (blank = unchanged)</span>
+              <MriInput
+                id="rp-bss-color"
+                value={bssColor}
+                onChange={(e) => setBssColor(e.target.value)}
+                placeholder="1-63"
+              />
+            </label>
+            <label className="flex flex-col gap-1" htmlFor="rp-mu-mimo-chain">
+              <span className="text-xs text-muted-foreground">MU-MIMO min. station chains</span>
+              <MriInput
+                id="rp-mu-mimo-chain"
+                value={muMimoStationReceiveChain}
+                onChange={(e) => setMuMimoStationReceiveChain(e.target.value)}
+                placeholder="e.g. 2"
+              />
             </label>
           </div>
         </div>

@@ -12,6 +12,7 @@ import picocli.CommandLine;
         versionProvider = Main.ManifestVersion.class,
         description = "Manage standalone Aerohive / Extreme HiveOS access points over SSH.",
         subcommands = {InventoryCmd.class, BackupCmd.class, CaptureCmd.class, DiscoverCmd.class,
+                ScanChannelsCmd.class,
                 ConfigureSsidCmd.class, ConfigureHiveCmd.class, RebootCmd.class, RestoreCmd.class,
                 FirmwareUpgradeCmd.class})
 public final class Main {

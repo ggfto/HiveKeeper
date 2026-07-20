@@ -44,10 +44,18 @@ final class ConfigureSsidCmd implements Callable<Integer> {
     boolean remove;
 
     /** The selectable suites, so picocli can list and tab-complete them. */
+    /**
+     * The suites {@link SsidSpec} accepts, derived from the model rather than restated here — a hardcoded
+     * copy had already drifted, leaving OWE and WPA3 192-bit invisible on the command line after the model
+     * gained them. Grouped keyless / preshared-key / enterprise, and sorted within each group so the help
+     * text is stable between runs (the model holds them in unordered sets).
+     */
     static final class SecuritySuites extends java.util.ArrayList<String> {
         SecuritySuites() {
-            super(java.util.List.of(SsidSpec.OPEN, SsidSpec.WPA2_PSK, SsidSpec.WPA3_SAE,
-                    SsidSpec.WPA2_8021X, SsidSpec.WPA3_8021X));
+            super(java.util.stream.Stream
+                    .of(SsidSpec.KEYLESS_SUITES, SsidSpec.PSK_SUITES, SsidSpec.ENTERPRISE_SUITES)
+                    .flatMap(group -> group.stream().sorted())
+                    .toList());
         }
     }
 

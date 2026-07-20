@@ -1,5 +1,6 @@
 package io.hivekeeper.core.drivers;
 
+import io.hivekeeper.core.model.ChannelScan;
 import io.hivekeeper.core.model.ConfigSnapshot;
 import io.hivekeeper.core.model.Device;
 import io.hivekeeper.core.model.DeviceId;
@@ -30,6 +31,18 @@ public interface Driver {
     /** Collects a vendor-neutral inventory snapshot. */
     Device inventory(DeviceId id, CliExecutor exec, ProgressReporter progress) throws IOException;
 
+    /**
+     * Reads the device's own assessment of the air around each radio: what every candidate channel would
+     * cost, and which neighbouring BSSIDs it heard.
+     *
+     * <p>Read-only. Access points already run automatic channel selection and score the spectrum
+     * continuously; this surfaces that measurement rather than re-deriving it, because the AP is the one
+     * with the radio. Drivers whose platform exposes nothing comparable return an empty list.
+     */
+    default List<ChannelScan> channelScans(CliExecutor exec, ProgressReporter progress) throws IOException {
+        return List.of();
+    }
+
     /** Captures the device configuration (and, per {@code scope}, the separate user/PPSK channel). */
     ConfigSnapshot captureConfig(DeviceId id, CliExecutor exec, ConfigScope scope, ProgressReporter progress)
             throws IOException;
@@ -38,8 +51,30 @@ public interface Driver {
     List<String> applyConfig(DeviceId id, CliExecutor exec, List<String> commands, boolean save,
                              ProgressReporter progress) throws IOException;
 
-    /** Translates a vendor-neutral {@link SsidSpec} into this device's CLI lines (create or remove). */
-    List<String> ssidCommands(SsidSpec spec);
+    /**
+     * The device's physical radio interfaces, named as its CLI expects them (HiveOS: {@code wifi0},
+     * {@code wifi1}, {@code wifi2}, …), in the order the device reports them.
+     *
+     * <p>Asked of the device, never assumed. Radio count is not a constant of the platform: an AP230 and
+     * an AP630 have two, an AP410C-1 has three (its second and third radios are both 5 GHz), and a future
+     * model may well have four. Anything that binds an SSID to a hardcoded pair leaves the remaining
+     * radios carrying nothing — with no error, because the AP accepted every line it was given.
+     *
+     * <p>Drivers that cannot enumerate radios return an empty list, which callers must treat as "unknown",
+     * not as "none".
+     */
+    default List<String> radioInterfaces(CliExecutor exec) throws IOException {
+        return List.of();
+    }
+
+    /**
+     * Translates a vendor-neutral {@link SsidSpec} into this device's CLI lines (create or remove),
+     * binding to exactly the radios in {@code radioInterfaces} (see {@link #radioInterfaces}).
+     *
+     * <p>Kept a pure function of its inputs, so the radio count it produces for is explicit at every call
+     * site and directly testable — including counts no hardware in the lab has yet.
+     */
+    List<String> ssidCommands(SsidSpec spec, List<String> radioInterfaces);
 
     /** Translates a vendor-neutral {@link HiveSpec} into this device's hive/mesh CLI lines. */
     List<String> hiveCommands(HiveSpec spec);

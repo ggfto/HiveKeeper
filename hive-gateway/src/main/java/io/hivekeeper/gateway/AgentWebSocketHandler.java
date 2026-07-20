@@ -29,9 +29,13 @@ class AgentWebSocketHandler extends TextWebSocketHandler {
     private final Optional<JobGateway> jobGateway;
     private final Map<String, SpringWsFrameChannel> channels = new ConcurrentHashMap<>();
 
-    AgentWebSocketHandler(AgentRegistry registry, Optional<JobGateway> jobGateway) {
+    private final BackupDestinationProvisioner backupDestinations;
+
+    AgentWebSocketHandler(AgentRegistry registry, Optional<JobGateway> jobGateway,
+                          BackupDestinationProvisioner backupDestinations) {
         this.registry = registry;
         this.jobGateway = jobGateway;
+        this.backupDestinations = backupDestinations;
     }
 
     @Override
@@ -49,6 +53,8 @@ class AgentWebSocketHandler extends TextWebSocketHandler {
             registry.registerPublicKey(tenantId, agentId, key);
         }
         jobGateway.ifPresent(jg -> jg.onAgentConnected(tenantId, agentId, channel));
+        // An agent that was offline when the destination was set picks it up here.
+        backupDestinations.onAgentConnected(tenantId, agentId);
         log.info("agent '{}' connected for tenant '{}'", agentId, tenantId);
     }
 

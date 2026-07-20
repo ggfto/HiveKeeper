@@ -3,11 +3,7 @@ import { MriSelect, MriInput, MriButton, MriSectionHeader } from '@mriqbox/ui-ki
 import { Radio, TriangleAlert } from 'lucide-react'
 import { radioCommands } from '../../lib/hiveosCli'
 import { radioAdvisories } from '../../lib/radioAdvisories'
-
-const RADIOS = [
-  { label: 'wifi0 (2.4 GHz)', value: 'wifi0' },
-  { label: 'wifi1 (5 GHz)', value: 'wifi1' },
-]
+import { radioOptions, defaultRadio } from '../../lib/radioInterfaces'
 // Per-radio operational mode (interface wifiN mode), confirmed via `?` on the AP230.
 const MODES = [
   { label: '(unchanged)', value: '' },
@@ -20,7 +16,9 @@ const MODES = [
 
 /** Guided radio config (per radio): channel, transmit power, operational mode. Confirmed HiveOS syntax. */
 export function RadioForm({ device, onApply, busy }) {
-  const [iface, setIface] = useState('wifi0')
+  // Offer the radios this device reported, not a fixed pair — an AP410C-1 has three.
+  const RADIOS = radioOptions(device)
+  const [iface, setIface] = useState(() => defaultRadio(device))
   const [channel, setChannel] = useState('')
   const [power, setPower] = useState('')
   const [txPowerControl, setTxPowerControl] = useState('')

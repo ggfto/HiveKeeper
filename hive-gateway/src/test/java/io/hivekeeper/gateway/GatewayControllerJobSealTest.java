@@ -3,6 +3,7 @@ package io.hivekeeper.gateway;
 import io.hivekeeper.core.api.Command;
 import io.hivekeeper.gateway.access.AccessExceptionAdvice;
 import io.hivekeeper.gateway.access.AccessGuard;
+import io.hivekeeper.gateway.backup.BackupDestinationService;
 import io.hivekeeper.gateway.access.Principal;
 import io.hivekeeper.gateway.tenant.AgentEnrollment;
 import io.hivekeeper.gateway.tenant.TenantStore;
@@ -44,6 +45,10 @@ class GatewayControllerJobSealTest {
     private TenantStore tenants;
     @MockitoBean
     private JobGateway jobGateway;
+    @MockitoBean
+    private BackupDestinationService backupDestinations;
+    @MockitoBean
+    private BackupDestinationProvisioner backupProvisioner;
 
     private final Principal principal = Principal.user("acme", "usr-1");
 

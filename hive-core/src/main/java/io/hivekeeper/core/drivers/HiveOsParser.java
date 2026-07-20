@@ -1,11 +1,15 @@
 package io.hivekeeper.core.drivers;
 
+import io.hivekeeper.core.model.ChannelScan;
 import io.hivekeeper.core.model.Device;
 import io.hivekeeper.core.model.DeviceId;
 import io.hivekeeper.core.model.Radio;
 import io.hivekeeper.core.model.Station;
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Locale;
+import java.util.Map;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -67,6 +71,19 @@ final class HiveOsParser {
     }
 
     /**
+     * The physical radio interfaces, lowercased for use in CLI lines ({@code wifi0}, {@code wifi1}, …).
+     *
+     * <p>Read from the device rather than assumed. An AP230 and an AP630 have two radios, an AP410C-1 has
+     * three (its second and third are both 5 GHz), and nothing stops a future model having four — binding
+     * to a hardcoded {@code wifi0}/{@code wifi1} pair silently leaves the extra radios carrying no SSID.
+     */
+    static List<String> radioInterfaceNames(String showInterface) {
+        return parseInterfaces(showInterface).radios().stream()
+                .map(radio -> radio.name().toLowerCase(Locale.ROOT))
+                .toList();
+    }
+
+    /**
      * Parses {@code show interface}: a whitespace-aligned table with columns
      * Name, MAC, Mode, State, Chan(Width), VLAN, Radio, Hive, SSID. Data rows are identified by a MAC
      * in column 2; the hive name is the first non-"-" Hive value, and radios are the physical
@@ -95,6 +112,137 @@ final class HiveOsParser {
             }
         }
         return new InterfaceInfo(hiveName, radios);
+    }
+
+    // `wifi0 (12):` — the radio header in `show acsp channel-info`. The parenthesised number is ACSP's
+    // internal radio id, not a channel, and is deliberately ignored.
+    private static final Pattern ACSP_RADIO = Pattern.compile("^(wifi\\d+)\\s*\\((\\d+)\\)\\s*:");
+    // `Channel   1 Cost: 6` / `Channel   2 Cost: 32767 (overlap)`
+    private static final Pattern ACSP_CHANNEL =
+            Pattern.compile("^Channel\\s+(\\d+)\\s+Cost:\\s+(\\d+)\\s*(?:\\((\\w+)\\))?");
+    private static final Pattern ACSP_STATE = Pattern.compile("^State:\\s*(\\S+)");
+    private static final Pattern ACSP_LOWEST = Pattern.compile("^Lowest cost channel:\\s*(\\d+)");
+    // `wifi0(12) ACSP neighbor list (104/384):` — note NO space before the paren here, unlike channel-info.
+    private static final Pattern ACSP_NEIGHBOR_HEADER = Pattern.compile("^(wifi\\d+)\\(\\d+\\)\\s+ACSP neighbor list");
+
+    /**
+     * Parses {@code show acsp channel-info} and {@code show acsp neighbor} into one {@link ChannelScan} per
+     * radio, keyed by interface name (lowercased: {@code wifi0}, {@code wifi1}, …).
+     *
+     * <p>Both outputs are grouped by radio, so they are walked together and joined on the interface name.
+     * A radio present in one and not the other still yields a scan, with the missing half empty — an AP
+     * that has not finished its first scan reports a channel table and no neighbours.
+     */
+    static Map<String, ChannelScan> parseChannelScans(String channelInfo, String neighbors) {
+        Map<String, List<ChannelScan.Neighbor>> byRadio = parseAcspNeighbors(neighbors);
+        Map<String, ChannelScan> out = new LinkedHashMap<>();
+        if (channelInfo == null || channelInfo.isBlank()) {
+            return out;
+        }
+
+        String iface = null;
+        String state = null;
+        Integer lowest = null;
+        List<ChannelScan.ChannelCost> costs = new ArrayList<>();
+        for (String raw : channelInfo.split("\\R")) {
+            String line = raw.strip();
+            Matcher radio = ACSP_RADIO.matcher(line);
+            if (radio.find()) {
+                if (iface != null) {
+                    out.put(iface, new ChannelScan(iface, state, lowest, List.copyOf(costs),
+                            byRadio.getOrDefault(iface, List.of())));
+                }
+                iface = radio.group(1).toLowerCase(Locale.ROOT);
+                state = null;
+                lowest = null;
+                costs = new ArrayList<>();
+                continue;
+            }
+            if (iface == null) {
+                continue;
+            }
+            Matcher st = ACSP_STATE.matcher(line);
+            if (st.find()) {
+                state = st.group(1);
+                continue;
+            }
+            Matcher low = ACSP_LOWEST.matcher(line);
+            if (low.find()) {
+                lowest = Integer.parseInt(low.group(1));
+                continue;
+            }
+            Matcher ch = ACSP_CHANNEL.matcher(line);
+            if (ch.find()) {
+                costs.add(new ChannelScan.ChannelCost(Integer.parseInt(ch.group(1)),
+                        Integer.parseInt(ch.group(2)), ch.group(3)));
+            }
+        }
+        if (iface != null) {
+            out.put(iface, new ChannelScan(iface, state, lowest, List.copyOf(costs),
+                    byRadio.getOrDefault(iface, List.of())));
+        }
+        return out;
+    }
+
+    /**
+     * Parses {@code show acsp neighbor} into per-radio neighbour lists. Columns:
+     * Bssid, Mode, Ssid/Hive, Chan, Rssi, "Aerohive AP", CU, CRC, STA, Channel-width, VID, NVID.
+     *
+     * <p>Split on whitespace does not work: <b>the SSID column can contain spaces</b> (a real capture holds
+     * {@code Portaria Zenith}), and it can also be empty for a hidden network, so column count varies by
+     * row. Anchor on the two fields that cannot be ambiguous instead — the BSSID at the start, and the
+     * numeric Chan/Rssi pair — and take whatever sits between Mode and Chan as the SSID.
+     */
+    private static Map<String, List<ChannelScan.Neighbor>> parseAcspNeighbors(String showAcspNeighbor) {
+        Map<String, List<ChannelScan.Neighbor>> out = new LinkedHashMap<>();
+        if (showAcspNeighbor == null || showAcspNeighbor.isBlank()) {
+            return out;
+        }
+        Pattern row = Pattern.compile(
+                "^([0-9a-f]{4}:[0-9a-f]{4}:[0-9a-f]{4})\\s+"   // bssid
+                        + "(\\S+)\\s+"                          // mode
+                        + "(.*?)\\s*"                           // ssid (may be empty, may contain spaces)
+                        + "(\\d+)\\s+"                          // channel
+                        + "(-?\\d+)\\s+"                        // rssi
+                        + "(yes|no)\\s+"                        // Aerohive AP
+                        + "(\\S+)\\s+(\\S+)\\s+(\\S+)\\s+"      // CU, CRC, STA ("--" when foreign)
+                        + "(\\S+)");                            // channel width
+        String iface = null;
+        for (String raw : showAcspNeighbor.split("\\R")) {
+            String line = raw.strip();
+            Matcher header = ACSP_NEIGHBOR_HEADER.matcher(line);
+            if (header.find()) {
+                iface = header.group(1).toLowerCase(Locale.ROOT);
+                out.computeIfAbsent(iface, k -> new ArrayList<>());
+                continue;
+            }
+            if (iface == null) {
+                continue;
+            }
+            Matcher m = row.matcher(line);
+            if (m.find()) {
+                String ssid = m.group(3).strip();
+                out.get(iface).add(new ChannelScan.Neighbor(
+                        m.group(1),
+                        ssid.isEmpty() ? null : ssid,
+                        Integer.parseInt(m.group(4)),
+                        Integer.parseInt(m.group(5)),
+                        "yes".equals(m.group(6)),
+                        toIntOrNull(m.group(7)),
+                        toIntOrNull(m.group(9)),
+                        m.group(10)));
+            }
+        }
+        return out;
+    }
+
+    /** HiveOS prints {@code --} for a column it has no value for (foreign APs report no CU/STA). */
+    private static Integer toIntOrNull(String token) {
+        try {
+            return Integer.valueOf(token);
+        } catch (NumberFormatException e) {
+            return null;
+        }
     }
 
     static List<Station> parseStations(String showStation) {
