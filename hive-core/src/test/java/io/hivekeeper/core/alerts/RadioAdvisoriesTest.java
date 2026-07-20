@@ -39,4 +39,27 @@ class RadioAdvisoriesTest {
         assertTrue(RadioAdvisories.advise("wifi0", "auto", "auto", "").isEmpty());
         assertTrue(RadioAdvisories.advise("wifi0", null, null, null).isEmpty());
     }
+
+    @Test
+    void judgesAThirdRadioByItsChannelInsteadOfSkippingIt() {
+        // On an AP410C-1, wifi2 is a second 5 GHz radio. Keying off the interface name alone returned no
+        // band, so the radio was silently exempt from every advisory.
+        List<Advisory> out = RadioAdvisories.advise("wifi2", "44", null, "160");
+
+        assertTrue(out.stream().anyMatch(a -> a.code().equals("width-160")));
+    }
+
+    @Test
+    void letsTheChannelCorrectAMisleadingInterfaceName() {
+        List<Advisory> out = RadioAdvisories.advise("wifi1", "6", null, "40");
+
+        assertTrue(out.stream().anyMatch(a -> a.code().equals("width-24ghz")));
+    }
+
+    @Test
+    void stillFallsBackToTheNamingConventionWhenTheRadioIsDown() {
+        List<Advisory> out = RadioAdvisories.advise("wifi0", null, null, "40");
+
+        assertTrue(out.stream().anyMatch(a -> a.code().equals("width-24ghz")));
+    }
 }

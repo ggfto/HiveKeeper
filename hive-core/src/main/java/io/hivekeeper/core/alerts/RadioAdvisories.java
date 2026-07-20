@@ -30,8 +30,8 @@ public final class RadioAdvisories {
 
     public static List<Advisory> advise(String iface, String channel, String power, String width) {
         List<Advisory> out = new ArrayList<>();
-        String b = band(iface);
         Double ch = toNum(channel);
+        String b = band(iface, ch);
         Double pw = toNum(power);
         Double w = toNum(width);
 
@@ -65,7 +65,18 @@ public final class RadioAdvisories {
         return out;
     }
 
-    private static String band(String iface) {
+    /**
+     * Which band a radio is on. The CHANNEL decides it; the {@code wifi0} = 2.4 / {@code wifi1} = 5 naming
+     * convention is only a fallback for a radio that is down.
+     *
+     * <p>That convention holds on a two-radio AP and breaks on an AP410C-1, where {@code wifi1} and
+     * {@code wifi2} are both 5 GHz. Keying solely off the name meant every advisory returned nothing for a
+     * third radio — no warning and no error, just a radio quietly exempt from every check.
+     */
+    private static String band(String iface, Double channel) {
+        if (channel != null && channel > 0) {
+            return channel <= 14 ? "2.4" : "5";
+        }
         if (iface == null) {
             return null;
         }

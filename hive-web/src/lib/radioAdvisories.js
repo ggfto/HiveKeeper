@@ -8,12 +8,11 @@
  * and enlarge cells, raising airtime contention and co-channel interference once many clients/APs share the
  * air. None of these block an apply — the operator may have a reason — they just surface the trade-off.
  *
- * iface: 'wifi0' (2.4 GHz) | 'wifi1' (5 GHz). channel/power/width may be numbers, numeric strings, 'auto', or
+ * band: '2.4' | '5' when the caller knows it; otherwise inferred from channel, then from iface.
+ * channel/power/width may be numbers, numeric strings, 'auto', or
  * blank; non-numeric values (auto/blank) are skipped. width (MHz) is optional — only the live read knows it.
  * -> [{ level: 'warning' | 'info', code, message }], empty when everything is within best practice.
  */
-
-const band = (iface) => (iface === 'wifi0' ? '2.4' : iface === 'wifi1' ? '5' : null)
 
 const toNum = (v) => {
   if (v === null || v === undefined) return null
@@ -24,13 +23,28 @@ const toNum = (v) => {
 }
 
 // The only three non-overlapping 20 MHz channels in 2.4 GHz.
+/**
+ * Which band a radio is on, most reliable signal first.
+ *
+ * The channel decides it. The wifi0 = 2.4 / wifi1 = 5 naming convention is only a fallback, because it holds
+ * on a two-radio AP and breaks on an AP410C-1, where wifi1 AND wifi2 are both 5 GHz. Keying solely off the
+ * interface name meant every advisory silently returned nothing for a third radio — no warning, no error,
+ * just an AP quietly exempt from every best-practice check.
+ */
+const band = ({ band: explicit, iface, channel }) => {
+  if (explicit === '2.4' || explicit === '5') return explicit
+  const ch = toNum(channel)
+  if (ch !== null && ch > 0) return ch <= 14 ? '2.4' : '5'
+  return iface === 'wifi0' ? '2.4' : iface === 'wifi1' ? '5' : null
+}
+
 const NON_OVERLAPPING_24 = new Set([1, 6, 11])
 // HiveOS radio power is 1-20 dBm; at/above this we consider the cell large enough to warn about.
 const HIGH_POWER_DBM = 18
 
-export function radioAdvisories({ iface, channel, power, width } = {}) {
+export function radioAdvisories({ iface, channel, power, width, band: explicitBand } = {}) {
   const out = []
-  const b = band(iface)
+  const b = band({ band: explicitBand, iface, channel })
   const ch = toNum(channel)
   const pw = toNum(power)
   const w = toNum(width)

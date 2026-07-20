@@ -6,6 +6,7 @@ import io.hivekeeper.core.model.Radio;
 import io.hivekeeper.core.model.Station;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Locale;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -64,6 +65,19 @@ final class HiveOsParser {
 
     /** Holder for what {@code show interface} yields beyond a per-radio list. */
     private record InterfaceInfo(String hiveName, List<Radio> radios) {
+    }
+
+    /**
+     * The physical radio interfaces, lowercased for use in CLI lines ({@code wifi0}, {@code wifi1}, …).
+     *
+     * <p>Read from the device rather than assumed. An AP230 and an AP630 have two radios, an AP410C-1 has
+     * three (its second and third are both 5 GHz), and nothing stops a future model having four — binding
+     * to a hardcoded {@code wifi0}/{@code wifi1} pair silently leaves the extra radios carrying no SSID.
+     */
+    static List<String> radioInterfaceNames(String showInterface) {
+        return parseInterfaces(showInterface).radios().stream()
+                .map(radio -> radio.name().toLowerCase(Locale.ROOT))
+                .toList();
     }
 
     /**

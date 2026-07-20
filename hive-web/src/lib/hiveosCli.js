@@ -79,6 +79,12 @@ export function radioProfileCommands(
     phymode,
     receiveChain,
     transmitChain,
+    bssColor,
+    ofdmaDl,
+    ofdmaUl,
+    twt,
+    muMimo,
+    muMimoStationReceiveChain,
     bindInterface,
   } = {},
 ) {
@@ -117,6 +123,22 @@ export function radioProfileCommands(
   if (txBeamforming === 'disable') cmds.push(`no radio profile ${p} tx-beamforming`)
   if (receiveChain) cmds.push(`radio profile ${p} receive-chain ${receiveChain}`)
   if (transmitChain) cmds.push(`radio profile ${p} transmit-chain ${transmitChain}`)
+  // 802.11ax. Confirmed live on an AP630 and AP410C-1 (HiveOS 10.6r6) via `radio profile <p> 11ax ?`. Every
+  // one of these ships DISABLED, so a Wi-Fi 6 AP runs without them until someone turns them on — which is
+  // most of the point of having bought a Wi-Fi 6 AP. They need an 11ax phymode to take effect.
+  if (bssColor) cmds.push(`radio profile ${p} 11ax bss-color ${bssColor}`)
+  for (const [val, knob] of [
+    [ofdmaDl, 'ofdma-dl'],
+    [ofdmaUl, 'ofdma-ul'],
+    [twt, 'twt'],
+  ]) {
+    if (val === 'enable') cmds.push(`radio profile ${p} 11ax ${knob}`)
+    if (val === 'disable') cmds.push(`no radio profile ${p} 11ax ${knob}`)
+  }
+  if (muMimo === 'enable') cmds.push(`radio profile ${p} mu-mimo enable`)
+  if (muMimo === 'disable') cmds.push(`no radio profile ${p} mu-mimo enable`)
+  if (muMimoStationReceiveChain)
+    cmds.push(`radio profile ${p} mu-mimo station-receive-chain ${muMimoStationReceiveChain}`)
   // Bind LAST: the profile must exist/be configured before a radio adopts it (the knobs above auto-create it).
   if (bindInterface) cmds.push(`interface ${bindInterface} radio profile ${p}`)
   return cmds
@@ -156,7 +178,10 @@ export function minRateCommands(ssid, { band, minRate } = {}) {
  * inter-station-traffic — isolation 'enable' emits `no ssid <n> inter-station-traffic` (deny peer traffic).
  * Blank/absent fields emit nothing; no SSID name means nothing to do. Dispatched through apply-config.
  */
-export function ssidHardeningCommands(ssid, { hideSsid, maxClient, clientIsolation, dtimPeriod, schedule, rrm, wnm } = {}) {
+export function ssidHardeningCommands(
+  ssid,
+  { hideSsid, maxClient, clientIsolation, dtimPeriod, schedule, rrm, wnm, ft, ftMobilityDomainId } = {},
+) {
   const name = (ssid || '').trim()
   if (!name) return []
   const cmds = []
@@ -170,6 +195,24 @@ export function ssidHardeningCommands(ssid, { hideSsid, maxClient, clientIsolati
   if (schedule && schedule.trim()) cmds.push(`ssid ${name} schedule ${schedule.trim()}`)
   if (rrm === 'enable') cmds.push(`ssid ${name} rrm enable`)
   if (wnm === 'enable') cmds.push(`ssid ${name} wnm enable`)
+  // 802.11r fast BSS transition, completing the roaming trio alongside 11k (rrm) and 11v (wnm). Grammar
+  // confirmed live on an AP630: `security-object <n> security ft [mobility-domain-id <id>]`.
+  //
+  // It lives on the SECURITY-OBJECT, not the ssid — the roaming key hierarchy belongs to the security
+  // settings. HiveKeeper names a security-object after its SSID (see HiveOsDriver.ssidCommands and
+  // parseSsids), so the SSID name is used here too; an SSID whose security-object was named differently
+  // outside HiveKeeper would need the raw apply-config path.
+  //
+  // A mobility domain groups the APs a client may roam between without a full reauth. All APs meant to roam
+  // together must share the id, so it is left explicit rather than defaulted.
+  if (ft === 'enable') {
+    cmds.push(
+      ftMobilityDomainId
+        ? `security-object ${name} security ft mobility-domain-id ${ftMobilityDomainId}`
+        : `security-object ${name} security ft`,
+    )
+  }
+  if (ft === 'disable') cmds.push(`no security-object ${name} security ft`)
   return cmds
 }
 

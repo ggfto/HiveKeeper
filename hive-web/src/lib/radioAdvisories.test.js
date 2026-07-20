@@ -64,3 +64,27 @@ describe('radioAdvisories', () => {
     expect(out.map((a) => a.code).sort()).toEqual(['channel-24-overlap', 'high-power', 'width-24ghz'])
   })
 })
+
+describe('band inference beyond the two-radio convention', () => {
+  it('judges a third radio by its channel instead of silently skipping it', () => {
+    // On an AP410C-1, wifi2 is a second 5 GHz radio. Keying off the interface name alone returned no band,
+    // so every advisory silently no-opped and the radio was exempt from all best-practice checks.
+    const out = radioAdvisories({ iface: 'wifi2', channel: 44, width: 160 })
+    expect(out.map((a) => a.code)).toContain('width-160')
+  })
+
+  it('lets the channel correct a misleading interface name', () => {
+    // wifi1 on 2.4 GHz would be unusual, but the channel is the ground truth, not the name.
+    const out = radioAdvisories({ iface: 'wifi1', channel: 6, width: 40 })
+    expect(out.map((a) => a.code)).toContain('width-24ghz')
+  })
+
+  it('honours an explicit band over both channel and name', () => {
+    const out = radioAdvisories({ iface: 'wifi0', band: '5', width: 160 })
+    expect(out.map((a) => a.code)).toContain('width-160')
+  })
+
+  it('still falls back to the naming convention when no channel is known', () => {
+    expect(radioAdvisories({ iface: 'wifi0', width: 40 }).map((a) => a.code)).toContain('width-24ghz')
+  })
+})

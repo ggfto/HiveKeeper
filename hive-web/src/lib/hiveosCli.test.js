@@ -733,3 +733,75 @@ describe('rebootScheduleCommands', () => {
     expect(cancelRebootScheduleCommands()).toEqual(['no reboot schedule'])
   })
 })
+
+describe('radioProfileCommands — Wi-Fi 6 (802.11ax)', () => {
+  it('emits the 11ax knobs under the 11ax sub-node', () => {
+    // Grammar confirmed live on an AP630 (HiveOS 10.6r6): `radio profile <p> 11ax ?`.
+    const cmds = radioProfileCommands('ax5', {
+      bssColor: '12',
+      ofdmaDl: 'enable',
+      ofdmaUl: 'enable',
+      twt: 'enable',
+    })
+    expect(cmds).toContain('radio profile ax5 11ax bss-color 12')
+    expect(cmds).toContain('radio profile ax5 11ax ofdma-dl')
+    expect(cmds).toContain('radio profile ax5 11ax ofdma-ul')
+    expect(cmds).toContain('radio profile ax5 11ax twt')
+  })
+
+  it('negates an 11ax toggle with the whole line prefixed by no', () => {
+    expect(radioProfileCommands('ax5', { twt: 'disable' })).toContain('no radio profile ax5 11ax twt')
+  })
+
+  it('emits mu-mimo and its station chain threshold', () => {
+    const cmds = radioProfileCommands('ax5', { muMimo: 'enable', muMimoStationReceiveChain: '2' })
+    expect(cmds).toContain('radio profile ax5 mu-mimo enable')
+    expect(cmds).toContain('radio profile ax5 mu-mimo station-receive-chain 2')
+  })
+
+  it('accepts 160 MHz and a fourth chain, which Wi-Fi 6 hardware supports', () => {
+    const cmds = radioProfileCommands('ax5', {
+      phymode: '11ax-5g',
+      channelWidth: '160',
+      receiveChain: '4',
+      transmitChain: '4',
+    })
+    // phymode must still come first, or the width is rejected as inconsistent with the current PHY mode.
+    expect(cmds[0]).toBe('radio profile ax5 phymode 11ax-5g')
+    expect(cmds).toContain('radio profile ax5 channel-width 160')
+    expect(cmds).toContain('radio profile ax5 receive-chain 4')
+    expect(cmds).toContain('radio profile ax5 transmit-chain 4')
+  })
+
+  it('emits nothing for the 11ax knobs left blank', () => {
+    expect(radioProfileCommands('ax5', { channelWidth: '80' })).toEqual([
+      'radio profile ax5 channel-width 80',
+    ])
+  })
+
+  it('still binds the interface last, after the 11ax knobs', () => {
+    const cmds = radioProfileCommands('ax5', { twt: 'enable', bindInterface: 'wifi2' })
+    expect(cmds[cmds.length - 1]).toBe('interface wifi2 radio profile ax5')
+  })
+})
+
+describe('ssidHardeningCommands — 802.11r fast roaming', () => {
+  it('puts ft on the security-object, not the ssid', () => {
+    // Confirmed live on an AP630: `security-object <n> security ft [mobility-domain-id <id>]`.
+    expect(ssidHardeningCommands('Corp', { ft: 'enable' })).toContain('security-object Corp security ft')
+  })
+
+  it('carries the mobility domain id when one is given', () => {
+    expect(ssidHardeningCommands('Corp', { ft: 'enable', ftMobilityDomainId: '7' })).toContain(
+      'security-object Corp security ft mobility-domain-id 7',
+    )
+  })
+
+  it('negates ft with the whole line prefixed by no', () => {
+    expect(ssidHardeningCommands('Corp', { ft: 'disable' })).toContain('no security-object Corp security ft')
+  })
+
+  it('emits nothing for ft when it is left unchanged', () => {
+    expect(ssidHardeningCommands('Corp', { rrm: 'enable' })).toEqual(['ssid Corp rrm enable'])
+  })
+})

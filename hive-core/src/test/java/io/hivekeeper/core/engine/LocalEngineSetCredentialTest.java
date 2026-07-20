@@ -89,7 +89,7 @@ class LocalEngineSetCredentialTest {
         }
 
         @Override
-        public List<String> ssidCommands(SsidSpec spec) {
+        public List<String> ssidCommands(SsidSpec spec, List<String> radioInterfaces) {
             return List.of();
         }
 

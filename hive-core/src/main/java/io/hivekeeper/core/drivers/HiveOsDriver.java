@@ -12,8 +12,10 @@ import java.util.ArrayList;
 import java.util.List;
 
 /**
- * Driver for Aerohive / Extreme HiveOS (IQ Engine) access points. AP230 / AP250 / AP630 share this CLI
- * grammar; an AP410C in WiNG persona would need its own driver. This class owns the HiveOS command
+ * Driver for Aerohive / Extreme HiveOS (IQ Engine) access points. AP230 / AP250 / AP630 / AP410C-1 share
+ * this CLI grammar — the Extreme-branded AP410C-1 was confirmed on 2026-07-20 to run HiveOS 10.6r6, not
+ * WiNG, so it needs no driver of its own. (An AP genuinely in WiNG persona still would: {@link #recognizes}
+ * would not match it at all.) This class owns the HiveOS command
  * vocabulary and parsing; nothing HiveOS-specific leaks into the {@link Driver} SPI.
  */
 @Slf4j
@@ -138,14 +140,20 @@ public final class HiveOsDriver implements Driver {
     }
 
     @Override
-    public List<String> ssidCommands(SsidSpec spec) {
+    public List<String> radioInterfaces(CliExecutor exec) throws IOException {
+        return HiveOsParser.radioInterfaceNames(exec.run(SHOW_INTERFACE));
+    }
+
+    @Override
+    public List<String> ssidCommands(SsidSpec spec, List<String> radioInterfaces) {
         String name = spec.name();
         List<String> commands = new ArrayList<>();
         if (spec.remove()) {
             // HiveOS negates a config line by prefixing the WHOLE line with "no". Unbind from the radios
             // first, then drop the ssid, then its security-object and user-profile.
-            commands.add("no interface wifi0 ssid " + name);
-            commands.add("no interface wifi1 ssid " + name);
+            for (String radio : radioInterfaces) {
+                commands.add("no interface " + radio + " ssid " + name);
+            }
             commands.add("no ssid " + name);
             commands.add("no security-object " + name);
             commands.add("no user-profile " + name);
@@ -156,8 +164,10 @@ public final class HiveOsDriver implements Driver {
         // suites (wpa2-aes-psk, wpa3-sae) take an ascii-key; the enterprise 802.1X suites take no key but bind a
         // RADIUS server. WPA3-SAE keeps its default transition mode on, so legacy WPA2 clients still associate.
         // All grammar was confirmed live on an AP230 (HiveOS 10.6r1a) via `?` context help.
-        if (SsidSpec.OPEN.equals(spec.security())) {
-            commands.add("security-object " + name + " security protocol-suite open");
+        if (SsidSpec.KEYLESS_SUITES.contains(spec.security())) {
+            // `open` and `owe` both take no key. OWE still encrypts — it just negotiates the key rather
+            // than sharing one — so it is a drop-in upgrade for a guest SSID, not a different user flow.
+            commands.add("security-object " + name + " security protocol-suite " + spec.security());
         } else if (SsidSpec.ENTERPRISE_SUITES.contains(spec.security())) {
             commands.add("security-object " + name + " security protocol-suite " + spec.security());
             SsidSpec.RadiusSpec radius = spec.radius();
@@ -178,8 +188,16 @@ public final class HiveOsDriver implements Driver {
         }
         commands.add("ssid " + name);
         commands.add("ssid " + name + " security-object " + name);
-        commands.add("interface wifi0 ssid " + name);
-        commands.add("interface wifi1 ssid " + name);
+        if (radioInterfaces.isEmpty()) {
+            // Refuse rather than guess. An SSID bound to no radio is configured, saved, and completely
+            // off the air — the failure a hardcoded wifi0/wifi1 pair used to produce on a third radio,
+            // just moved. Better to stop here than to broadcast on fewer radios than the operator thinks.
+            throw new IllegalStateException(
+                    "cannot create SSID '" + name + "': no radio interfaces were discovered on the device");
+        }
+        for (String radio : radioInterfaces) {
+            commands.add("interface " + radio + " ssid " + name);
+        }
         return commands;
     }
 

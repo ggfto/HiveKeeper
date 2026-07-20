@@ -99,4 +99,32 @@ describe('RadioProfileForm', () => {
     fireEvent.change(screen.getByLabelText(/bind to radio/i), { target: { value: 'wifi0' } })
     expect(screen.getByTestId('bind-warning')).toHaveTextContent(/band mismatch/i)
   })
+
+  it('judges a Wi-Fi 6 2.4 GHz profile by 2.4 GHz rules', () => {
+    // radio_axg0 is the factory 2.4 GHz profile on Wi-Fi 6 hardware (g = 2.4, a = 5). Matching a bare `ax`
+    // substring used to read it as 5 GHz, which silently dropped the one width warning that matters most:
+    // anything wider than 20 MHz on 2.4 GHz overlaps the band.
+    render(<RadioProfileForm device={device} onApply={vi.fn()} />)
+    fireEvent.change(screen.getByLabelText(/radio profile/i), { target: { value: 'radio_axg0' } })
+    fireEvent.change(screen.getByLabelText(/channel width/i), { target: { value: '40' } })
+    expect(screen.getByTestId('profile-advisories')).toHaveTextContent(/2\.4 GHz/i)
+  })
+
+  it('applies the Wi-Fi 6 knobs from the 802.11ax disclosure', () => {
+    const onApply = vi.fn()
+    render(<RadioProfileForm device={device} onApply={onApply} />)
+    fireEvent.change(screen.getByLabelText(/radio profile/i), { target: { value: 'hk_ax' } })
+    fireEvent.change(screen.getByLabelText(/OFDMA downlink/i), { target: { value: 'enable' } })
+    fireEvent.change(screen.getByLabelText(/TWT/i), { target: { value: 'enable' } })
+    fireEvent.change(screen.getByLabelText(/BSS color/i), { target: { value: '12' } })
+    fireEvent.click(screen.getByRole('button', { name: /apply profile/i }))
+    expect(onApply).toHaveBeenCalledWith(device, {
+      commands: [
+        'radio profile hk_ax 11ax bss-color 12',
+        'radio profile hk_ax 11ax ofdma-dl',
+        'radio profile hk_ax 11ax twt',
+      ],
+      save: true,
+    })
+  })
 })

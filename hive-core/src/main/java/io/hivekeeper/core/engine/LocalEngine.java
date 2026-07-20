@@ -279,7 +279,9 @@ public final class LocalEngine implements Engine {
                 yield new Result.ConfigApplied(id, deviceId, c.commands(), outputs, c.save());
             }
             case Command.ConfigureSsid c -> {
-                List<String> lines = driver.ssidCommands(c.spec());
+                // Ask the device what radios it has before deciding what to bind the SSID to — an AP410C-1
+                // has three, and a hardcoded pair would leave the third silently off the air.
+                List<String> lines = driver.ssidCommands(c.spec(), driver.radioInterfaces(exec));
                 List<String> outputs = driver.applyConfig(deviceId, exec, lines, true, progress);
                 yield new Result.ConfigApplied(id, deviceId, lines, outputs, true);
             }

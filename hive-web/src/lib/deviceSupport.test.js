@@ -24,3 +24,16 @@ describe('supportBadge', () => {
     expect(supportBadge('untested')).toEqual({ label: 'HiveOS · untested', variant: 'outline' })
   })
 })
+
+describe('hardware revision suffixes', () => {
+  it('treats AP410C-1 as the AP410C family', () => {
+    // HiveOS reports this model as `AP410C-1`. It is the same AP as far as CLI grammar goes, and it was
+    // driven live on 2026-07-20 — badging it "untested" over a revision suffix would be wrong.
+    expect(supportLevel('AP410C-1')).toBe('tested')
+    expect(supportLevel('AP410C')).toBe('tested')
+  })
+
+  it('still rejects a genuinely unknown model that merely ends in a digit', () => {
+    expect(supportLevel('AP999-1')).toBe('untested')
+  })
+})

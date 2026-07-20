@@ -8,28 +8,39 @@ import java.util.Set;
  * the RADIUS {@code shared-secret}) are sent to the device by the on-prem engine/agent and never persisted by
  * the cloud in the clear.
  *
- * <p>{@code security} names the protocol suite. The vendor-neutral values handled today are {@link #OPEN}
- * (no authentication, no key), {@link #WPA2_PSK} / {@link #WPA3_SAE} (preshared-key suites, which take a
- * {@code passphrase}) and the enterprise 802.1X suites {@link #WPA2_8021X} / {@link #WPA3_8021X} (which take a
- * {@link RadiusSpec} instead of a passphrase). A driver maps these to its own grammar (HiveOS uses the same
- * tokens as {@code security-object … protocol-suite …}).
+ * <p>{@code security} names the protocol suite. The vendor-neutral values handled today are the keyless
+ * {@link #OPEN} and {@link #OWE}, the preshared-key {@link #WPA2_PSK} / {@link #WPA3_SAE} (which take a
+ * {@code passphrase}), and the enterprise 802.1X {@link #WPA2_8021X} / {@link #WPA3_8021X} /
+ * {@link #WPA3_8021X_192} (which take a {@link RadiusSpec} instead of a passphrase). A driver maps these to
+ * its own grammar (HiveOS uses the same tokens as {@code security-object … protocol-suite …}).
  */
 public record SsidSpec(String name, String passphrase, Integer vlan, boolean remove, String security,
                        RadiusSpec radius) {
 
     public static final String OPEN = "open";
+    /**
+     * Opportunistic Wireless Encryption (Wi-Fi Enhanced Open). Takes no key and asks the user for nothing,
+     * exactly like {@link #OPEN} — but encrypts each association with its own key, so a guest network stops
+     * being readable by anyone within antenna range. Confirmed on an AP630/AP410C-1 (HiveOS 10.6r6); the
+     * AP230 on 10.6r1a does not offer it.
+     */
+    public static final String OWE = "owe";
     public static final String WPA2_PSK = "wpa2-aes-psk";
     public static final String WPA3_SAE = "wpa3-sae";
     public static final String WPA2_8021X = "wpa2-aes-8021x";
     public static final String WPA3_8021X = "wpa3-aes-8021x-std";
+    /** WPA3-Enterprise at 192-bit (CNSA / Suite B). Confirmed on HiveOS 10.6r6. */
+    public static final String WPA3_8021X_192 = "wpa3-aes-8021x-suite-b-192";
 
     /** The preshared-key suites (need a passphrase). */
     public static final Set<String> PSK_SUITES = Set.of(WPA2_PSK, WPA3_SAE);
     /** The enterprise 802.1X suites (need a RADIUS server). */
-    public static final Set<String> ENTERPRISE_SUITES = Set.of(WPA2_8021X, WPA3_8021X);
+    public static final Set<String> ENTERPRISE_SUITES = Set.of(WPA2_8021X, WPA3_8021X, WPA3_8021X_192);
+    /** The suites that take neither a passphrase nor a RADIUS server. */
+    public static final Set<String> KEYLESS_SUITES = Set.of(OPEN, OWE);
     /** Every suite this model accepts. */
     public static final Set<String> SUITES =
-            Set.of(OPEN, WPA2_PSK, WPA3_SAE, WPA2_8021X, WPA3_8021X);
+            Set.of(OPEN, OWE, WPA2_PSK, WPA3_SAE, WPA2_8021X, WPA3_8021X, WPA3_8021X_192);
 
     /** A RADIUS authentication server for the enterprise (802.1X) suites. {@code authPort} is optional. */
     public record RadiusSpec(String server, String sharedSecret, Integer authPort) {
