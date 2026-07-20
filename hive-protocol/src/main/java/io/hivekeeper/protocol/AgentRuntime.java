@@ -7,7 +7,9 @@ import lombok.extern.slf4j.Slf4j;
 import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.Map;
+import java.time.Duration;
 import java.util.concurrent.ExecutorService;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.Executors;
 import java.util.concurrent.atomic.AtomicLong;
 
@@ -36,10 +38,18 @@ public final class AgentRuntime implements AutoCloseable {
                 }
             });
 
+    /** How long {@link #close()} waits for an in-flight job to finish before giving up on it. */
+    private final Duration drainTimeout;
+
     public AgentRuntime(Engine engine, FrameChannel channel, String agentId) {
+        this(engine, channel, agentId, Duration.ofSeconds(30));
+    }
+
+    public AgentRuntime(Engine engine, FrameChannel channel, String agentId, Duration drainTimeout) {
         this.engine = engine;
         this.channel = channel;
         this.agentId = agentId;
+        this.drainTimeout = drainTimeout;
         this.jobs = Executors.newFixedThreadPool(8, runnable -> {
             Thread thread = new Thread(runnable, "agent-job");
             thread.setDaemon(true);
@@ -88,8 +98,29 @@ public final class AgentRuntime implements AutoCloseable {
         channel.send(terminal);
     }
 
+    /**
+     * Drains rather than kills. Stops accepting new jobs, then waits up to the configured timeout for any
+     * job already running to finish and send its terminal frame.
+     *
+     * <p>This is what makes a restart — an auto-update, a redeploy, a reboot — safe mid-job. The idempotency
+     * cache that dedupes a redelivered job lives only in this process's memory, so a job interrupted here
+     * would be redelivered to the fresh process and run a SECOND time, with no dedupe (the new cache is
+     * empty). Re-applying an SSID is harmless; re-running a reboot or a firmware upgrade is not. Letting the
+     * job finish and report first means the gateway marks it terminal and never redelivers it. The caller
+     * must close the channel AFTER this returns, or the terminal frame has nowhere to go.
+     */
     @Override
     public void close() {
-        jobs.shutdownNow();
+        jobs.shutdown();
+        try {
+            if (!jobs.awaitTermination(drainTimeout.toMillis(), TimeUnit.MILLISECONDS)) {
+                log.warn("a job did not finish within the {}s drain window; interrupting it — the gateway "
+                        + "will redeliver it, and it will run again", drainTimeout.toSeconds());
+                jobs.shutdownNow();
+            }
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            jobs.shutdownNow();
+        }
     }
 }

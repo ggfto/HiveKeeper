@@ -79,6 +79,7 @@ import java.util.function.UnaryOperator;
  *   <dd>auto-renew the mTLS cert once it is within this many days of expiry (default 30); renewal re-issues over
  *       the agent's CURRENT cert (mTLS) and needs {@code enrollment.url} set (see {@link EnrollmentRenewal})</dd>
  *   <dt>{@code cert.renew.check.hours}</dt><dd>how often to check the cert's expiry (default 12)</dd>
+ *   <dt>{@code shutdown.drain.seconds}</dt><dd>how long to let an in-flight job finish on shutdown</dd>
  *   <dt>{@code health.file}</dt>
  *   <dd>the file the agent touches while its gateway uplink is up, for a supervisor to watch (see
  *       {@link AgentHealth}); defaults into the temp directory, so health reporting works unconfigured</dd>
@@ -93,7 +94,8 @@ public record AgentConfig(URI gatewayUri, String agentId, String defaultUser, St
                           String tlsTruststore, String tlsTruststorePassword,
                           HostKeyPolicy sshHostKeyPolicy, String knownHostsPath,
                           String enrollmentToken, String enrollmentUrl, String enrollmentCaCert,
-                          int renewWindowDays, int renewCheckHours, String healthFile) {
+                          int renewWindowDays, int renewCheckHours, String healthFile,
+                          int shutdownDrainSeconds) {
 
     /** Env var naming the config file. Unset means "look in {@link #DEFAULT_CONFIG_PATHS}". */
     public static final String CONFIG_PATH_VAR = "HIVEKEEPER_AGENT_CONFIG";
@@ -108,7 +110,8 @@ public record AgentConfig(URI gatewayUri, String agentId, String defaultUser, St
             "ppsk.store", "radius.dir", "backup.dir", "backup.destination", "tls.keystore",
             "tls.keystore.password", "tls.truststore",
             "tls.truststore.password", "ssh.hostkey", "known.hosts", "enrollment.token", "enrollment.url",
-            "enrollment.cacert", "cert.renew.window.days", "cert.renew.check.hours", "health.file"));
+            "enrollment.cacert", "cert.renew.window.days", "cert.renew.check.hours", "health.file",
+            "shutdown.drain.seconds"));
 
     public boolean mtlsEnabled() {
         return tlsKeystore != null && !tlsKeystore.isBlank();
@@ -165,7 +168,8 @@ public record AgentConfig(URI gatewayUri, String agentId, String defaultUser, St
                 cfg.get("HIVEKEEPER_ENROLLMENT_CACERT", null),
                 cfg.getInt("HIVEKEEPER_CERT_RENEW_WINDOW_DAYS", 30),
                 cfg.getInt("HIVEKEEPER_CERT_RENEW_CHECK_HOURS", 12),
-                cfg.get("HIVEKEEPER_HEALTH_FILE", defaultHealthFile()));
+                cfg.get("HIVEKEEPER_HEALTH_FILE", defaultHealthFile()),
+                cfg.getInt("HIVEKEEPER_SHUTDOWN_DRAIN_SECONDS", 30));
     }
 
     /** A path that always exists and is always writable, so health reporting needs no configuration to work. */

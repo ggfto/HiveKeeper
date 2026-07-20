@@ -98,7 +98,7 @@ class EnrollmentBootstrapTest {
                 null, null, null, null, "hivekeeper-backups", "hivekeeper-backup-destination.properties",
                 keystore.toString(), "changeit", truststore.toString(), "changeit",
                 HostKeyPolicy.TOFU, "hivekeeper-known_hosts",
-                "tok", enrollUrl, null, 30, 12, "hivekeeper-agent.health");
+                "tok", enrollUrl, null, 30, 12, "hivekeeper-agent.health", 30);
     }
 
     // --- stub gateway CA -------------------------------------------------------

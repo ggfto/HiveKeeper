@@ -140,7 +140,7 @@ class AgentConfigTest {
     /** A value for {@code key} that no default would produce — otherwise "is it read?" cannot be observed. */
     private static String observableValueFor(String key) {
         return switch (key) {
-            case "cert.renew.window.days", "cert.renew.check.hours" -> "7";
+            case "cert.renew.window.days", "cert.renew.check.hours", "shutdown.drain.seconds" -> "7";
             // Anything unrecognized maps to the TOFU default, so the sentinel has to be a real, non-default policy.
             case "ssh.hostkey" -> "strict";
             default -> "set-" + key;

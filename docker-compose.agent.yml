@@ -19,6 +19,12 @@ name: hivekeeper-agent
 services:
   agent:
     image: ${HIVEKEEPER_REGISTRY:-ghcr.io/ggfto}/hivekeeper-agent:${HIVEKEEPER_TAG:?pin the same version as the gateway}
+    labels:
+      # The updater below only touches containers with this label — never anything else on the machine.
+      com.centurylinklabs.watchtower.enable: "true"
+    # Let an in-flight job drain before the runtime kills the container (see HIVEKEEPER_SHUTDOWN_DRAIN_SECONDS
+    # in agent.conf). Must exceed the drain window so a job finishes and reports before the swap.
+    stop_grace_period: ${HIVEKEEPER_SHUTDOWN_GRACE:-45s}
     volumes:
       # Your configuration, replacing the image's container defaults.
       - ./agent.conf:/etc/hivekeeper/agent.conf:ro
@@ -29,6 +35,21 @@ services:
       # keys, and the git history of every device config — which is your rollback path.
       - agent-data:/data
     # The agent opens no ports. It dials out.
+    restart: unless-stopped
+
+  # Automatic agent updates — OPT-IN (`docker compose --profile autoupdate up -d`). Updates the agent only
+  # when its image TAG moves: a pinned HIVEKEEPER_TAG never fires; a moving tag makes the agent follow. Scoped
+  # to the label above, so it touches nothing else. It waits for the agent to drain its current job before the
+  # swap, so an update never interrupts a running job. Watchtower speaks the Docker API — for Podman, enable
+  # the Docker-compatible socket and set CONTAINER_SOCK to it.
+  agent-updater:
+    image: containrrr/watchtower:${WATCHTOWER_VERSION:-latest}
+    profiles: [autoupdate]
+    command: --label-enable --cleanup --interval ${HIVEKEEPER_UPDATE_INTERVAL_SECONDS:-3600}
+    environment:
+      WATCHTOWER_TIMEOUT: ${HIVEKEEPER_SHUTDOWN_GRACE:-45s}
+    volumes:
+      - ${CONTAINER_SOCK:-/var/run/docker.sock}:/var/run/docker.sock
     restart: unless-stopped
 
 volumes:

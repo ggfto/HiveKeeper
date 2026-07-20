@@ -194,6 +194,35 @@ Flyway migrates the schema on start. Take a backup first — migrations are not 
 Upgrade the agents to the same version afterwards. The protocol is versioned and an older agent keeps working,
 but do not let them drift far.
 
+### Letting the agent update itself
+
+An agent can follow new releases on its own. It is **opt-in**, and it fires only when the agent's image tag
+*moves* — so a pinned `HIVEKEEPER_TAG` never auto-updates, and pointing it at a moving tag (`latest`, or a
+channel you promote in step with the gateway) makes the agent track it:
+
+```sh
+docker compose -f docker-compose.agent.yml --profile autoupdate up -d
+```
+
+That starts a small updater ([Watchtower](https://containrrr.dev/watchtower/)) scoped by a label to **only**
+the agent — it touches nothing else on the machine. When a new image appears it stops the agent, and the agent
+**drains** first: it lets the job it is running finish and report before it exits, so the gateway marks that
+job done rather than redelivering it to the replacement container and running it twice. `stop_grace_period` and
+`HIVEKEEPER_SHUTDOWN_DRAIN_SECONDS` size that window.
+
+:::note[The drain is not only for auto-update.]
+Any restart — a reboot, a redeploy, a manual `docker compose up` — now lets an in-flight job finish first. The
+auto-updater is just the case that made it worth doing.
+:::
+
+On Podman, Watchtower needs the Docker-compatible socket: `systemctl --user enable --now podman.socket`, then
+set `CONTAINER_SOCK` to it (e.g. `/run/user/1000/podman/podman.sock`).
+
+Auto-update trades a small drift window for not having to touch the machine: the updater polls on an interval,
+so between a release and the next poll the agent may be a version behind the gateway. That is usually fine — the
+wire protocol only changes on a breaking envelope change, not every release — but it is why the recommendation
+remains to promote a moving tag deliberately rather than chase `latest` blindly on the control plane.
+
 ## What is deliberately not exposed
 
 The gateway's HTTP port, its metrics, and both databases stay on the internal network. Health and metrics live

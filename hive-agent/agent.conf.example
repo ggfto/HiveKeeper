@@ -66,6 +66,13 @@ vault.key = generate-me-with-openssl-rand-base64-32
 default.user = admin
 default.password =
 
+# --- Graceful shutdown -----------------------------------------------------------------------------------
+# On shutdown (a restart, an auto-update, a reboot) the agent stops taking new jobs and lets an in-flight one
+# finish and report before exiting — so the gateway marks it done rather than redelivering it to the
+# replacement process, where it would run a second time. This is how long it waits. Set the container's stop
+# grace period higher than this (docker-compose.agent.yml does).
+#shutdown.drain.seconds = 30
+
 # --- SSH host keys -------------------------------------------------------------------------------------
 # tofu       trust-on-first-use (default): the first key seen for an AP is pinned; a CHANGED key is refused
 #            as a possible man-in-the-middle.

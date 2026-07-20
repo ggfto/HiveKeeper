@@ -108,7 +108,7 @@ class EnrollmentRenewalTest {
                 null, null, null, null, "hivekeeper-backups", "hivekeeper-backup-destination.properties",
                 keystore.toString(), "changeit", truststore.toString(), "changeit",
                 HostKeyPolicy.TOFU, "hivekeeper-known_hosts",
-                null, "https://127.0.0.1:9443", null, 30, 12, "hivekeeper-agent.health");
+                null, "https://127.0.0.1:9443", null, 30, 12, "hivekeeper-agent.health", 30);
     }
 
     private static String signToBundle(String csrPem, KeyPair ca, X509Certificate caCert) throws Exception {

@@ -80,6 +80,16 @@ services:
       # tofu (default) pins an AP's host key on first sight and refuses a changed one. accept-all disables
       # verification entirely — a lab escape hatch, never production.
       HIVEKEEPER_SSH_HOSTKEY: ${HIVEKEEPER_SSH_HOSTKEY:-tofu}
+
+      # On shutdown the agent lets an in-flight job finish (and report) before exiting, so an update restart
+      # never interrupts a running job and makes the gateway redeliver it. This is that window.
+      HIVEKEEPER_SHUTDOWN_DRAIN_SECONDS: ${HIVEKEEPER_SHUTDOWN_DRAIN_SECONDS:-30}
+    labels:
+      # The updater below only touches containers carrying this label — so it can never disturb anything else
+      # running on this machine, only the agent.
+      com.centurylinklabs.watchtower.enable: "true"
+    # Give the drain time to finish before the runtime SIGKILLs the container. Must exceed the drain window.
+    stop_grace_period: ${HIVEKEEPER_SHUTDOWN_GRACE:-45s}
     volumes:
       # BACK THIS UP. It holds the agent's identity, the credential vault, the pinned SSH host keys, and the
       # git history of every device config — which is your rollback path.
@@ -88,6 +98,31 @@ services:
       - ./ca.pem:/etc/hivekeeper/ca.pem:ro
     depends_on:
       - gateway-tunnel
+    restart: unless-stopped
+
+  # Automatic agent updates — OPT-IN. Starts only with `--profile autoupdate`, and even then it updates the
+  # agent only when the agent's image TAG moves. Pin HIVEKEEPER_TAG to a version and this never fires; point it
+  # at a moving tag (`latest`, or a channel you promote in step with the gateway) and the agent follows.
+  #
+  #   docker compose -f agent-compose.yml --profile autoupdate up -d
+  #
+  # It watches ONLY the label above, so it will not touch the tunnel sidecar, itself, or anything else on the
+  # box. When it does update, it stops the agent with SIGTERM and waits — the agent drains its current job and
+  # reports it before exiting, so the swap is safe mid-job (that is what stop_grace_period + the drain window
+  # buy you). The gateway then redelivers nothing, because the job already finished.
+  #
+  # PODMAN: Watchtower speaks the Docker API. Enable Podman's Docker-compatible socket
+  # (`systemctl --user enable --now podman.socket`) and set CONTAINER_SOCK to it, e.g.
+  #   CONTAINER_SOCK=${XDG_RUNTIME_DIR}/podman/podman.sock
+  agent-updater:
+    image: containrrr/watchtower:${WATCHTOWER_VERSION:-latest}
+    profiles: [autoupdate]
+    command: --label-enable --cleanup --interval ${HIVEKEEPER_UPDATE_INTERVAL_SECONDS:-3600}
+    environment:
+      # Wait at least as long as the agent's stop grace period, so Watchtower does not SIGKILL mid-drain.
+      WATCHTOWER_TIMEOUT: ${HIVEKEEPER_SHUTDOWN_GRACE:-45s}
+    volumes:
+      - ${CONTAINER_SOCK:-/var/run/docker.sock}:/var/run/docker.sock
     restart: unless-stopped
 
 volumes:

@@ -108,7 +108,8 @@ public final class AgentMain {
                         config.tlsTruststore(), config.tlsTruststorePassword().toCharArray())
                 : null;
         WebSocketFrameChannel channel = new WebSocketFrameChannel(config.gatewayUri(), sslContext);
-        AgentRuntime agent = new AgentRuntime(engine, channel, config.agentId());
+        AgentRuntime agent = new AgentRuntime(engine, channel, config.agentId(),
+                java.time.Duration.ofSeconds(config.shutdownDrainSeconds()));
 
         agent.start();                          // register the job handler once
         channel.onConnected(agent::announce);   // re-announce on every (re)connect
@@ -127,8 +128,13 @@ public final class AgentMain {
                 renewer.shutdownNow();
             }
             health.close();
-            channel.close();
+            // Order matters: drain the jobs FIRST, while the channel is still open, so an in-flight job can
+            // finish and send its terminal result. Only then close the channel. Closing it first would strand
+            // that result and the gateway would redeliver the job to the replacement container — running it
+            // twice. This is what makes an auto-update (a `docker stop` + recreate) safe mid-job, provided the
+            // container's stop grace period covers the drain window (see agent-compose.yml).
             agent.close();
+            channel.close();
         }));
 
         // Run until killed (service/container lifecycle).
