@@ -137,9 +137,11 @@ services:
       KC_BOOTSTRAP_ADMIN_USERNAME: ${KEYCLOAK_ADMIN:?set it}
       KC_BOOTSTRAP_ADMIN_PASSWORD: ${KEYCLOAK_ADMIN_PASSWORD:?set it}
     healthcheck:
-      # Keycloak serves health on the management port (9000), not the HTTP one. No curl in the image, so use
-      # the JVM's own client.
-      test: ["CMD-SHELL", "exec 3<>/dev/tcp/127.0.0.1/9000 && echo -e 'GET /health/ready HTTP/1.1\\r\\nHost: localhost\\r\\nConnection: close\\r\\n\\r\\n' >&3 && grep -q '\"UP\"' <&3"]
+      # Reach Keycloak's management-port (9000) health through bash's /dev/tcp — there is no curl/wget in the
+      # image. Verified against a live Keycloak 26.0.8: use bash (the image's /bin/sh has no /dev/tcp), hit
+      # /auth/health/ready (KC_HTTP_RELATIVE_PATH=/auth prefixes the management interface too, so the bare
+      # path 404s), and match a 200 status (Keycloak returns 503 until ready).
+      test: ["CMD", "bash", "-c", "exec 3<>/dev/tcp/127.0.0.1/9000; printf 'GET /auth/health/ready HTTP/1.1\\r\\nHost: localhost\\r\\nConnection: close\\r\\n\\r\\n' >&3; grep -q 'HTTP/1.1 200' <&3"]
       interval: 10s
       timeout: 5s
       retries: 30
