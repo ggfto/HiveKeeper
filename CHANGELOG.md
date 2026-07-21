@@ -1,3 +1,10 @@
+## [0.12.2](https://github.com/ggfto/HiveKeeper/compare/v0.12.1...v0.12.2) (2026-07-21)
+
+
+### Bug Fixes
+
+* **deploy:** correct the Keycloak healthcheck for the real 26 image ([2e025e5](https://github.com/ggfto/HiveKeeper/commit/2e025e5547ba13643f4265f4dd44c8ca660c9968))
+
 ## [0.12.1](https://github.com/ggfto/HiveKeeper/compare/v0.12.0...v0.12.1) (2026-07-21)
 
 
