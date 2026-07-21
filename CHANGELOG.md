@@ -1,3 +1,15 @@
+# [0.13.0](https://github.com/ggfto/HiveKeeper/compare/v0.12.6...v0.13.0) (2026-07-21)
+
+
+### Bug Fixes
+
+* **agent-compose:** run the agent on the host network so it sees the AP LAN ([40cbb25](https://github.com/ggfto/HiveKeeper/commit/40cbb255ad89c65049b9d44c474c1ffb8f181a1b))
+
+
+### Features
+
+* **discover:** auto-detect the agent's subnet, and make the CIDR overridable ([84b1c2a](https://github.com/ggfto/HiveKeeper/commit/84b1c2a3546440ae026a8390511e77c4471bb30e))
+
 ## [0.12.6](https://github.com/ggfto/HiveKeeper/compare/v0.12.5...v0.12.6) (2026-07-21)
 
 
