@@ -150,12 +150,23 @@ public final class LocalEngine implements Engine {
     }
 
     private Result discover(UUID id, Command.Discover command, EventSink sink) throws HiveException {
-        DeviceId scope = DeviceId.of(command.cidr());
+        // A blank CIDR means "auto-detect this node's primary IPv4 subnet". Resolving it on the engine is the whole
+        // point of running discovery on the on-prem agent: it is the only node sitting on the LAN the access points
+        // are on. We resolve up front so the scope, progress events and logs all name the concrete subnet.
+        String cidr = command.cidr();
+        if (cidr == null || cidr.isBlank()) {
+            cidr = Subnets.localIpv4Cidr();
+            if (cidr == null) {
+                throw new HiveException(id, DeviceId.of("auto"),
+                        "discover failed: could not auto-detect a local IPv4 subnet — specify a CIDR", null);
+            }
+        }
+        DeviceId scope = DeviceId.of(cidr);
         sink.emit(new Event.Started(id, scope, "Discover"));
         try {
-            sink.emit(new Event.Progress(id, scope, "Scanning " + command.cidr(), 20));
+            sink.emit(new Event.Progress(id, scope, "Scanning " + cidr, 20));
             List<DiscoveryResult> hosts = scanner
-                    .scan(Subnets.hostsForCidr(command.cidr()), command.port(), command.timeoutMillis())
+                    .scan(Subnets.hostsForCidr(cidr), command.port(), command.timeoutMillis())
                     .stream()
                     .filter(DiscoveryResult::reachable)
                     .toList();
@@ -165,7 +176,7 @@ public final class LocalEngine implements Engine {
             return result;
         } catch (Exception e) {
             String detail = e.getMessage() == null ? "" : e.getMessage();
-            log.warn("discover failed for {}: {}", command.cidr(), detail);
+            log.warn("discover failed for {}: {}", cidr, detail);
             sink.emit(new Event.Failed(id, scope, e.getClass().getSimpleName(), detail));
             throw new HiveException(id, scope, "discover failed: " + detail, e);
         }

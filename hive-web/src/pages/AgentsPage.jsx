@@ -21,6 +21,9 @@ export function AgentsPage() {
   const [sites, setSites] = useState([])
   const [discovered, setDiscovered] = useState([])
   const [discoverAgent, setDiscoverAgent] = useState('')
+  // Blank = let the agent auto-detect its own primary subnet (it is the node on the AP LAN). An explicit CIDR
+  // overrides it — needed when the agent has several interfaces, or to sweep a subnet other than its own.
+  const [discoverCidr, setDiscoverCidr] = useState('')
   const [identified, setIdentified] = useState({})
   const [adoptCred, setAdoptCred] = useState({ username: 'admin', password: '' })
   const [busy, setBusy] = useState(false)
@@ -63,9 +66,11 @@ export function AgentsPage() {
     setDiscovered([])
     setIdentified({})
     try {
-      const r = await gateway.discover(agentId, '192.168.1.0/24')
+      const cidr = discoverCidr.trim() || undefined
+      const r = await gateway.discover(agentId, cidr)
       setDiscovered(r.hosts || [])
-      toast(`${r.hosts?.length || 0} host(s) found via ${agentId}.`, 'success')
+      const where = cidr ? cidr : 'auto-detected subnet'
+      toast(`${r.hosts?.length || 0} host(s) found via ${agentId} (${where}).`, 'success')
     } catch (e) {
       toast(`Discover via ${agentId}: ${e.message}`, 'error')
     } finally {
@@ -144,6 +149,17 @@ export function AgentsPage() {
           Refresh
         </MriButton>
       </MriPageHeader>
+      <label className="flex flex-col gap-1">
+        <span className="text-xs text-muted-foreground">
+          Discover subnet — CIDR (leave blank to auto-detect the agent&apos;s own subnet)
+        </span>
+        <MriInput
+          value={discoverCidr}
+          onChange={(e) => setDiscoverCidr(e.target.value)}
+          placeholder="auto-detect — or e.g. 192.168.68.0/24"
+          className="max-w-xs"
+        />
+      </label>
       <AgentsList
         agents={enriched}
         loading={loading}

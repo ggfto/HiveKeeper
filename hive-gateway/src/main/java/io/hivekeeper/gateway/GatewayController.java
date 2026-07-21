@@ -303,7 +303,7 @@ public class GatewayController {
         return switch (req.type() == null ? "" : req.type()) {
             case "inventory" -> Command.Inventory.of(DeviceRef.ssh(requireHost(req), port));
             case "backup" -> Command.BackupConfig.of(DeviceRef.ssh(requireHost(req), port));
-            case "discover" -> Command.Discover.of(requireCidr(req), port, 800);
+            case "discover" -> Command.Discover.of(cidrOrNull(req), port, 800);
             case "configure-ssid" -> Command.ConfigureSsid.of(DeviceRef.ssh(requireHost(req), port),
                     req.remove() ? SsidSpec.removal(req.name())
                             : ssidSpec(req.name(), req.psk(), req.vlan(), req.security(),
@@ -332,11 +332,10 @@ public class GatewayController {
         return req.host().trim();
     }
 
-    private static String requireCidr(JobRequest req) {
-        if (req.cidr() == null || req.cidr().isBlank()) {
-            throw new IllegalArgumentException("cidr is required");
-        }
-        return req.cidr().trim();
+    /** A blank CIDR is allowed for discover — it becomes {@code null}, telling the agent to auto-detect its own
+     *  subnet. Returns the trimmed value otherwise. */
+    private static String cidrOrNull(JobRequest req) {
+        return req.cidr() == null || req.cidr().isBlank() ? null : req.cidr().trim();
     }
 
     @PreDestroy
@@ -1223,15 +1222,16 @@ public class GatewayController {
         if (engine.isEmpty()) {
             return status(404, new ApiError("agent_not_connected", agentId));
         }
-        if (req == null || req.cidr() == null || req.cidr().isBlank()) {
-            return status(400, new ApiError("bad_request", "cidr is required"));
-        }
+        // A blank CIDR is allowed and means "auto-detect": the agent scans its own primary subnet (it is the node
+        // on the AP LAN). Only a non-blank value is validated/trimmed here; null flows to Command.Discover, which
+        // the agent resolves via its local interfaces.
+        String cidr = (req == null || req.cidr() == null || req.cidr().isBlank()) ? null : req.cidr().trim();
+        int port = req != null && req.port() != null ? req.port() : 22;
+        int timeout = req != null && req.timeoutMillis() != null ? req.timeoutMillis() : 800;
         try {
-            Command cmd = Command.Discover.of(req.cidr().trim(),
-                    req.port() == null ? 22 : req.port(),
-                    req.timeoutMillis() == null ? 800 : req.timeoutMillis());
+            Command cmd = Command.Discover.of(cidr, port, timeout);
             Result result = engine.get().execute(cmd, EventSink.NOOP);
-            record(p.tenantId(), agentId, "discover", req.cidr().trim(), result.getClass().getSimpleName());
+            record(p.tenantId(), agentId, "discover", cidr == null ? "auto" : cidr, result.getClass().getSimpleName());
             return json(result);
         } catch (Exception e) {
             log.warn("discover via agent '{}' failed: {}", agentId, e.getMessage());
