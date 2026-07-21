@@ -5,7 +5,7 @@
 # Terminate TLS in front of this for the browser-facing API (see docker-compose.prod.yml) — but NOT for the
 # agent's mTLS port, which must reach the gateway unterminated or client-certificate auth cannot work.
 
-FROM eclipse-temurin:25-jdk AS build
+FROM --platform=$BUILDPLATFORM eclipse-temurin:25-jdk AS build
 WORKDIR /src
 COPY . .
 RUN chmod +x ./gradlew && ./gradlew --no-daemon :hive-gateway:installDist -x test

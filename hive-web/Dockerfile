@@ -9,7 +9,7 @@
 # build-time input is the code itself.
 
 # --- build stage ---------------------------------------------------------------
-FROM node:26-alpine AS build
+FROM --platform=$BUILDPLATFORM node:26-alpine AS build
 # Install corepack explicitly rather than relying on the one the base image used to bundle: Node 25+ unbundled
 # corepack, so `corepack enable` alone is "not found" (exit 127) on those images. This keeps the build working
 # across Node versions while corepack stays the single source of the pnpm version (package.json packageManager).

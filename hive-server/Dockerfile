@@ -5,7 +5,7 @@
 # network isolates it); map the port and put it behind your own TLS/ingress.
 
 # --- build stage ---------------------------------------------------------------
-FROM eclipse-temurin:25-jdk AS build
+FROM --platform=$BUILDPLATFORM eclipse-temurin:25-jdk AS build
 WORKDIR /src
 COPY . .
 # The running JVM (21) satisfies the Java 21 toolchain via Gradle's current-JVM detection,

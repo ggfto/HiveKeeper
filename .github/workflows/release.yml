@@ -48,6 +48,11 @@ jobs:
         with:
           node-version: 22
 
+      # Register the QEMU emulators so buildx can assemble the arm64 runtime image (its `apt-get`/base steps
+      # run emulated) on the amd64 runner. The heavy build stage still runs native (--platform=$BUILDPLATFORM).
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v4
 
