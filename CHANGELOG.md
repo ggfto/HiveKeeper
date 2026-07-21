@@ -1,3 +1,11 @@
+# [0.11.0](https://github.com/ggfto/HiveKeeper/compare/v0.10.0...v0.11.0) (2026-07-21)
+
+
+### Features
+
+* **gateway:** active/standby agents per site ([ae19cd2](https://github.com/ggfto/HiveKeeper/commit/ae19cd2c96399226b1c1221c20c2002867351f9a))
+* **gateway:** fail durable jobs over to the standby, and dedup on re-adopt ([cbda42c](https://github.com/ggfto/HiveKeeper/commit/cbda42cf6bb8ff7b0dab75dad92af385b92296b3))
+
 # [0.10.0](https://github.com/ggfto/HiveKeeper/compare/v0.9.0...v0.10.0) (2026-07-20)
 
 
