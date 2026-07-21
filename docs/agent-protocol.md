@@ -54,6 +54,16 @@ channel — no socket.)
   redelivers un-acked work from its job DB.
 - **Idempotency**: `Job.idempotencyKey` lets the agent dedupe a redelivered job; `JobEvent.seq` + `Ack`
   give at-least-once streaming with gap/dup detection.
+- **Graceful drain on shutdown**: the agent stops accepting new jobs and lets the running one finish and send
+  its terminal frame before it exits (bounded by `shutdown.drain.seconds`), *then* closes the channel — so a
+  restart (redeploy, reboot, auto-update) does not interrupt a job or make the gateway redeliver it.
+- **Failover between site agents**: a durable job addressed to an agent that disconnects is atomically
+  reassigned to its site's standby and redispatched (`JobService.reassign`, an `UPDATE … RETURNING` guarded by
+  the addressed agent). The dedupe is per-process, so this is what keeps a mid-flight config from re-running on
+  the replacement — see [Architecture](/architecture/) → *Redundant agents*.
+- **New command types** ride the same `Frame.Job` envelope, no wire change (the codec derives subtypes from the
+  sealed `Command` hierarchy): `ScanChannels` (read `show acsp` channel costs + neighbours) and the
+  agent-scoped `ConfigureBackupDestination` (the git push target, its token sealed to the agent).
 - **Offline buffering** lives in the control-plane DB (per-agent, TTL'd, idempotency-keyed) — **not** a
   broker.
 

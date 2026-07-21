@@ -215,7 +215,14 @@ in sixty days.**
 
 ## Upgrades and backups
 
-Upgrade by bumping `HIVEKEEPER_TAG` and redeploying. Pin the agent to the same version as the gateway.
+Upgrade by bumping `HIVEKEEPER_TAG` and redeploying. Pin the agent to the same version as the gateway — or let
+the agent follow releases on its own with the opt-in auto-updater (`--profile autoupdate`, see
+[Running in production](/production/) → *Letting the agent update itself*; on Podman it needs the
+Docker-compatible socket).
+
+For a redundant site, enrol a **second agent** on the same site and the two run active/standby automatically;
+and set the organization's **backup destination** (a git repository) in the console so the fleet's config
+history lands off the agents. Both are covered in [Running in production](/production/).
 
 The `backup` service takes a periodic `pg_dump` of **both** databases into the `pg-backups` volume — both,
 because either alone is useless: restore the gateway's without Keycloak's and every role grant points at a

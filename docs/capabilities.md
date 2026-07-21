@@ -93,8 +93,20 @@ Per device, via the web UI ([device configuration](/device-configuration/) expla
 
 The gateway:
 
-- **Discover** APs on a subnet (SSH banner sweep), then **adopt** them into a managed fleet.
+- **Discover** APs on a subnet (SSH banner sweep), then **adopt** them into a managed fleet. Adoption captures
+  the AP's **current running-config as the "as-adopted" baseline** (a git commit), so an AP a previous admin
+  configured has a snapshot to diff and roll back to *before* anyone changes anything through HiveKeeper.
+  Adopting the same AP again (from either agent) updates the one device row — an AP is never registered twice.
+- **Manage from the AP's current state.** The Wi-Fi, Policy, Network-routes, Schedule and Mesh sections read
+  the live running-config and list the AP's **real** objects (SSIDs with their VLAN/security, user profiles,
+  routes, schedules, hives) to edit in place — not a blank slate. The **radio-profile** form can load an
+  existing profile and pre-fill its current values (channel width, PHY mode, chains, the 11ax knobs), and the
+  **Radio** form shows each radio's current channel / width / power / mode before you change it. (A keyed
+  SSID's passphrase stays masked in the config, so editing one still means setting a new key.)
 - Organize devices into **sites** and **groups**; run **bulk** inventory/backup across org/site/group scopes.
+- **Agent auto-update (opt-in).** An on-prem agent can follow new releases on its own — it fires only when its
+  image tag *moves*, is scoped to the agent alone, and **drains** the running job before the swap so a restart
+  never interrupts work. See [Running in production](/production/).
 - **Active/standby agents per site.** Enrol a second agent on a site's LAN and the two become a redundant
   pair: exactly one — the primary — runs each device's unattended task, so a backup capture never runs twice,
   and if the primary goes offline the standby takes over the next dispatch on its own. The primary is the

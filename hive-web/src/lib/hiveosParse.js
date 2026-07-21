@@ -381,3 +381,70 @@ export function channelCrowding(scan, channel) {
     ourFleet: on.filter((n) => n.ourFleet).length,
   }
 }
+
+/**
+ * Parse the `radio profile <name> ...` lines out of a running-config into the shape the RadioProfileForm
+ * edits — so an adopted AP's existing profiles can be shown and adjusted from their current values rather
+ * than applied blind. It is the inverse of `radioProfileCommands`: every knob that builder can emit, this
+ * reads back.
+ *
+ * A bare knob line (`band-steering`, `dfs`, `ampdu`) means enabled; the builder never writes a disabled one
+ * into a profile (it emits `no radio profile ...`), so absence is "unchanged/off". Interface bindings
+ * (`interface wifiN radio profile <name>`) are collected too, so the form can preselect the bound radio.
+ *
+ * -> [{ name, phymode, channelWidth, bandSteering, clientLoadBalance, maxClient, dfs, shortGuardInterval,
+ *       ampdu, amsdu, frameburst, highDensity, weakSnrSuppress, txBeamforming, receiveChain, transmitChain,
+ *       bssColor, ofdmaDl, ofdmaUl, twt, muMimo, boundInterfaces: [] }]
+ */
+export function parseRadioProfiles(config) {
+  const byName = new Map()
+  const profile = (name) => {
+    if (!byName.has(name)) {
+      byName.set(name, { name, boundInterfaces: [] })
+    }
+    return byName.get(name)
+  }
+  // Bare toggles: presence = 'enable'. Toggles whose positive form carries an `enable` word are handled by
+  // the regex tail below.
+  const BARE = {
+    'band-steering': 'bandSteering',
+    'client-load-balance': 'clientLoadBalance',
+    dfs: 'dfs',
+    'short-guard-interval': 'shortGuardInterval',
+    ampdu: 'ampdu',
+    amsdu: 'amsdu',
+    frameburst: 'frameburst',
+  }
+
+  for (const raw of (config || '').split('\n')) {
+    const line = raw.trim()
+
+    const bind = /^interface\s+(wifi\d+)\s+radio\s+profile\s+(\S+)$/.exec(line)
+    if (bind) {
+      profile(bind[2]).boundInterfaces.push(bind[1])
+      continue
+    }
+    const m = /^radio\s+profile\s+(\S+)(?:\s+(.*))?$/.exec(line)
+    if (!m) continue
+    const p = profile(m[1])
+    const rest = (m[2] || '').trim()
+    if (!rest) continue // a bare `radio profile <name>` declaration
+
+    let g
+    if ((g = /^phymode\s+(\S+)/.exec(rest))) p.phymode = g[1]
+    else if ((g = /^channel-width\s+(\S+)/.exec(rest))) p.channelWidth = g[1]
+    else if ((g = /^max-client\s+(\d+)/.exec(rest))) p.maxClient = g[1]
+    else if ((g = /^tx-beamforming\s+(\S+)/.exec(rest))) p.txBeamforming = g[1]
+    else if ((g = /^receive-chain\s+(\d+)/.exec(rest))) p.receiveChain = g[1]
+    else if ((g = /^transmit-chain\s+(\d+)/.exec(rest))) p.transmitChain = g[1]
+    else if (/^high-density\s+enable/.test(rest)) p.highDensity = 'enable'
+    else if (/^weak-snr-suppress\s+enable/.test(rest)) p.weakSnrSuppress = 'enable'
+    else if ((g = /^11ax\s+bss-color\s+(\d+)/.exec(rest))) p.bssColor = g[1]
+    else if (/^11ax\s+ofdma-dl/.test(rest)) p.ofdmaDl = 'enable'
+    else if (/^11ax\s+ofdma-ul/.test(rest)) p.ofdmaUl = 'enable'
+    else if (/^11ax\s+twt/.test(rest)) p.twt = 'enable'
+    else if (/^mu-mimo\s+enable/.test(rest)) p.muMimo = 'enable'
+    else if (BARE[rest]) p[BARE[rest]] = 'enable'
+  }
+  return [...byName.values()]
+}

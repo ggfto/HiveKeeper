@@ -47,14 +47,18 @@ agent (the same `apply-config` path the **Advanced** escape hatch exposes raw).
 - **Credentials** — set / rotate a device's SSH credential from the UI, sealed to the agent's public key (never
   stored in the cloud) and written to the agent's at-rest-encrypted vault; optionally change the admin password
   on the AP itself (confirm-gated).
-- **Wi-Fi** — create / edit / remove SSIDs across the full security suite (Open, WPA2-PSK, **WPA3-SAE**, and
-  **802.1X Enterprise** bound to RADIUS), with optional VLAN; per-SSID **hardening** (hide-SSID, client cap,
-  client isolation, DTIM, schedule, 802.11k/v), a **minimum data rate**, per-SSID **QoS**, and **PPSK** (private
-  PSK) — self-registration, plus admin-minted keys via an on-prem RADIUS (lab/untested — see the roadmap).
+- **Wi-Fi** — create / edit / remove SSIDs across the full security suite (Open, **OWE / Enhanced Open**,
+  WPA2-PSK, **WPA3-SAE**, and **802.1X Enterprise** — incl. **192-bit Suite B** — bound to RADIUS), with optional
+  VLAN; per-SSID **hardening** (hide-SSID, client cap, client isolation, DTIM, schedule, **802.11k/v/r**), a
+  **minimum data rate**, per-SSID **QoS**, and **PPSK** (private PSK) — self-registration, plus admin-minted keys
+  via an on-prem RADIUS (lab/untested — see the roadmap). An SSID binds to **every radio the AP reports**.
 - **Policy** — user-profiles (default VLAN / QoS / schedule, bound to an SSID), per-profile bandwidth SLA and
   L2/L3 firewall bindings, IP/MAC firewall-policy objects, QoS rate-limit policies, LLDP, and static routes.
-- **Radio** — channel / Tx power / mode, plus the named radio profile's width, band-steering, client
-  load-balancing and **advanced RF tuning** (DFS, short guard interval, A-MPDU/A-MSDU, beamforming, high-density).
+- **Radio** — channel / Tx power / mode (shown against the radio's current values), plus the named radio
+  profile's width (to **160 MHz**), PHY mode (incl. **11ax**), spatial chains, band-steering, client
+  load-balancing, the **Wi-Fi 6** knobs (BSS color, OFDMA, TWT, MU-MIMO) and **advanced RF tuning** — with an
+  existing profile preloadable from the AP. A **channel scan** reads the AP's own per-channel costs and names
+  the cheapest.
 - **Captive portal**, **Mesh/Hive** join, **Client mode**, **Network** (IP / routing / DHCP / DNS),
   **Monitoring** (SNMP, syslog), **Schedules** (named time objects), **Power & LED**, **Reboot** (one-off or
   recurring).
@@ -66,8 +70,13 @@ agent (the same `apply-config` path the **Advanced** escape hatch exposes raw).
   ⚠️ **Lab / untested** — validate against real hardware first.
 
 **Fleet & multi-org** (the gateway)
-- **Discover** APs on a subnet (SSH banner sweep), then **adopt** them into a managed fleet.
+- **Discover** APs on a subnet (SSH banner sweep), then **adopt** them into a managed fleet — adoption captures
+  the AP's current config as an "as-adopted" git baseline, so you manage an already-configured AP from where it
+  is, with a snapshot to roll back to.
 - Organize devices into **sites** and **groups**; run **bulk** inventory/backup across org/site/group scopes.
+- **Active/standby agents** per site (a second agent takes over automatically), an org-wide **backup
+  destination** (one git repo the fleet pushes to), and opt-in **agent auto-update** that drains before it
+  swaps.
 - **Config templates** — apply the same HiveOS CLI lines to every device in a scope in one bulk write
   (operator-gated, each device re-authorized server-side, per-device outcomes).
 - **Alerting** — an on-demand fleet **scan** flags APs that breach a threshold, plus (on the `postgres` profile)

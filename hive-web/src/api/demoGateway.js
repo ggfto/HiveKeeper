@@ -380,7 +380,7 @@ export function createDemoGateway() {
       const d = ap(uid('d'), serial, model, body.host, agentId, `Adopted ${body.host}`, db.sites[0].siteId, [])
       db.devices.push(d)
       logOp('adopt', body.host, `adopted ${model}`, agentId)
-      return ok({ deviceId: d.deviceId, serial, model })
+      return ok({ deviceId: d.deviceId, serial, model, baselineCaptured: true })
     },
     setCredential: (agentId, body = {}) => {
       if (!connected(agentId)) return fail('the device agent is offline', 503)

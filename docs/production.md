@@ -150,6 +150,21 @@ history of every device configuration — which is your rollback path. It is not
 backups do not cover it.
 :::
 
+### A second agent for redundancy (active/standby)
+
+Enrol a second agent **on the same site**, on the same LAN, reaching the same APs. One becomes the primary and
+does all unattended work; the other stands by and takes over automatically if the primary drops. The primary
+is the connected agent whose id sorts first, so choose it by naming — `site-a-01` (primary), `site-a-02`
+(standby). Nothing else to configure: the gateway elects and fails over, and the agents never talk to each
+other. Adopting the same AP from either agent converges to one device.
+
+### Where the fleet's config history goes
+
+Set an organization-wide git repository in the console under **Agents → Backup destination**, and every agent
+pushes its config history there — so the history survives the machine that captured it. The token is sealed to
+each agent and stored encrypted; scope it to that repository only. A push that fails does not fail the backup
+(the local commit is the rollback path); pending commits go out with the next capture.
+
 ## Backups
 
 The `backup` service takes a `pg_dump` of **both** databases every 24h (configurable), keeps 14 days, and

@@ -103,7 +103,11 @@ export function AgentsPage() {
     setBusy(true)
     try {
       const r = await gateway.adopt(discoverAgent, { host })
-      toast(`Adopted ${host} as ${r.serial}${r.model ? ` (${r.model})` : ''}.`, 'success')
+      const baseline = r.baselineCaptured
+        ? ' Its current config was captured as the baseline.'
+        : ' Its config baseline could not be captured — back it up manually.'
+      toast(`Adopted ${host} as ${r.serial}${r.model ? ` (${r.model})` : ''}.${baseline}`,
+        r.baselineCaptured ? 'success' : 'warning')
       // If the operator supplied a credential for adoption, set it now (sealed to the agent) so the new device
       // resolves the right secret. A failure here does not undo the adoption — report it separately.
       if (adoptCred.password) {

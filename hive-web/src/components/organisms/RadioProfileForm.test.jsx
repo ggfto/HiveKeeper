@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest'
-import { render, screen, fireEvent } from '@testing-library/react'
+import { render, screen, fireEvent, waitFor } from '@testing-library/react'
 import { RadioProfileForm } from './RadioProfileForm'
 
 const device = { deviceId: 'd1', agentId: 'lab-agent', mgmtIp: '10.0.0.1', serial: 'SER' }
@@ -126,5 +126,33 @@ describe('RadioProfileForm', () => {
       ],
       save: true,
     })
+  })
+
+  it('preloads an existing profile from the AP so you adjust from its current values', async () => {
+    const onApply = vi.fn()
+    const loadProfiles = vi.fn().mockResolvedValue([
+      { name: 'hk_ax_5g', phymode: '11ax-5g', channelWidth: '80', bandSteering: 'enable',
+        bssColor: '12', twt: 'enable', boundInterfaces: ['wifi1'] },
+    ])
+    render(<RadioProfileForm device={device} onApply={onApply} loadProfiles={loadProfiles} />)
+
+    // The existing profile appears in the loader dropdown once loadProfiles resolves.
+    await waitFor(() => expect(screen.getByLabelText(/carregar um perfil existente/i)).toBeInTheDocument())
+    fireEvent.change(screen.getByLabelText(/carregar um perfil existente/i), { target: { value: 'hk_ax_5g' } })
+
+    // The form now holds the AP's current values; applying re-emits them (idempotent) plus any change.
+    expect(screen.getByLabelText(/radio profile/i)).toHaveValue('hk_ax_5g')
+    fireEvent.click(screen.getByRole('button', { name: /apply profile/i }))
+    const cmds = onApply.mock.calls[0][1].commands
+    expect(cmds).toContain('radio profile hk_ax_5g phymode 11ax-5g')
+    expect(cmds).toContain('radio profile hk_ax_5g channel-width 80')
+    expect(cmds).toContain('radio profile hk_ax_5g 11ax bss-color 12')
+    expect(cmds).toContain('radio profile hk_ax_5g 11ax twt')
+    expect(cmds).toContain('interface wifi1 radio profile hk_ax_5g')
+  })
+
+  it('is create-only (no loader) when no loadProfiles is given', () => {
+    render(<RadioProfileForm device={device} onApply={vi.fn()} />)
+    expect(screen.queryByLabelText(/carregar um perfil existente/i)).not.toBeInTheDocument()
   })
 })

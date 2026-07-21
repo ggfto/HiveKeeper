@@ -60,3 +60,23 @@ exactly like a bulk inventory, evaluates the shared `hive-core` `alerts` rules, 
 `fleet_alert` state table so an alert is delivered on **onset** and again on **resolution** — never every poll.
 Delivery fans out to per-tenant **webhook** and **email** channels. It is the only background scheduler;
 operator-initiated durable jobs use the separate `JobGateway` redelivery path, not the scheduler.
+
+## Redundant agents (active/standby)
+
+Two agents enrolled to the same **site** are a redundant pair on one LAN. `SitePrimary` elects a deterministic
+**primary** — the connected site-agent whose id sorts first — and all *unattended* dispatch (the poller and
+scope-targeted bulk ops) resolves the serving agent through it, so exactly one agent runs each device's task
+and a standby takes over the moment the primary drops. Election is gateway-side and stateless; **the agents
+never talk to each other** and hold no peer awareness, which keeps the "agent dials out, opens no inbound
+port" property intact and avoids split-brain. Durable jobs queued to a primary that then disconnects are
+**atomically reassigned** to the standby by `JobGateway` (an `UPDATE … RETURNING` guarded by the addressed
+agent — the same single-winner claim idiom as one-time enrollment consumption) and redispatched there.
+
+## Agent lifecycle
+
+An agent drains on shutdown: it stops taking new jobs and lets the running one finish and report before it
+exits, so a restart — a redeploy, a reboot, or the opt-in **auto-update** (a label-scoped Watchtower sidecar
+that follows a moving image tag) — never interrupts a job and never makes the gateway redeliver it. The
+gateway also pushes each organization's **backup destination** to its agents through
+`BackupDestinationProvisioner`, sealed to each agent's key, on configuration and on agent connect — so a git
+push target set once reaches every agent, including one enrolled later.

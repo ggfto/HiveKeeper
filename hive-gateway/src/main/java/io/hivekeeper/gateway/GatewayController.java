@@ -141,7 +141,7 @@ public class GatewayController {
     public record PpskUserList(List<PpskUserView> users) {
     }
 
-    public record AdoptResponse(String deviceId, String serial, String model) {
+    public record AdoptResponse(String deviceId, String serial, String model, boolean baselineCaptured) {
     }
 
     /** Revoke an agent's enrollment (decommission/compromise). {@code reason} is optional, recorded for audit. */
@@ -566,7 +566,14 @@ public class GatewayController {
                 String deviceId = fleet.get().registerDevice(p.tenantId(), device.serial(), device.model(),
                         label, host, siteId, agentId, credRef);
                 record(p.tenantId(), agentId, "adopt", host, device.serial());
-                return json(new AdoptResponse(deviceId, device.serial(), device.model()));
+
+                // Capture the AP's CURRENT config as the "as-adopted" baseline, so an AP a previous admin
+                // set up has a git snapshot to diff and roll back to BEFORE anyone changes anything through
+                // HiveKeeper. Best-effort: adoption already succeeded, so a failed capture is reported, not
+                // fatal — the operator can always back up manually.
+                boolean baselineCaptured = captureBaseline(engine.get(), host, port, credRef, agentId);
+
+                return json(new AdoptResponse(deviceId, device.serial(), device.model(), baselineCaptured));
             } catch (DataIntegrityViolationException e) {
                 return status(409, new ApiError("conflict", "a device with that serial is already registered"));
             } catch (Exception e) {
@@ -575,6 +582,19 @@ public class GatewayController {
                         e.getMessage() == null ? "" : e.getMessage()));
             }
         };
+    }
+
+    /** Captures the running-config into the agent's git store as the adoption baseline. Never throws — a
+     *  failed baseline must not undo an otherwise-successful adoption. */
+    private boolean captureBaseline(RemoteEngine engine, String host, int port, String credRef, String agentId) {
+        try {
+            engine.execute(Command.BackupConfig.of(DeviceRef.ssh(host, port, credRef)), EventSink.NOOP);
+            return true;
+        } catch (Exception e) {
+            log.warn("baseline capture failed for a device adopted via '{}': {} (adoption stands; back up "
+                    + "manually)", agentId, e.getMessage());
+            return false;
+        }
     }
 
     /** Set (or rotate) a device's SSH credential. The secret is sealed to the agent's public key HERE and

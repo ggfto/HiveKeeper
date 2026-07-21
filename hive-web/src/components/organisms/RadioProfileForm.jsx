@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { MriInput, MriButton, MriSectionHeader } from '@mriqbox/ui-kit'
 import { Radio, TriangleAlert } from 'lucide-react'
 import { radioProfileCommands } from '../../lib/hiveosCli'
@@ -107,7 +107,7 @@ function bandOfRadio(device, iface) {
  * BLAST RADIUS: a profile can be shared across interfaces and across APs in a hive, so a change here is wider
  * than the per-interface channel/power in the Radio form. Confirmed HiveOS grammar (see radioProfileCommands).
  */
-export function RadioProfileForm({ device, onApply, busy }) {
+export function RadioProfileForm({ device, onApply, busy, loadProfiles }) {
   const [profile, setProfile] = useState('radio_ac0')
   const [channelWidth, setChannelWidth] = useState('')
   const [bandSteering, setBandSteering] = useState('')
@@ -133,6 +133,47 @@ export function RadioProfileForm({ device, onApply, busy }) {
   const [muMimo, setMuMimo] = useState('')
   const [muMimoStationReceiveChain, setMuMimoStationReceiveChain] = useState('')
   const [bindInterface, setBindInterface] = useState('')
+
+  // The AP's existing profiles, read from its running-config, so an adopted AP can be adjusted from what it
+  // already has rather than blind. Optional: without a loadProfiles prop the form is create-only as before.
+  const [existing, setExisting] = useState([])
+  useEffect(() => {
+    if (!loadProfiles || !device) return
+    let alive = true
+    loadProfiles(device)
+      .then((list) => alive && setExisting(Array.isArray(list) ? list : []))
+      .catch(() => alive && setExisting([]))
+    return () => {
+      alive = false
+    }
+  }, [loadProfiles, device])
+
+  // Load an existing profile's current values into the form — "see what is there, change what you want".
+  const preload = (p) => {
+    if (!p) return
+    setProfile(p.name)
+    setChannelWidth(p.channelWidth || '')
+    setBandSteering(p.bandSteering || '')
+    setClientLoadBalance(p.clientLoadBalance || '')
+    setMaxClient(p.maxClient || '')
+    setDfs(p.dfs || '')
+    setShortGuardInterval(p.shortGuardInterval || '')
+    setAmpdu(p.ampdu || '')
+    setAmsdu(p.amsdu || '')
+    setFrameburst(p.frameburst || '')
+    setHighDensity(p.highDensity || '')
+    setWeakSnrSuppress(p.weakSnrSuppress || '')
+    setTxBeamforming(p.txBeamforming || '')
+    setPhymode(p.phymode || '')
+    setReceiveChain(p.receiveChain || '')
+    setTransmitChain(p.transmitChain || '')
+    setBssColor(p.bssColor || '')
+    setOfdmaDl(p.ofdmaDl || '')
+    setOfdmaUl(p.ofdmaUl || '')
+    setTwt(p.twt || '')
+    setMuMimo(p.muMimo || '')
+    setBindInterface((p.boundInterfaces && p.boundInterfaces[0]) || '')
+  }
 
   const apply = () => {
     const commands = radioProfileCommands(profile.trim(), {
@@ -190,6 +231,27 @@ export function RadioProfileForm({ device, onApply, busy }) {
         <code className="font-mono">radio_ng0</code> for 2.4 GHz, <code className="font-mono">radio_ac0</code> for
         5 GHz). A profile can be shared across interfaces and APs, so a change here is wider than a per-radio tweak.
       </p>
+      {existing.length > 0 && (
+        <label className="flex flex-col gap-1" htmlFor="rp-load">
+          <span className="text-xs text-muted-foreground">
+            Carregar um perfil existente do AP (vê os valores atuais e ajusta)
+          </span>
+          <select
+            id="rp-load"
+            className={selectClass}
+            defaultValue=""
+            onChange={(e) => preload(existing.find((p) => p.name === e.target.value))}
+          >
+            <option value="">— escolher —</option>
+            {existing.map((p) => (
+              <option key={p.name} value={p.name}>
+                {p.name}
+                {p.phymode ? ` (${p.phymode})` : ''}
+              </option>
+            ))}
+          </select>
+        </label>
+      )}
       <div className="grid gap-2 sm:grid-cols-2">
         <label className="flex flex-col gap-1" htmlFor="rp-profile">
           <span className="text-xs text-muted-foreground">Radio profile</span>

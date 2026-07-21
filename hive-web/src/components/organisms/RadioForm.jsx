@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { MriSelect, MriInput, MriButton, MriSectionHeader } from '@mriqbox/ui-kit'
 import { Radio, TriangleAlert } from 'lucide-react'
 import { radioCommands } from '../../lib/hiveosCli'
@@ -15,10 +15,30 @@ const MODES = [
 ]
 
 /** Guided radio config (per radio): channel, transmit power, operational mode. Confirmed HiveOS syntax. */
-export function RadioForm({ device, onApply, busy }) {
+export function RadioForm({ device, onApply, busy, loadRadios }) {
   // Offer the radios this device reported, not a fixed pair — an AP410C-1 has three.
   const RADIOS = radioOptions(device)
   const [iface, setIface] = useState(() => defaultRadio(device))
+
+  // The radio's CURRENT channel / mode / power, read live, shown as a hint so a change is made against the
+  // real value instead of blind. Optional: without loadRadios the form works exactly as before.
+  const [current, setCurrent] = useState({})
+  useEffect(() => {
+    if (!loadRadios || !device) return
+    let alive = true
+    loadRadios(device)
+      .then((rows) => {
+        if (!alive) return
+        const map = {}
+        for (const r of rows || []) map[String(r.iface || r.name || '').toLowerCase()] = r
+        setCurrent(map)
+      })
+      .catch(() => alive && setCurrent({}))
+    return () => {
+      alive = false
+    }
+  }, [loadRadios, device])
+  const now = current[iface]
   const [channel, setChannel] = useState('')
   const [power, setPower] = useState('')
   const [txPowerControl, setTxPowerControl] = useState('')
@@ -62,6 +82,15 @@ export function RadioForm({ device, onApply, busy }) {
           <span className="text-xs text-muted-foreground">Mode</span>
           <MriSelect options={MODES} value={mode} onChange={setMode} />
         </label>
+        {now && (
+          <p className="text-xs text-muted-foreground sm:col-span-2" data-testid="radio-current">
+            Atual em <code className="font-mono">{iface}</code>:{' '}
+            {now.channel != null ? `canal ${now.channel}` : 'canal —'}
+            {now.width ? ` · ${now.width} MHz` : ''}
+            {now.mode ? ` · modo ${now.mode}` : ''}
+            {now.txPower != null ? ` · ${now.txPower} dBm` : ''}. Deixe um campo em branco para manter.
+          </p>
+        )}
         <label className="flex flex-col gap-1">
           <span className="text-xs text-muted-foreground">Channel</span>
           <MriInput value={channel} onChange={(e) => setChannel(e.target.value)} placeholder="auto or 36" />

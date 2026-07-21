@@ -291,6 +291,32 @@ where knobs live: **interface-level** (`interface wifiN radio …`) vs **profile
 
 ---
 
+## Phase 6 — Wi-Fi 6, redundancy & lifecycle — **SHIPPED**
+
+Driven by a live session against an AP230, an AP630 and an AP410C-1 (HiveOS 10.6r6).
+
+- **Wi-Fi 6 (802.11ax) — SHIPPED.** Radio-profile `phymode 11ax-2g|11ax-5g`, `channel-width 160`
+  (+ `40-above/40-below`), 1–4 spatial streams, the `11ax` sub-node (`bss-color`, `ofdma-dl/ul`, `twt`) and
+  `mu-mimo`; and SSID suites **OWE** (Enhanced Open), **WPA3-Enterprise 192-bit** and **802.11r** fast roaming.
+  Confirmed live and applied to the AP630/AP410C-1. Ceilings the docs had blamed on HiveOS were AP230 hardware
+  limits; the full grammar is offered and the device refuses what it cannot do.
+- **Per-device radio discovery — SHIPPED.** The driver asks the AP how many radios it has and binds an SSID to
+  all of them, so the AP410C-1's third radio is no longer silently left off the air. A four-radio model needs
+  no code change (asserted by test).
+- **Channel scan — SHIPPED.** A per-radio view of `show acsp` channel costs + neighbours, with the cheapest
+  channel named. The costs are the AP's own (ACSP); HiveKeeper explains them. `hivekeeper scan` + a console
+  panel, read-only.
+- **Backup destination — SHIPPED.** One git repository per organization, set in the console; the token is
+  sealed to each agent and pushed on config and on connect. A failed push is not a failed backup.
+- **Adoption baseline + manage-from-current — SHIPPED.** Adoption captures the AP's running-config as the
+  as-adopted git baseline; the radio-profile form preloads an existing profile's values and the Radio form
+  shows current channel/width/power/mode. (Full preload for the remaining value forms — captive portal, client
+  mode, mgt0 network — is a follow-up.)
+- **Active/standby agents — SHIPPED.** Two agents per site elect a gateway-side primary; unattended work runs
+  on one, and durable jobs fail over to the standby. Adopting an AP from either agent dedups to one row.
+- **Agent auto-update + drain — SHIPPED.** Opt-in, tag-following, label-scoped; the agent drains its running
+  job before any restart.
+
 ## Suggested sequencing
 
 Phase 0 first (it unblocks reliable management and is the operator's most-felt gap), then Phase 1 (cheap, and

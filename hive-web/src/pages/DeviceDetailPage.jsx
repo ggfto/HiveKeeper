@@ -27,6 +27,7 @@ import { ChannelScanSection } from '../components/organisms/ChannelScanSection'
 import { MONITORING_SECTIONS } from '../lib/configSchema'
 import {
   parseSsids,
+  parseRadioProfiles,
   parseHives,
   parseCapwap,
   parseAcsp,
@@ -160,6 +161,50 @@ export function DeviceDetailPage() {
           save: false,
         })
         .then((r) => parseSsids((r.outputs || []).join('\n'))),
+    [gateway],
+  )
+  // The AP's existing radio profiles, so the profile form can be adjusted from what the AP already has
+  // (an adopted AP a previous admin configured) rather than applied blind.
+  const loadProfiles = useCallback(
+    (d) =>
+      gateway
+        .agentOp(d.agentId, 'apply-config', {
+          host: d.mgmtIp,
+          port: 22,
+          commands: ['show running-config'],
+          save: false,
+        })
+        .then((r) => parseRadioProfiles((r.outputs || []).join('\n'))),
+    [gateway],
+  )
+  // Each radio's current channel / width / Tx power / mode, so the Radio form shows the real value before you
+  // change it. `show acsp` gives channel/width/power; `show interface` gives the operational mode.
+  const loadRadios = useCallback(
+    (d) =>
+      gateway
+        .agentOp(d.agentId, 'apply-config', {
+          host: d.mgmtIp,
+          port: 22,
+          commands: ['show acsp', 'show interface'],
+          save: false,
+        })
+        .then((r) => {
+          const outputs = r.outputs || []
+          const modes = new Map(
+            (outputs[1] || '')
+              .split('\n')
+              .map((l) => /^(Wifi\d+)\s+\S+\s+(\S+)/i.exec(l.trim()))
+              .filter(Boolean)
+              .map((m) => [m[1].toLowerCase(), m[2]]),
+          )
+          return parseAcsp(outputs[0]).map((a) => ({
+            iface: a.name.toLowerCase(),
+            channel: a.channel,
+            width: a.width,
+            txPower: a.txPower,
+            mode: modes.get(a.name.toLowerCase()) || null,
+          }))
+        }),
     [gateway],
   )
   // Read the user profiles + SSIDs from one running-config: the Policy section lists the profiles (default
@@ -455,8 +500,8 @@ export function DeviceDetailPage() {
           )}
           {section === 'radio' && (
             <div className="space-y-8">
-              <RadioForm device={device} onApply={onApplyConfig} busy={busy} />
-              <RadioProfileForm device={device} onApply={onApplyConfig} busy={busy} />
+              <RadioForm device={device} onApply={onApplyConfig} busy={busy} loadRadios={loadRadios} />
+              <RadioProfileForm device={device} onApply={onApplyConfig} busy={busy} loadProfiles={loadProfiles} />
             </div>
           )}
           {section === 'clientmode' && <ClientModeForm device={device} onApply={onApplyConfig} busy={busy} />}

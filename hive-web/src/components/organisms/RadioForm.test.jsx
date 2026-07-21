@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest'
-import { render, screen, fireEvent } from '@testing-library/react'
+import { render, screen, fireEvent, waitFor } from '@testing-library/react'
 import { RadioForm } from './RadioForm'
 
 const device = { deviceId: 'd1', agentId: 'lab-agent', mgmtIp: '10.0.0.1', serial: 'SER' }
@@ -70,5 +70,22 @@ describe('RadioForm', () => {
       ],
       save: true,
     })
+  })
+
+  it('shows the current channel/mode/power for the selected radio from a live read', async () => {
+    const loadRadios = vi.fn().mockResolvedValue([
+      { iface: 'wifi0', channel: 6, width: 20, txPower: 12, mode: 'access' },
+      { iface: 'wifi1', channel: 149, width: 80, txPower: 15, mode: 'dual' },
+    ])
+    render(<RadioForm device={device} onApply={vi.fn()} loadRadios={loadRadios} />)
+    const hint = await screen.findByTestId('radio-current')
+    expect(hint).toHaveTextContent(/canal 6/)
+    expect(hint).toHaveTextContent(/modo access/)
+    expect(hint).toHaveTextContent(/12 dBm/)
+  })
+
+  it('shows no current-value hint without a loadRadios prop (unchanged behaviour)', () => {
+    render(<RadioForm device={device} onApply={vi.fn()} />)
+    expect(screen.queryByTestId('radio-current')).not.toBeInTheDocument()
   })
 })
