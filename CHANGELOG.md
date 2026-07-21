@@ -1,3 +1,10 @@
+## [0.12.4](https://github.com/ggfto/HiveKeeper/compare/v0.12.3...v0.12.4) (2026-07-21)
+
+
+### Bug Fixes
+
+* **gateway:** don't let the mail health check gate readiness ([cdbb8a4](https://github.com/ggfto/HiveKeeper/commit/cdbb8a493cb185aece064a41ba0e567b857e0b8e))
+
 ## [0.12.3](https://github.com/ggfto/HiveKeeper/compare/v0.12.2...v0.12.3) (2026-07-21)
 
 
