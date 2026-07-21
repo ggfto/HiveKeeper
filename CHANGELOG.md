@@ -1,3 +1,10 @@
+## [0.12.3](https://github.com/ggfto/HiveKeeper/compare/v0.12.2...v0.12.3) (2026-07-21)
+
+
+### Bug Fixes
+
+* **build:** publish multi-arch images (amd64 + arm64) ([d9ad386](https://github.com/ggfto/HiveKeeper/commit/d9ad386c0edbe817ca96380ae1ee0d26ae3b08a8))
+
 ## [0.12.2](https://github.com/ggfto/HiveKeeper/compare/v0.12.1...v0.12.2) (2026-07-21)
 
 
