@@ -1,3 +1,10 @@
+## [0.12.1](https://github.com/ggfto/HiveKeeper/compare/v0.12.0...v0.12.1) (2026-07-21)
+
+
+### Bug Fixes
+
+* **deploy:** drop --hostname-strict-https, removed in Keycloak 26 ([92bb314](https://github.com/ggfto/HiveKeeper/commit/92bb314a0e9a2bb65fc9c62ddd3825729b02e508))
+
 # [0.12.0](https://github.com/ggfto/HiveKeeper/compare/v0.11.0...v0.12.0) (2026-07-21)
 
 
