@@ -1,6 +1,7 @@
 import React from 'react'
 import { createRoot } from 'react-dom/client'
-import '@mriqbox/ui-kit/dist/style.css'
+// The kit's stylesheet is imported from index.css (as `@layer kit`) so its unlayered utilities can't override
+// our responsive utilities — see the cascade-layer note there.
 import './index.css'
 import App from './App.jsx'
 

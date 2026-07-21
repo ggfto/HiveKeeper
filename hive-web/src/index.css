@@ -4,7 +4,16 @@
  * (content globs, the amber color mappings to the kit's HSL CSS vars, and tailwindcss-animate) is kept
  * via @config so the v3-style theme.extend keeps generating our utilities.
  */
-@layer theme, components, utilities;
+/*
+ * Cascade-layer order. The kit (@mriqbox/ui-kit) is Tailwind v3 and ships its dist/style.css with UNLAYERED
+ * utilities (`.hidden`, `.flex`, …). Ours are Tailwind v4 and land in `@layer utilities`. Per the CSS cascade an
+ * UNLAYERED rule beats ANY layered rule, so the kit's plain `.hidden{display:none}` was overriding our
+ * `lg:flex` at every width — the responsive shell (persistent sidebar vs. mobile hamburger) silently collapsed
+ * to its mobile branch on desktop. Pulling the kit into its own `kit` layer, declared FIRST (weakest), lets our
+ * `utilities` layer win again. The kit import moves here (out of main.jsx) so it can carry `layer(kit)`.
+ */
+@layer kit, theme, components, properties, utilities;
+@import '@mriqbox/ui-kit/dist/style.css' layer(kit);
 @import 'tailwindcss/theme.css' layer(theme);
 @import 'tailwindcss/utilities.css' layer(utilities);
 @config '../tailwind.config.js';
