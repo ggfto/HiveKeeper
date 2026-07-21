@@ -2,6 +2,8 @@ package io.hivekeeper.gateway.enroll;
 
 import org.bouncycastle.pkcs.PKCS10CertificationRequest;
 
+import java.io.IOException;
+import java.io.UncheckedIOException;
 import java.security.cert.X509Certificate;
 import java.time.Duration;
 import java.util.List;
@@ -22,4 +24,16 @@ public interface CertificateAuthority {
 
     /** The CA certificate chain the agent must trust (its truststore); for the file CA, the single CA cert. */
     List<X509Certificate> caChain();
+
+    /**
+     * The CA chain as a PEM bundle — the exact bytes that go in the agent's {@code ca.pem}. Public, not a secret,
+     * so the console can show it at enrollment time instead of the operator digging it out of a container log.
+     */
+    default String caPem() {
+        try {
+            return Pem.certificates(caChain());
+        } catch (IOException e) {
+            throw new UncheckedIOException("failed to render the CA chain as PEM", e);
+        }
+    }
 }

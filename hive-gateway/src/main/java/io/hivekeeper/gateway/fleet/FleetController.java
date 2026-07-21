@@ -5,7 +5,9 @@ import io.hivekeeper.gateway.access.AccessService;
 import io.hivekeeper.gateway.access.Principal;
 import io.hivekeeper.gateway.access.ResourceScope;
 import io.hivekeeper.gateway.access.Role;
+import io.hivekeeper.gateway.enroll.CertificateAuthority;
 import org.springframework.beans.factory.ObjectProvider;
+import org.springframework.http.MediaType;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.DeleteMapping;
@@ -54,7 +56,10 @@ public class FleetController {
     public record EnrollAgent(String agentId, String siteId) {
     }
 
-    public record EnrollmentResponse(String agentId, String token) {
+    /** {@code caPem} is the CA certificate the agent must trust (its ca.pem) — public, not a secret. Null when
+     *  the gateway has no CA configured (no mTLS enrollment). Returned so the operator gets it here instead of
+     *  reading it out of a container log. */
+    public record EnrollmentResponse(String agentId, String token, String caPem) {
     }
 
     public record IdResponse(String id) {
@@ -71,11 +76,22 @@ public class FleetController {
     // Optional: the per-user grant resolver only exists under postgres; the in-memory stack authorizes via the
     // X-Tenant-Key service principal (owner), so the access-inspection endpoint simply degrades when it is absent.
     private final ObjectProvider<AccessService> access;
+    // Optional: the CA only exists under the mtls profile. When absent, enrollment still mints a token but the
+    // response carries no ca.pem (a token-only/dev deployment).
+    private final ObjectProvider<CertificateAuthority> certificateAuthority;
 
-    public FleetController(AccessGuard guard, FleetService fleet, ObjectProvider<AccessService> access) {
+    public FleetController(AccessGuard guard, FleetService fleet, ObjectProvider<AccessService> access,
+                           ObjectProvider<CertificateAuthority> certificateAuthority) {
         this.guard = guard;
         this.fleet = fleet;
         this.access = access;
+        this.certificateAuthority = certificateAuthority;
+    }
+
+    /** The CA the agent must trust, as PEM — public, not a secret. Null when no CA is configured. */
+    private String caPem() {
+        CertificateAuthority ca = certificateAuthority.getIfAvailable();
+        return ca == null ? null : ca.caPem();
     }
 
     @GetMapping("/api/sites")
@@ -283,7 +299,7 @@ public class FleetController {
         guard.require(p, Role.ADMIN, siteId == null ? ResourceScope.org() : ResourceScope.site(siteId));
         try {
             String token = fleet.createEnrollment(p.tenantId(), req.agentId().trim(), siteId);
-            return ResponseEntity.ok(new EnrollmentResponse(req.agentId().trim(), token));
+            return ResponseEntity.ok(new EnrollmentResponse(req.agentId().trim(), token, caPem()));
         } catch (DataIntegrityViolationException e) {
             return ResponseEntity.status(409)
                     .body(new ApiError("agent_exists", "an agent '" + req.agentId().trim() + "' is already enrolled"));
@@ -291,6 +307,24 @@ public class FleetController {
             // the in-memory dev/demo stack cannot mint enrollments (they live in the agent-handshake auth store)
             return ResponseEntity.status(501).body(new ApiError("not_supported", e.getMessage()));
         }
+    }
+
+    /**
+     * The CA certificate (ca.pem) an agent must trust to reach the gateway — public, not a secret. Lets the
+     * console re-offer it for download without minting a new enrollment, e.g. to fix a lost/garbled ca.pem on an
+     * already-enrolled agent. 404 when the gateway has no CA (a token-only/dev deployment). Any authenticated
+     * member may read it.
+     */
+    @GetMapping(value = "/api/enrollments/ca", produces = "application/x-pem-file")
+    public ResponseEntity<String> enrollmentCa() {
+        guard.authenticate();
+        String pem = caPem();
+        if (pem == null) {
+            return ResponseEntity.status(404)
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .body("{\"error\":\"no_ca\",\"detail\":\"this gateway has no CA (no mTLS enrollment)\"}");
+        }
+        return ResponseEntity.ok(pem);
     }
 
     /**

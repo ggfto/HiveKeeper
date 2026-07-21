@@ -267,7 +267,12 @@ export function createDemoGateway() {
     groups: () => ok(db.groups),
     devices: () => ok(db.devices.map(deviceView)),
     operations: () => ok(db.operations),
-    createEnrollment: (body) => ok({ agentId: body.agentId, token: `demo-enroll-${uid('t')}` }),
+    createEnrollment: (body) =>
+      ok({
+        agentId: body.agentId,
+        token: `demo-enroll-${uid('t')}`,
+        caPem: '-----BEGIN CERTIFICATE-----\n(demo CA — this sandbox has no real gateway)\n-----END CERTIFICATE-----\n',
+      }),
 
     createSite: (name) => {
       db.sites.push({ siteId: uid('s'), name })

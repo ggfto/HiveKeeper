@@ -27,6 +27,17 @@ final class Pem {
         }
     }
 
+    /** Render one or more certificates as a PEM bundle (e.g. the CA chain an agent must trust). */
+    static String certificates(List<X509Certificate> certs) throws IOException {
+        StringWriter sw = new StringWriter();
+        try (JcaPEMWriter writer = new JcaPEMWriter(sw)) {
+            for (X509Certificate cert : certs) {
+                writer.writeObject(cert);
+            }
+        }
+        return sw.toString();
+    }
+
     /**
      * Render the issued certificate followed by the CA chain as a single PEM bundle. The agent splits it on the
      * certificate boundaries: the first cert is its leaf, the rest are the CA chain (its truststore).
