@@ -21,11 +21,11 @@ services:
     image: cloudflare/cloudflared:${CLOUDFLARED_VERSION:-latest}
     # A PUBLIC resolver for THIS container. `access tcp` reaches the Access-fronted app by connecting to
     # https://<hostname> at the Cloudflare edge, so the sidecar MUST resolve ${HIVEKEEPER_AGENT_DOMAIN} to the
-    # real public (Cloudflare) address. Crucially we do NOT give this container that name as a network alias:
-    # an alias would be written into the sidecar's own /etc/hosts pointing at itself, and /etc/hosts wins over
-    # any resolver — cloudflared would then dial itself on :443 ("connection refused ... originURL=https://…")
-    # forever. Instead the sidecar gets a fixed IP (below) and the AGENT maps the name to that IP via its own
-    # extra_hosts, so only the agent resolves the name to the sidecar; the sidecar resolves it publicly.
+    # real public (Cloudflare) address — never to itself. So this container is NOT given that name in any form
+    # (no network alias, no extra_hosts): if it were, /etc/hosts would win over DNS and cloudflared would dial
+    # itself on :443 ("connection refused ... originURL=https://…") in a loop. The agent (host network, below)
+    # reaches this sidecar through its published loopback port instead, mapping the name to 127.0.0.1 only in
+    # the agent's own /etc/hosts. A public resolver here keeps the sidecar's egress lookup correct regardless.
     dns:
       - 1.1.1.1
       - 1.0.0.1
@@ -47,11 +47,10 @@ services:
       # This is a second, independent credential in front of mTLS rather than a replacement for it.
       TUNNEL_SERVICE_TOKEN_ID: ${CF_ACCESS_CLIENT_ID:?set it — Zero Trust > Access > Service Auth}
       TUNNEL_SERVICE_TOKEN_SECRET: ${CF_ACCESS_CLIENT_SECRET:?set it}
-    # Fixed IP so the agent's extra_hosts can point the gateway hostname here (no network alias — see the dns
-    # note above for why an alias would poison this container's own resolution).
-    networks:
-      hknet:
-        ipv4_address: 10.77.0.10
+    # Publish the local listener on the host loopback so the host-network agent can reach it at 127.0.0.1:9443
+    # (it maps the gateway hostname there via extra_hosts). Loopback-only — nothing else on the LAN can hit it.
+    ports:
+      - "127.0.0.1:9443:9443"
     restart: unless-stopped
 
   agent:
@@ -112,15 +111,15 @@ services:
       - ./ca.pem:/etc/hivekeeper/ca.pem:ro
     depends_on:
       - gateway-tunnel
-    # Only the agent maps the gateway hostname to the sidecar (via the sidecar's fixed IP). Keeping this out of a
-    # shared network alias is what lets the sidecar resolve the SAME name publicly for its Cloudflare egress (see
-    # gateway-tunnel above). The name must equal the gateway certificate's SAN — the agent verifies it
-    # (Java-WebSocket sets endpointIdentificationAlgorithm=HTTPS), which is the whole reason it dials the hostname
-    # rather than an IP.
+    # Host networking so the agent sits directly on the LAN the access points are on: it reaches them natively AND
+    # auto-detects the right subnet for discovery (a bridged container only ever sees its own private subnet, so a
+    # blank-CIDR "auto" discover would scan the wrong range). The gateway uplink goes through the sidecar's
+    # published loopback port: the hostname — which must equal the gateway cert SAN, since the agent verifies it
+    # (Java-WebSocket sets endpointIdentificationAlgorithm=HTTPS) — maps to 127.0.0.1 here, only in the agent's
+    # own /etc/hosts, so the sidecar can still resolve the same name publicly for its egress.
+    network_mode: host
     extra_hosts:
-      - "${HIVEKEEPER_AGENT_DOMAIN:?set it}:10.77.0.10"
-    networks:
-      - hknet
+      - "${HIVEKEEPER_AGENT_DOMAIN:?set it}:127.0.0.1"
     restart: unless-stopped
 
   # Automatic agent updates — OPT-IN. Starts only with `--profile autoupdate`, and even then it updates the
@@ -150,14 +149,6 @@ services:
     volumes:
       - ${CONTAINER_SOCK:-/var/run/docker.sock}:/var/run/docker.sock
     restart: unless-stopped
-
-# A dedicated network with a fixed subnet so the sidecar can hold a stable IP (10.77.0.10) that the agent's
-# extra_hosts points at. The subnet is arbitrary but must not collide with the LAN the APs live on.
-networks:
-  hknet:
-    ipam:
-      config:
-        - subnet: 10.77.0.0/24
 
 volumes:
   agent-data:
