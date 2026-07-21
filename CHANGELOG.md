@@ -1,3 +1,10 @@
+## [0.12.6](https://github.com/ggfto/HiveKeeper/compare/v0.12.5...v0.12.6) (2026-07-21)
+
+
+### Bug Fixes
+
+* **agent-compose:** make the tunnel sidecar work under podman-compose ([86023f9](https://github.com/ggfto/HiveKeeper/commit/86023f9d2001046a7578db626c7abf73c09582a4))
+
 ## [0.12.5](https://github.com/ggfto/HiveKeeper/compare/v0.12.4...v0.12.5) (2026-07-21)
 
 
