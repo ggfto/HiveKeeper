@@ -1,3 +1,10 @@
+## [0.12.5](https://github.com/ggfto/HiveKeeper/compare/v0.12.4...v0.12.5) (2026-07-21)
+
+
+### Bug Fixes
+
+* **web:** import the ui-kit stylesheet into a low-priority cascade layer ([f147639](https://github.com/ggfto/HiveKeeper/commit/f14763995ff2c5d77a922dc567076c0bde7e2368))
+
 ## [0.12.4](https://github.com/ggfto/HiveKeeper/compare/v0.12.3...v0.12.4) (2026-07-21)
 
 
