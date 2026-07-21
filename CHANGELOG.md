@@ -1,3 +1,10 @@
+# [0.14.0](https://github.com/ggfto/HiveKeeper/compare/v0.13.0...v0.14.0) (2026-07-21)
+
+
+### Features
+
+* **enroll:** surface the CA cert and connection URLs in the Add-agent panel ([0ea5289](https://github.com/ggfto/HiveKeeper/commit/0ea5289af7cb43945ca49ab25400c07bfe3a249a))
+
 # [0.13.0](https://github.com/ggfto/HiveKeeper/compare/v0.12.6...v0.13.0) (2026-07-21)
 
 
