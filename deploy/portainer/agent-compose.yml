@@ -19,8 +19,25 @@ services:
   # every handshake and certificate renewal would fail closed.
   gateway-tunnel:
     image: cloudflare/cloudflared:${CLOUDFLARED_VERSION:-latest}
-    command: access tcp --hostname ${HIVEKEEPER_AGENT_DOMAIN:?set it} --url 0.0.0.0:9443
+    # A PUBLIC resolver for THIS container. `access tcp` reaches the Access-fronted app by connecting to
+    # https://<hostname> at the Cloudflare edge, so the sidecar MUST resolve ${HIVEKEEPER_AGENT_DOMAIN} to the
+    # real public (Cloudflare) address. Crucially we do NOT give this container that name as a network alias:
+    # an alias would be written into the sidecar's own /etc/hosts pointing at itself, and /etc/hosts wins over
+    # any resolver — cloudflared would then dial itself on :443 ("connection refused ... originURL=https://…")
+    # forever. Instead the sidecar gets a fixed IP (below) and the AGENT maps the name to that IP via its own
+    # extra_hosts, so only the agent resolves the name to the sidecar; the sidecar resolves it publicly.
+    dns:
+      - 1.1.1.1
+      - 1.0.0.1
+    # cloudflared reads the hostname and local listener from $TUNNEL_SERVICE_HOSTNAME / $TUNNEL_SERVICE_URL, so
+    # we pass them through the environment rather than as `command:` flags. This is not cosmetic: podman-compose
+    # (unlike docker compose) does NOT interpolate ${VARS} inside a `command:` string — the literal
+    # `${HIVEKEEPER_AGENT_DOMAIN}` then reaches cloudflared, which fails argument parsing and prints its help in a
+    # restart loop. `environment:` values ARE interpolated by both engines, so this works on either.
+    command: access tcp
     environment:
+      TUNNEL_SERVICE_HOSTNAME: ${HIVEKEEPER_AGENT_DOMAIN:?set it}
+      TUNNEL_SERVICE_URL: 0.0.0.0:9443
       # `access tcp` is a Zero Trust client, not a plain socket: it authenticates to the Cloudflare edge
       # before the edge will broker the stream to your tunnel. Protect the agent hostname with an Access
       # application whose policy is Action=Service Auth + a service token, and put the token here — without
@@ -30,14 +47,11 @@ services:
       # This is a second, independent credential in front of mTLS rather than a replacement for it.
       TUNNEL_SERVICE_TOKEN_ID: ${CF_ACCESS_CLIENT_ID:?set it — Zero Trust > Access > Service Auth}
       TUNNEL_SERVICE_TOKEN_SECRET: ${CF_ACCESS_CLIENT_SECRET:?set it}
+    # Fixed IP so the agent's extra_hosts can point the gateway hostname here (no network alias — see the dns
+    # note above for why an alias would poison this container's own resolution).
     networks:
-      default:
-        # The alias is what makes the certificate check work. The agent dials the real hostname, Docker's
-        # embedded DNS points it at this sidecar, and the gateway's certificate — whose SAN is that same
-        # hostname — validates. Hostname verification is on (Java-WebSocket sets
-        # endpointIdentificationAlgorithm=HTTPS), so pointing the agent at `localhost` instead would fail.
-        aliases:
-          - ${HIVEKEEPER_AGENT_DOMAIN:?set it}
+      hknet:
+        ipv4_address: 10.77.0.10
     restart: unless-stopped
 
   agent:
@@ -98,6 +112,15 @@ services:
       - ./ca.pem:/etc/hivekeeper/ca.pem:ro
     depends_on:
       - gateway-tunnel
+    # Only the agent maps the gateway hostname to the sidecar (via the sidecar's fixed IP). Keeping this out of a
+    # shared network alias is what lets the sidecar resolve the SAME name publicly for its Cloudflare egress (see
+    # gateway-tunnel above). The name must equal the gateway certificate's SAN — the agent verifies it
+    # (Java-WebSocket sets endpointIdentificationAlgorithm=HTTPS), which is the whole reason it dials the hostname
+    # rather than an IP.
+    extra_hosts:
+      - "${HIVEKEEPER_AGENT_DOMAIN:?set it}:10.77.0.10"
+    networks:
+      - hknet
     restart: unless-stopped
 
   # Automatic agent updates — OPT-IN. Starts only with `--profile autoupdate`, and even then it updates the
@@ -117,13 +140,24 @@ services:
   agent-updater:
     image: containrrr/watchtower:${WATCHTOWER_VERSION:-latest}
     profiles: [autoupdate]
-    command: --label-enable --cleanup --interval ${HIVEKEEPER_UPDATE_INTERVAL_SECONDS:-3600}
+    # The interval rides in the environment (WATCHTOWER_POLL_INTERVAL), not on `command:`, because podman-compose
+    # does not interpolate ${VARS} inside a command string — see the note on gateway-tunnel above.
+    command: --label-enable --cleanup
     environment:
+      WATCHTOWER_POLL_INTERVAL: ${HIVEKEEPER_UPDATE_INTERVAL_SECONDS:-3600}
       # Wait at least as long as the agent's stop grace period, so Watchtower does not SIGKILL mid-drain.
       WATCHTOWER_TIMEOUT: ${HIVEKEEPER_SHUTDOWN_GRACE:-45s}
     volumes:
       - ${CONTAINER_SOCK:-/var/run/docker.sock}:/var/run/docker.sock
     restart: unless-stopped
+
+# A dedicated network with a fixed subnet so the sidecar can hold a stable IP (10.77.0.10) that the agent's
+# extra_hosts points at. The subnet is arbitrary but must not collide with the LAN the APs live on.
+networks:
+  hknet:
+    ipam:
+      config:
+        - subnet: 10.77.0.0/24
 
 volumes:
   agent-data:
