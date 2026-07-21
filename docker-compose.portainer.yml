@@ -123,10 +123,13 @@ services:
   keycloak:
     image: quay.io/keycloak/keycloak:26.0
     # `start`, not `start-dev`: production mode. It runs plain HTTP behind the tunnel, which terminates TLS
-    # at Cloudflare's edge — hence hostname-strict-https=false and proxy-headers. KC_HOSTNAME is set
-    # explicitly rather than inferred, because cloudflared does not send X-Forwarded-Host the way Caddy did
-    # and an inferred issuer that disagrees with the browser's URL fails validation at the gateway.
-    command: ["start", "--optimized=false", "--http-enabled=true", "--hostname-strict-https=false", "--proxy-headers=xforwarded"]
+    # at Cloudflare's edge — hence http-enabled and proxy-headers. KC_HOSTNAME is set to the full https URL
+    # rather than inferred, because cloudflared does not send X-Forwarded-Host the way Caddy did and an
+    # inferred issuer that disagrees with the browser's URL fails validation at the gateway.
+    #
+    # No --hostname-strict-https here: Keycloak 26 uses hostname v2, which REMOVED that flag (start fails with
+    # "Unknown option" and restart-loops). Setting KC_HOSTNAME to an https URL is what v2 wants instead.
+    command: ["start", "--optimized=false", "--http-enabled=true", "--proxy-headers=xforwarded"]
     environment:
       KC_DB: postgres
       KC_DB_URL: jdbc:postgresql://keycloak-db:5432/keycloak
