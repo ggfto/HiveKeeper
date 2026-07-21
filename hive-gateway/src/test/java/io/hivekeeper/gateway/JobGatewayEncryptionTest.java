@@ -95,7 +95,7 @@ class JobGatewayEncryptionTest {
     }
 
     private JobGateway gateway(CapturingJobService store) {
-        return new JobGateway(store, SecretCipher.fromBase64(KEY));
+        return new JobGateway(store, SecretCipher.fromBase64(KEY), org.mockito.Mockito.mock(io.hivekeeper.gateway.tenant.TenantStore.class));
     }
 
     private Command.ConfigureSsid ssidCommand() {

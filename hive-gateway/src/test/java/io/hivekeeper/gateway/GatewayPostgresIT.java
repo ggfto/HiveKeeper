@@ -77,6 +77,8 @@ class GatewayPostgresIT {
     @Autowired
     private TenantStore tenants;
     @Autowired
+    private JobService jobs;
+    @Autowired
     private org.springframework.jdbc.core.JdbcTemplate jdbc;
 
     // -- AccessService: scoped roles under real RLS + the @Transactional tenant-context coupling -----------
@@ -250,6 +252,43 @@ class GatewayPostgresIT {
 
         // Another tenant cannot see this site's agents.
         assertTrue(tenants.agentIdsForSite("globex", site).isEmpty());
+    }
+
+    @Test
+    void reassignMovesUnfinishedJobsToTheStandbyAndReturnsThem() {
+        // The atomic claim behind failover, against real Postgres (UPDATE ... RETURNING and the RLS context).
+        String a = jobs.create("acme", "primary", "idem-a", "configure-ssid", "cipher-a");
+        jobs.markDispatched("acme", a);                                    // now DISPATCHED
+        String b = jobs.create("acme", "primary", "idem-b", "configure-ssid", "cipher-b");  // PENDING
+        jobs.create("acme", "other", "idem-c", "configure-ssid", "cipher-c");   // a different agent, untouched
+
+        List<JobService.JobRow> moved = jobs.reassign("acme", "primary", "standby");
+
+        assertEquals(2, moved.size(), "both the dispatched and the pending job move");
+        assertTrue(moved.stream().allMatch(r -> "standby".equals(r.agentId()) && "PENDING".equals(r.status())),
+                "reassigned to the standby and reset to PENDING for a clean re-dispatch");
+        assertEquals(2, jobs.pendingFor("acme", "standby").size());
+        assertTrue(jobs.pendingFor("acme", "primary").isEmpty(), "the dead primary holds nothing now");
+        assertEquals(1, jobs.pendingFor("acme", "other").size(), "another agent's job is not touched");
+
+        // Idempotent: a second reassign of the same (now-empty) source moves nothing.
+        assertTrue(jobs.reassign("acme", "primary", "standby").isEmpty());
+    }
+
+    @Test
+    void adoptingTheSameSerialTwiceUpdatesOneRowRatherThanDuplicating() {
+        // Re-adopting an AP (e.g. from a backup agent on the same site) must converge to one device row.
+        String first = fleet.registerDevice("acme", "SER-DUP", "AP230", "lab", "10.9.0.1",
+                "site-acme-default", "agent-a", "cred-a");
+        String again = fleet.registerDevice("acme", "SER-DUP", "AP410C", "lab-2", "10.9.0.2",
+                "site-acme-default", "agent-b", null);
+
+        assertEquals(first, again, "the same device id comes back — no duplicate row");
+        assertEquals(1, fleet.listDevices("acme").stream().filter(d -> "SER-DUP".equals(d.serial())).count());
+        FleetService.Device d = fleet.listDevices("acme").stream()
+                .filter(x -> "SER-DUP".equals(x.serial())).findFirst().orElseThrow();
+        assertEquals("agent-b", d.agentId(), "the row now reflects the re-adopting agent");
+        assertEquals("cred-a", d.credRef(), "a re-adopt that supplies no credential keeps the existing one");
     }
 
     private static Set<String> serials(List<FleetService.Device> devices) {

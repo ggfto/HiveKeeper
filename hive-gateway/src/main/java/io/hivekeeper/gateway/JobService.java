@@ -64,6 +64,25 @@ public class JobService {
                 + "order by created_at", ROW, agentId);
     }
 
+    /**
+     * Moves every unfinished job addressed to {@code fromAgent} over to {@code toAgent} and returns the rows
+     * moved, so a standby can pick up a dead primary's work. Status resets to {@code PENDING} so redelivery
+     * re-dispatches cleanly.
+     *
+     * <p>The {@code where agent_id = fromAgent} guard makes it a safe claim: if two calls race (or repeat),
+     * only the first moves the rows — the second matches nothing, because {@code agent_id} is already
+     * {@code toAgent}. Same idiom as the one-time enrollment consume.
+     */
+    @Transactional
+    public List<JobRow> reassign(String tenantId, String fromAgent, String toAgent) {
+        setTenant(tenantId);
+        return jdbc.query("update job set agent_id = ?, status = 'PENDING', updated_at = now() "
+                        + "where agent_id = ? and status in ('PENDING', 'DISPATCHED') "
+                        + "returning job_id, tenant_id, agent_id, idempotency_key, type, command_json, status, "
+                        + "result_json, error",
+                ROW, toAgent, fromAgent);
+    }
+
     @Transactional(readOnly = true)
     public Optional<JobRow> get(String tenantId, String jobId) {
         setTenant(tenantId);

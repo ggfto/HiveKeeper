@@ -11,6 +11,7 @@ import io.hivekeeper.wire.JsonCodec;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.context.annotation.Profile;
 import org.springframework.stereotype.Component;
+import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
@@ -40,12 +41,14 @@ public class JobGateway {
 
     private final JobService jobs;
     private final SecretCipher cipher;
+    private final io.hivekeeper.gateway.tenant.TenantStore tenants;
     private final JsonCodec codec = new JsonCodec();
     private final Map<String, AgentConn> connected = new ConcurrentHashMap<>();
 
-    public JobGateway(JobService jobs, SecretCipher cipher) {
+    public JobGateway(JobService jobs, SecretCipher cipher, io.hivekeeper.gateway.tenant.TenantStore tenants) {
         this.jobs = jobs;
         this.cipher = cipher;
+        this.tenants = tenants;
     }
 
     /** Submit a durable job. Persisted first; dispatched if the agent is connected, else it waits for
@@ -93,6 +96,10 @@ public class JobGateway {
 
     public void onAgentConnected(String tenantId, String agentId, FrameChannel channel) {
         connected.put(key(tenantId, agentId), new AgentConn(tenantId, agentId, channel));
+        // If this agent is now the primary of its site, adopt any unfinished jobs its offline peers were
+        // holding — the case where the primary was already down when the standby came up. The redelivery
+        // below then sends them along with this agent's own pending jobs, in one pass.
+        claimOrphanedJobsIfPrimary(tenantId, agentId);
         int redelivered = 0;
         for (JobRow row : jobs.pendingFor(tenantId, agentId)) {
             try {
@@ -114,6 +121,68 @@ public class JobGateway {
 
     public void onAgentDisconnected(String tenantId, String agentId) {
         connected.remove(key(tenantId, agentId));
+        // The primary just dropped. If a standby on the same site is up, move the dropped agent's unfinished
+        // jobs to it and dispatch them now — so a config or backup queued for the primary is not stranded
+        // until it returns. Nothing to do for a site with only this one agent (the common case).
+        String siteId = tenants.agentSiteId(agentId).orElse(null);
+        currentPrimary(tenantId, siteId).filter(newPrimary -> !newPrimary.equals(agentId)).ifPresent(newPrimary -> {
+            List<JobRow> moved = jobs.reassign(tenantId, agentId, newPrimary);
+            AgentConn conn = connected.get(key(tenantId, newPrimary));
+            if (conn == null) {
+                return;   // the new primary vanished between the check and here; its own reconnect will claim
+            }
+            int sent = 0;
+            for (JobRow row : moved) {
+                if (redeliver(conn, row)) {
+                    sent++;
+                }
+            }
+            if (sent > 0) {
+                log.info("failed over {} job(s) from {} to standby {}", sent, agentId, newPrimary);
+            }
+        });
+    }
+
+    /** When {@code agentId} is the current primary of its site, claim its offline peers' unfinished jobs. */
+    private void claimOrphanedJobsIfPrimary(String tenantId, String agentId) {
+        String siteId = tenants.agentSiteId(agentId).orElse(null);
+        if (siteId == null || currentPrimary(tenantId, siteId).filter(agentId::equals).isEmpty()) {
+            return;
+        }
+        for (String peer : tenants.agentIdsForSite(tenantId, siteId)) {
+            if (!peer.equals(agentId) && !connected.containsKey(key(tenantId, peer))) {
+                List<JobRow> moved = jobs.reassign(tenantId, peer, agentId);
+                if (!moved.isEmpty()) {
+                    log.info("primary {} claimed {} orphaned job(s) from offline {}", agentId, moved.size(), peer);
+                }
+            }
+        }
+    }
+
+    /**
+     * The agent that should serve a site now: the first of its enrolled agents that is currently connected.
+     * Computed over this gateway's own connected map (the same one it dispatches through) so the choice and
+     * the ability to send it are always consistent.
+     */
+    private Optional<String> currentPrimary(String tenantId, String siteId) {
+        if (siteId == null) {
+            return Optional.empty();
+        }
+        return tenants.agentIdsForSite(tenantId, siteId).stream()
+                .filter(a -> connected.containsKey(key(tenantId, a)))
+                .findFirst();
+    }
+
+    /** Sends one stored job to a connected agent; returns false (and logs) if its command cannot be decrypted. */
+    private boolean redeliver(AgentConn conn, JobRow row) {
+        try {
+            Command command = codec.fromJson(cipher.decrypt(row.commandJson()), Command.class);
+            send(conn, row.jobId(), row.idempotencyKey(), command);
+            return true;
+        } catch (RuntimeException e) {
+            log.error("skipping redelivery of job {} to {}: {}", row.jobId(), conn.agentId(), e.getMessage());
+            return false;
+        }
     }
 
     /** Route a terminal frame from an agent to the job record. Unknown job ids (e.g. synchronous jobs

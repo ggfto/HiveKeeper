@@ -160,19 +160,25 @@ public class InMemoryFleetService implements FleetService {
     public synchronized String registerDevice(String tenantId, String serial, String model, String label,
                                               String mgmtIp, String siteId, String agentId, String credRef) {
         Org org = org(tenantId);
-        if (serial != null && org.devices.values().stream().anyMatch(d -> serial.equals(d.serial))) {
-            throw new DuplicateKeyException("a device with serial '" + serial + "' is already registered");
+        // Idempotent on serial, mirroring the Postgres upsert: re-adopting the same AP (e.g. from a backup
+        // agent) updates the existing row instead of creating a duplicate. The existing credential is kept
+        // when the re-adopt supplies none.
+        DeviceRow row = serial == null ? null
+                : org.devices.values().stream().filter(d -> serial.equals(d.serial)).findFirst().orElse(null);
+        if (row == null) {
+            row = new DeviceRow();
+            row.deviceId = "dev-" + UUID.randomUUID();
+            row.serial = serial;
+            org.devices.put(row.deviceId, row);
+        } else if (credRef == null) {
+            credRef = row.credRef;   // keep the existing credential on a plain re-adopt
         }
-        DeviceRow row = new DeviceRow();
-        row.deviceId = "dev-" + UUID.randomUUID();
-        row.serial = serial;
         row.model = model;
         row.label = label;
         row.mgmtIp = mgmtIp;
         row.siteId = siteId;
         row.agentId = agentId;
         row.credRef = credRef;
-        org.devices.put(row.deviceId, row);
         return row.deviceId;
     }
 

@@ -152,10 +152,19 @@ public class PostgresFleetService implements FleetService {
                                  String siteId, String agentId, String credRef) {
         setTenant(tenantId);
         String id = "dev-" + UUID.randomUUID();
-        jdbc.update("insert into device (device_id, tenant_id, site_id, agent_id, serial, model, label, "
-                        + "mgmt_ip, cred_ref) values (?, ?, ?, ?, ?, ?, ?, ?, ?)",
-                id, tenantId, siteId, agentId, serial, model, label, mgmtIp, credRef);
-        return id;
+        // Idempotent on the AP's serial (unique per org): adopting the same access point again — including
+        // from a second, backup agent on the same site — updates the one row rather than failing on the
+        // unique constraint or creating a duplicate that would then be dispatched to twice. The existing
+        // credential is kept when the re-adopt does not supply one, so a plain re-adopt never wipes it.
+        return jdbc.queryForObject(
+                "insert into device (device_id, tenant_id, site_id, agent_id, serial, model, label, "
+                        + "mgmt_ip, cred_ref) values (?, ?, ?, ?, ?, ?, ?, ?, ?) "
+                        + "on conflict (tenant_id, serial) do update set "
+                        + "site_id = excluded.site_id, agent_id = excluded.agent_id, model = excluded.model, "
+                        + "label = excluded.label, mgmt_ip = excluded.mgmt_ip, "
+                        + "cred_ref = coalesce(excluded.cred_ref, device.cred_ref) "
+                        + "returning device_id",
+                String.class, id, tenantId, siteId, agentId, serial, model, label, mgmtIp, credRef);
     }
 
     @Override
