@@ -1,3 +1,10 @@
+# [0.12.0](https://github.com/ggfto/HiveKeeper/compare/v0.11.0...v0.12.0) (2026-07-21)
+
+
+### Features
+
+* capture an adoption baseline, preload the RF forms, and refresh the docs ([3dfb9ee](https://github.com/ggfto/HiveKeeper/commit/3dfb9ee4605289aad76e96ca83cdaf3d1cfb5044))
+
 # [0.11.0](https://github.com/ggfto/HiveKeeper/compare/v0.10.0...v0.11.0) (2026-07-21)
 
 
