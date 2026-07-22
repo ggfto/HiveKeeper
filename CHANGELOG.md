@@ -1,3 +1,17 @@
+# [0.15.0](https://github.com/ggfto/HiveKeeper/compare/v0.14.0...v0.15.0) (2026-07-22)
+
+
+### Bug Fixes
+
+* **deps:** bump postgresql JDBC to 42.7.12 (CVE-2026-54291) ([b46b695](https://github.com/ggfto/HiveKeeper/commit/b46b695426de00969fe4206192a08ecc40fe3492))
+* **docs:** describe the multi-agent device reachability model ([8551da9](https://github.com/ggfto/HiveKeeper/commit/8551da92e72067d28de716cbbe86c349a9024882))
+
+
+### Features
+
+* **fleet:** model agents as first-class with M:N device reachability ([941b840](https://github.com/ggfto/HiveKeeper/commit/941b840ee0642ca10df83e10028f89e74c0fbc3a))
+* **web:** surface multi-agent device reachability in the console ([ae7ed5c](https://github.com/ggfto/HiveKeeper/commit/ae7ed5cdf8c5e548626e4b14d1d1f126e4c3cef0))
+
 # [0.14.0](https://github.com/ggfto/HiveKeeper/compare/v0.13.0...v0.14.0) (2026-07-21)
 
 
