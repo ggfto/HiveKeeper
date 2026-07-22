@@ -8,7 +8,7 @@ describe('DevicesPage', () => {
     const gateway = fakeGateway({
       devices: () =>
         Promise.resolve([
-          { deviceId: 'd1', label: 'lab-ap', serial: 'SER123', model: 'AP230', mgmtIp: '10.0.0.1', siteId: 's1', agentId: 'lab-agent', groups: [] },
+          { deviceId: 'd1', label: 'lab-ap', serial: 'SER123', model: 'AP230', mgmtIp: '10.0.0.1', siteId: 's1', reachableAgents: ['lab-agent'], groups: [] },
         ]),
       groups: () => Promise.resolve([]),
       sites: () => Promise.resolve([{ siteId: 's1', name: 'HQ' }]),
@@ -23,8 +23,8 @@ describe('DevicesPage', () => {
     const gateway = fakeGateway({
       devices: () =>
         Promise.resolve([
-          { deviceId: 'd1', serial: 'SER-A', agentId: 'a1', groups: [] },
-          { deviceId: 'd2', serial: 'SER-B', agentId: 'a2', groups: [] },
+          { deviceId: 'd1', serial: 'SER-A', reachableAgents: ['a1'], groups: [] },
+          { deviceId: 'd2', serial: 'SER-B', reachableAgents: ['a2'], groups: [] },
         ]),
       agents: () => Promise.resolve(['a1', 'a2']),
     })

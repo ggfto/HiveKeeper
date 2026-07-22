@@ -41,9 +41,11 @@ export function DevicesPage() {
   const connected = useMemo(() => new Set(agents), [agents])
   const rows = useMemo(() => {
     if (!Array.isArray(devices)) return devices
+    // A device is online when ANY of its reachable agents is connected; the agent filter matches membership in
+    // the reachable set (a device driven by several agents shows under each of them).
     return devices
-      .filter((d) => !agentFilter || d.agentId === agentFilter)
-      .map((d) => ({ ...d, online: connected.has(d.agentId) }))
+      .filter((d) => !agentFilter || (d.reachableAgents || []).includes(agentFilter))
+      .map((d) => ({ ...d, online: (d.reachableAgents || []).some((a) => connected.has(a)) }))
   }, [devices, agentFilter, connected])
 
   const count = Array.isArray(rows) ? rows.length : undefined

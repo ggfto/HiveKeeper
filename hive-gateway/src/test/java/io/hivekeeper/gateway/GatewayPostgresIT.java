@@ -235,23 +235,30 @@ class GatewayPostgresIT {
     }
 
     @Test
-    void agentIdsForSiteOrdersThemAndExcludesRevoked() {
-        // Two agents on one site are the active/standby pair. The query must return them in a stable order
-        // (so the primary is deterministic) and must never offer a revoked agent as a candidate.
-        String site = fleet.createSite("acme", "Two-agent site");
-        fleet.createEnrollment("acme", "site-x-02", site);
-        fleet.createEnrollment("acme", "site-x-01", site);   // enrolled second, but sorts first
-        fleet.createEnrollment("acme", "site-x-03", site);
+    void agentIdsForDeviceOrdersThemAndExcludesRevoked() {
+        // Several agents reach one AP (an active/standby pair, and more). The reachability query must return
+        // them in a stable order (so the serving agent is deterministic) and never offer a revoked candidate.
+        String site = fleet.createSite("acme", "Multi-agent site");
+        fleet.createEnrollment("acme", "ma-x-02", site);
+        fleet.createEnrollment("acme", "ma-x-01", site);   // enrolled second, but sorts first
+        fleet.createEnrollment("acme", "ma-x-03", site);
+        String dev = fleet.registerDevice("acme", "SER-MA", "AP230", "ma", "10.5.0.1", site, "ma-x-01", null);
+        fleet.addDeviceAgent("acme", dev, "ma-x-02");
+        fleet.addDeviceAgent("acme", dev, "ma-x-03");
 
-        assertEquals(List.of("site-x-01", "site-x-02", "site-x-03"),
-                tenants.agentIdsForSite("acme", site), "ordered by agent id, so the first is the primary");
+        assertEquals(List.of("ma-x-01", "ma-x-02", "ma-x-03"),
+                fleet.agentIdsForDevice("acme", dev), "ordered by agent id, so the first is the serving agent");
 
-        tenants.revokeAgent("acme", "site-x-01", "decommissioned");
-        assertEquals(List.of("site-x-02", "site-x-03"), tenants.agentIdsForSite("acme", site),
-                "a revoked agent is no longer a candidate — the standby becomes primary");
+        tenants.revokeAgent("acme", "ma-x-01", "decommissioned");
+        assertEquals(List.of("ma-x-02", "ma-x-03"), fleet.agentIdsForDevice("acme", dev),
+                "a revoked agent is no longer a candidate — the standby serves");
 
-        // Another tenant cannot see this site's agents.
-        assertTrue(tenants.agentIdsForSite("globex", site).isEmpty());
+        // Revoke keeps the reachability rows: the full set (revoked included) is still visible to the console.
+        assertEquals(List.of("ma-x-01", "ma-x-02", "ma-x-03"), fleet.reachableAgents("acme", dev),
+                "revoke filters candidacy but does not delete the device_agent rows");
+
+        // Another tenant cannot see this device's reachable agents (RLS on device_agent).
+        assertTrue(fleet.agentIdsForDevice("globex", dev).isEmpty());
     }
 
     @Test
@@ -276,8 +283,12 @@ class GatewayPostgresIT {
     }
 
     @Test
-    void adoptingTheSameSerialTwiceUpdatesOneRowRatherThanDuplicating() {
-        // Re-adopting an AP (e.g. from a backup agent on the same site) must converge to one device row.
+    void adoptingTheSameSerialTwiceConvergesOnOneRowReachableByBothAgents() {
+        // Re-adopting an AP from a backup agent must converge to one device row, reachable by BOTH agents
+        // (both can drive it) rather than an overwritten single pin. The agents must exist first — reachability
+        // points only at real, enrolled agents (the device_agent -> agent composite FK).
+        fleet.createEnrollment("acme", "agent-a", "site-acme-default");
+        fleet.createEnrollment("acme", "agent-b", "site-acme-default");
         String first = fleet.registerDevice("acme", "SER-DUP", "AP230", "lab", "10.9.0.1",
                 "site-acme-default", "agent-a", "cred-a");
         String again = fleet.registerDevice("acme", "SER-DUP", "AP410C", "lab-2", "10.9.0.2",
@@ -287,7 +298,7 @@ class GatewayPostgresIT {
         assertEquals(1, fleet.listDevices("acme").stream().filter(d -> "SER-DUP".equals(d.serial())).count());
         FleetService.Device d = fleet.listDevices("acme").stream()
                 .filter(x -> "SER-DUP".equals(x.serial())).findFirst().orElseThrow();
-        assertEquals("agent-b", d.agentId(), "the row now reflects the re-adopting agent");
+        assertEquals(List.of("agent-a", "agent-b"), d.reachableAgents(), "both agents now reach the one device");
         assertEquals("cred-a", d.credRef(), "a re-adopt that supplies no credential keeps the existing one");
     }
 

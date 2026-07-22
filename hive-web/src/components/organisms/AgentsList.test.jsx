@@ -14,16 +14,20 @@ describe('AgentsList', () => {
     expect(screen.queryByText(/unreachable/i)).not.toBeInTheDocument()
   })
 
-  it('shows an empty state when no agents are connected', () => {
+  it('shows an empty state when no agents are enrolled', () => {
     render(<AgentsList agents={[]} />)
-    expect(screen.getByText(/no agents connected/i)).toBeInTheDocument()
+    expect(screen.getByText(/no agents enrolled/i)).toBeInTheDocument()
   })
 
   it('shows each agent with its device count + site, and links to its devices', () => {
     const onView = vi.fn()
     const onDiscover = vi.fn()
     render(
-      <AgentsList agents={[{ id: 'lab-agent', deviceCount: 2, site: 'HQ' }]} onView={onView} onDiscover={onDiscover} />,
+      <AgentsList
+        agents={[{ id: 'lab-agent', online: true, deviceCount: 2, site: 'HQ' }]}
+        onView={onView}
+        onDiscover={onDiscover}
+      />,
     )
     expect(screen.getByText('lab-agent')).toBeInTheDocument()
     expect(screen.getByText(/2 devices/)).toBeInTheDocument()

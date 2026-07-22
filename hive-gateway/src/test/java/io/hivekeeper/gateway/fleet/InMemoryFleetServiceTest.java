@@ -20,7 +20,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  */
 class InMemoryFleetServiceTest {
 
-    private final InMemoryFleetService fleet = new InMemoryFleetService();
+    private final InMemoryFleetService fleet = new InMemoryFleetService(false, false);
 
     @Test
     void createsListsRenamesAndDeletesSites() {
@@ -86,17 +86,17 @@ class InMemoryFleetServiceTest {
     }
 
     @Test
-    void reAdoptingASerialUpdatesTheOneRowRatherThanDuplicating() {
-        // Re-adopting an AP (e.g. from a backup agent on the same site) converges to one device row — the
-        // same id comes back, the row reflects the re-adopting agent, and a re-adopt with no credential
-        // keeps the existing one.
+    void reAdoptingASerialUpdatesTheOneRowAndAddsBothAgentsToTheReachableSet() {
+        // Re-adopting an AP from a second, backup agent converges to one device row — the same id comes back —
+        // and ADDS that agent to the reachability set (both can drive it) rather than displacing the first. A
+        // re-adopt with no credential keeps the existing one.
         String first = fleet.registerDevice("acme", "SER-1", "AP230", "lab", "10.0.0.1", "site-1", "agent-a", "cred-a");
         String again = fleet.registerDevice("acme", "SER-1", "AP410C", "lab-2", "10.0.0.2", "site-1", "agent-b", null);
 
         assertEquals(first, again);
         assertEquals(1, fleet.listDevices("acme").stream().filter(d -> "SER-1".equals(d.serial())).count());
         var d = fleet.listDevices("acme").stream().filter(x -> "SER-1".equals(x.serial())).findFirst().orElseThrow();
-        assertEquals("agent-b", d.agentId());
+        assertEquals(List.of("agent-a", "agent-b"), d.reachableAgents());
         assertEquals("cred-a", d.credRef());
     }
 

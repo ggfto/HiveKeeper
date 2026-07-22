@@ -6,9 +6,9 @@ const sites = [
   { siteId: 's2', name: 'Branch' },
 ]
 const devices = [
-  { deviceId: 'd1', siteId: 's1', agentId: 'a1', serial: 'SER-1', model: 'AP230', label: 'Lobby' },
-  { deviceId: 'd2', siteId: 's1', agentId: 'a1', serial: 'SER-2', model: 'AP230', label: null },
-  { deviceId: 'd3', siteId: null, agentId: 'a2', serial: 'SER-3', model: 'AP250', label: 'Loose' },
+  { deviceId: 'd1', siteId: 's1', reachableAgents: ['a1'], serial: 'SER-1', model: 'AP230', label: 'Lobby' },
+  { deviceId: 'd2', siteId: 's1', reachableAgents: ['a1'], serial: 'SER-2', model: 'AP230', label: null },
+  { deviceId: 'd3', siteId: null, reachableAgents: ['a2'], serial: 'SER-3', model: 'AP250', label: 'Loose' },
 ]
 const statuses = {
   d1: { online: true, clientCount: 4, hive: 'hk-mesh', cloud: { managed: false } },
@@ -60,7 +60,7 @@ describe('buildTopology', () => {
 
 describe('buildTopology with clients', () => {
   const oneSite = [{ siteId: 's1', name: 'HQ' }]
-  const oneAp = [{ deviceId: 'd1', siteId: 's1', agentId: 'a1', serial: 'SER-1', model: 'AP230', label: 'AP' }]
+  const oneAp = [{ deviceId: 'd1', siteId: 's1', reachableAgents: ['a1'], serial: 'SER-1', model: 'AP230', label: 'AP' }]
 
   it('emits a client node + edge per station, strongest signal first', () => {
     const statuses = {
@@ -109,9 +109,9 @@ describe('buildTopology with clients', () => {
 describe('buildTopology hive grouping', () => {
   const oneSite = [{ siteId: 's1', name: 'HQ' }]
   const threeAps = [
-    { deviceId: 'd1', siteId: 's1', agentId: 'a1', label: 'A' },
-    { deviceId: 'd2', siteId: 's1', agentId: 'a1', label: 'B' },
-    { deviceId: 'd3', siteId: 's1', agentId: 'a1', label: 'C' },
+    { deviceId: 'd1', siteId: 's1', reachableAgents: ['a1'], label: 'A' },
+    { deviceId: 'd2', siteId: 's1', reachableAgents: ['a1'], label: 'B' },
+    { deviceId: 'd3', siteId: 's1', reachableAgents: ['a1'], label: 'C' },
   ]
 
   it('draws a hive box behind a cluster of 2+ same-hive APs (not for a lone AP)', () => {

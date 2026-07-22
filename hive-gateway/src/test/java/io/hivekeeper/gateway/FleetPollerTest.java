@@ -39,14 +39,15 @@ class FleetPollerTest {
     private FleetPoller poller;
 
     private static final FleetService.Device DEV = new FleetService.Device(
-            "d1", "site-1", "lab-agent", "SER-A", "AP230", "Lobby AP", "10.0.0.1", "cred-x", List.of());
+            "d1", "site-1", "SER-A", "AP230", "Lobby AP", "10.0.0.1", "cred-x", List.of(), List.of("lab-agent"));
 
     @BeforeEach
     void setup() {
-        poller = new FleetPoller(tenants, fleet, registry, alerts, notifier, new SitePrimary(registry, tenants));
+        poller = new FleetPoller(tenants, fleet, registry, alerts, notifier, new SitePrimary(registry, fleet));
         // a tenant with one enabled webhook channel and the poller on
         alerts.addChannel("acme", "webhook", "https://hook", "warning");
         when(fleet.devicesFor("acme", null, null)).thenReturn(List.of(DEV));
+        when(fleet.agentIdsForDevice("acme", "d1")).thenReturn(List.of("lab-agent"));   // its one reachable agent
     }
 
     private static Result.Inventory inventoryWith(int stations) {
@@ -114,7 +115,7 @@ class FleetPollerTest {
     @Test
     void skipsEntirelyWhenThereAreNoEnabledChannels() {
         InMemoryAlertService empty = new InMemoryAlertService();   // no channels
-        FleetPoller p = new FleetPoller(tenants, fleet, registry, empty, notifier, new SitePrimary(registry, tenants));
+        FleetPoller p = new FleetPoller(tenants, fleet, registry, empty, notifier, new SitePrimary(registry, fleet));
         p.scanTenant("acme");
         verify(fleet, never()).devicesFor(any(), any(), any());   // never touched the fleet
         verify(notifier, never()).notify(any(), any());

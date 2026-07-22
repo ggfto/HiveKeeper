@@ -30,11 +30,14 @@ export function MapPage() {
       gateway.devices().catch(() => []),
     ])
     const list = Array.isArray(devices) ? devices : []
+    // Inventory each AP through its serving agent — the first reachable agent that is connected.
+    const connected = new Set(Array.isArray(agents) ? agents : [])
+    const serving = (d) => (d.reachableAgents || []).find((a) => connected.has(a))
     const entries = await Promise.all(
       list.map((d) =>
-        d.agentId && d.mgmtIp
+        serving(d) && d.mgmtIp
           ? gateway
-              .inventory(d.agentId, d.mgmtIp)
+              .inventory(serving(d), d.mgmtIp)
               .then((r) => {
                 const dev = r?.device || {}
                 const stations = dev.stations || []

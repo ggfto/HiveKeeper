@@ -1,6 +1,7 @@
 package io.hivekeeper.gateway.fleet;
 
 import io.hivekeeper.gateway.access.ResourceScope;
+import java.time.Instant;
 import java.util.List;
 import java.util.Optional;
 
@@ -20,8 +21,16 @@ public interface FleetService {
     record Group(String groupId, String siteId, String name) {
     }
 
-    record Device(String deviceId, String siteId, String agentId, String serial, String model,
-                  String label, String mgmtIp, String credRef, List<String> groups) {
+    /** A managed device. {@code reachableAgents} is the set of agents that can drive it (its {@code
+     *  device_agent} rows), sorted by agent id — the first connected one is the deterministic serving agent
+     *  for unattended work. Empty means no agent can reach it (unmanaged / offline-only). */
+    record Device(String deviceId, String siteId, String serial, String model,
+                  String label, String mgmtIp, String credRef, List<String> groups, List<String> reachableAgents) {
+    }
+
+    /** An agent's durable identity (the {@code agent} table), independent of whether it is currently
+     *  connected. {@code lastSeen} is null until the agent has dialed in at least once. */
+    record AgentSummary(String agentId, String name, String siteId, Instant lastSeen) {
     }
 
     // -- sites ------------------------------------------------------------------
@@ -50,14 +59,41 @@ public interface FleetService {
 
     void deleteGroup(String tenantId, String groupId);
 
-    // -- agent enrollments ------------------------------------------------------
+    // -- agents + enrollments ---------------------------------------------------
 
+    /** Register a new agent: creates its durable {@code agent} identity AND its one-time enrollment token
+     *  (returned). The two are written together so the identity always exists before anything references it. */
     String createEnrollment(String tenantId, String agentId, String siteId);
+
+    /** Every agent enrolled in the org, by durable identity (connected or not), ordered by agent id. */
+    List<AgentSummary> listAgents(String tenantId);
+
+    /** The agents that can reach a device (its reachability set), ordered by agent id and excluding revoked
+     *  ones — so the first that is also connected is the deterministic serving agent. */
+    List<String> agentIdsForDevice(String tenantId, String deviceId);
+
+    /** Agents that co-reach at least one device with {@code agentId} (its active/standby peers), ordered by
+     *  agent id and excluding revoked ones — used to fail a dropped agent's jobs over to a peer. */
+    List<String> reachablePeers(String tenantId, String agentId);
+
+    /** The reachability set of a single device, ordered by agent id (revoked included — the console shows all
+     *  links and marks state separately). */
+    List<String> reachableAgents(String tenantId, String deviceId);
+
+    /** Add an agent to a device's reachability set (idempotent). */
+    void addDeviceAgent(String tenantId, String deviceId, String agentId);
+
+    /** Remove an agent from a device's reachability set. */
+    void removeDeviceAgent(String tenantId, String deviceId, String agentId);
 
     // -- devices ----------------------------------------------------------------
 
     List<Device> listDevices(String tenantId);
 
+    /** Upsert a device (idempotent on serial) and, when {@code agentId} is non-null, add that agent to its
+     *  reachability set — so a second agent adopting the same AP extends the set instead of overwriting a
+     *  single pin. The device's logical site is set on first registration and preserved on re-adopt (a backup
+     *  agent does not relocate it). Returns the (stable) device id. */
     String registerDevice(String tenantId, String serial, String model, String label, String mgmtIp,
                           String siteId, String agentId, String credRef);
 

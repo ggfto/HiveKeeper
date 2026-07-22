@@ -65,6 +65,9 @@ export function createGateway({ getAuth = () => ({}), fetchImpl = fetch, baseUrl
     removeMember: (userId) => req(`/api/members/${userId}`, { method: 'DELETE' }),
     // fleet structure
     agents: () => req('/api/agents'),
+    // every enrolled agent by durable identity (connected or not) — the source for the agent list; `agents`
+    // above stays the currently-connected set used to compute online badges.
+    agentsAll: () => req('/api/agents/all'),
     sites: () => req('/api/sites'),
     groups: () => req('/api/groups'),
     devices: () => req('/api/devices'),
@@ -79,6 +82,11 @@ export function createGateway({ getAuth = () => ({}), fetchImpl = fetch, baseUrl
     tagDevice: (deviceId, groupId) => req(`/api/devices/${deviceId}/groups`, { method: 'POST', body: { groupId } }),
     untagDevice: (deviceId, groupId) => req(`/api/devices/${deviceId}/groups/${groupId}`, { method: 'DELETE' }),
     updateDevice: (deviceId, body) => req(`/api/devices/${deviceId}`, { method: 'PATCH', body }),
+    // device reachability: which agents can drive this device. Adopting adds one; the operator can also
+    // add/remove agents by hand so a second agent can serve the same AP (active/standby, load, migration).
+    deviceAgents: (deviceId) => req(`/api/devices/${deviceId}/agents`),
+    addDeviceAgent: (deviceId, agentId) => req(`/api/devices/${deviceId}/agents`, { method: 'POST', body: { agentId } }),
+    removeDeviceAgent: (deviceId, agentId) => req(`/api/devices/${deviceId}/agents/${agentId}`, { method: 'DELETE' }),
     // agent operations (the cloud sends intent only; the agent holds credentials)
     agentOp: (agentId, op, body = {}) => req(`/api/agents/${agentId}/${op}`, { method: 'POST', body }),
     inventory: (agentId, host, port = 22) => req(`/api/agents/${agentId}/inventory`, { method: 'POST', body: { host, port } }),

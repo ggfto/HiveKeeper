@@ -5,6 +5,7 @@ import io.hivekeeper.core.api.Result;
 import io.hivekeeper.gateway.JobService.JobRow;
 import io.hivekeeper.core.crypto.SecretCipher;
 import io.hivekeeper.core.crypto.Secrets;
+import io.hivekeeper.gateway.fleet.FleetService;
 import io.hivekeeper.protocol.Frame;
 import io.hivekeeper.protocol.FrameChannel;
 import io.hivekeeper.wire.JsonCodec;
@@ -14,6 +15,8 @@ import org.springframework.stereotype.Component;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.SortedSet;
+import java.util.TreeSet;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 
@@ -41,14 +44,14 @@ public class JobGateway {
 
     private final JobService jobs;
     private final SecretCipher cipher;
-    private final io.hivekeeper.gateway.tenant.TenantStore tenants;
+    private final FleetService fleet;
     private final JsonCodec codec = new JsonCodec();
     private final Map<String, AgentConn> connected = new ConcurrentHashMap<>();
 
-    public JobGateway(JobService jobs, SecretCipher cipher, io.hivekeeper.gateway.tenant.TenantStore tenants) {
+    public JobGateway(JobService jobs, SecretCipher cipher, FleetService fleet) {
         this.jobs = jobs;
         this.cipher = cipher;
-        this.tenants = tenants;
+        this.fleet = fleet;
     }
 
     /** Submit a durable job. Persisted first; dispatched if the agent is connected, else it waits for
@@ -96,10 +99,10 @@ public class JobGateway {
 
     public void onAgentConnected(String tenantId, String agentId, FrameChannel channel) {
         connected.put(key(tenantId, agentId), new AgentConn(tenantId, agentId, channel));
-        // If this agent is now the primary of its site, adopt any unfinished jobs its offline peers were
-        // holding — the case where the primary was already down when the standby came up. The redelivery
-        // below then sends them along with this agent's own pending jobs, in one pass.
-        claimOrphanedJobsIfPrimary(tenantId, agentId);
+        // If this agent is now the serving agent among its reachable peers, adopt any unfinished jobs its
+        // offline peers were holding — the case where the serving agent was already down when this one came
+        // up. The redelivery below then sends them along with this agent's own pending jobs, in one pass.
+        claimOrphanedJobsIfServing(tenantId, agentId);
         int redelivered = 0;
         for (JobRow row : jobs.pendingFor(tenantId, agentId)) {
             try {
@@ -121,15 +124,14 @@ public class JobGateway {
 
     public void onAgentDisconnected(String tenantId, String agentId) {
         connected.remove(key(tenantId, agentId));
-        // The primary just dropped. If a standby on the same site is up, move the dropped agent's unfinished
-        // jobs to it and dispatch them now — so a config or backup queued for the primary is not stranded
-        // until it returns. Nothing to do for a site with only this one agent (the common case).
-        String siteId = tenants.agentSiteId(agentId).orElse(null);
-        currentPrimary(tenantId, siteId).filter(newPrimary -> !newPrimary.equals(agentId)).ifPresent(newPrimary -> {
-            List<JobRow> moved = jobs.reassign(tenantId, agentId, newPrimary);
-            AgentConn conn = connected.get(key(tenantId, newPrimary));
+        // The serving agent just dropped. If a reachable peer (one that shares a device with it) is up, move
+        // the dropped agent's unfinished jobs to it and dispatch them now — so a config or backup queued for
+        // it is not stranded until it returns. Nothing to do when no peer shares its devices (the common case).
+        currentServingPeer(tenantId, agentId).filter(newServer -> !newServer.equals(agentId)).ifPresent(newServer -> {
+            List<JobRow> moved = jobs.reassign(tenantId, agentId, newServer);
+            AgentConn conn = connected.get(key(tenantId, newServer));
             if (conn == null) {
-                return;   // the new primary vanished between the check and here; its own reconnect will claim
+                return;   // the new server vanished between the check and here; its own reconnect will claim
             }
             int sent = 0;
             for (JobRow row : moved) {
@@ -138,37 +140,37 @@ public class JobGateway {
                 }
             }
             if (sent > 0) {
-                log.info("failed over {} job(s) from {} to standby {}", sent, agentId, newPrimary);
+                log.info("failed over {} job(s) from {} to peer {}", sent, agentId, newServer);
             }
         });
     }
 
-    /** When {@code agentId} is the current primary of its site, claim its offline peers' unfinished jobs. */
-    private void claimOrphanedJobsIfPrimary(String tenantId, String agentId) {
-        String siteId = tenants.agentSiteId(agentId).orElse(null);
-        if (siteId == null || currentPrimary(tenantId, siteId).filter(agentId::equals).isEmpty()) {
+    /** When {@code agentId} is the current serving agent among its reachable peers, claim any of those peers'
+     *  unfinished jobs that are stranded on an offline peer. */
+    private void claimOrphanedJobsIfServing(String tenantId, String agentId) {
+        List<String> peers = fleet.reachablePeers(tenantId, agentId);
+        if (peers.isEmpty() || currentServingPeer(tenantId, agentId).filter(agentId::equals).isEmpty()) {
             return;
         }
-        for (String peer : tenants.agentIdsForSite(tenantId, siteId)) {
-            if (!peer.equals(agentId) && !connected.containsKey(key(tenantId, peer))) {
+        for (String peer : peers) {
+            if (!connected.containsKey(key(tenantId, peer))) {
                 List<JobRow> moved = jobs.reassign(tenantId, peer, agentId);
                 if (!moved.isEmpty()) {
-                    log.info("primary {} claimed {} orphaned job(s) from offline {}", agentId, moved.size(), peer);
+                    log.info("serving agent {} claimed {} orphaned job(s) from offline {}", agentId, moved.size(), peer);
                 }
             }
         }
     }
 
     /**
-     * The agent that should serve a site now: the first of its enrolled agents that is currently connected.
-     * Computed over this gateway's own connected map (the same one it dispatches through) so the choice and
-     * the ability to send it are always consistent.
+     * The agent that should serve now among {@code agentId} and its reachable peers: the first (by id) that is
+     * currently connected. Computed over this gateway's own connected map (the same one it dispatches through)
+     * so the choice and the ability to send it are always consistent.
      */
-    private Optional<String> currentPrimary(String tenantId, String siteId) {
-        if (siteId == null) {
-            return Optional.empty();
-        }
-        return tenants.agentIdsForSite(tenantId, siteId).stream()
+    private Optional<String> currentServingPeer(String tenantId, String agentId) {
+        SortedSet<String> candidates = new TreeSet<>(fleet.reachablePeers(tenantId, agentId));
+        candidates.add(agentId);   // the agent itself is a candidate to serve its own devices
+        return candidates.stream()
                 .filter(a -> connected.containsKey(key(tenantId, a)))
                 .findFirst();
     }
