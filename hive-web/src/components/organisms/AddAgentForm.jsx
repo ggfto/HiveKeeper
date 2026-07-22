@@ -67,7 +67,7 @@ export function AddAgentForm({ sites = [], createEnrollment, busy }) {
       <MriSectionHeader icon={Plus} title="Add agent" />
       <p className="text-xs text-muted-foreground">
         Register an on-prem agent to get its enrollment token, the connection URLs, and the CA certificate. It
-        appears above once it connects.
+        appears in the list above right away (offline) and flips to online once it connects.
       </p>
       <div className="grid items-end gap-2 sm:grid-cols-2 lg:grid-cols-4">
         <label className="flex flex-col gap-1">

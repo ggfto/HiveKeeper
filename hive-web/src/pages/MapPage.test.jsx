@@ -32,7 +32,7 @@ const oneApGateway = () =>
         {
           deviceId: 'd1',
           siteId: 's1',
-          agentId: 'lab-agent',
+          reachableAgents: ['lab-agent'],
           serial: 'SER-1',
           model: 'AP230',
           label: 'Lobby AP',
@@ -67,7 +67,7 @@ describe('MapPage', () => {
       agents: () => Promise.resolve(['lab-agent']),
       sites: () => Promise.resolve([{ siteId: 's1', name: 'HQ' }]),
       devices: () =>
-        Promise.resolve([{ deviceId: 'd1', siteId: 's1', agentId: 'lab-agent', label: 'AP', mgmtIp: '10.0.0.1' }]),
+        Promise.resolve([{ deviceId: 'd1', siteId: 's1', reachableAgents: ['lab-agent'], label: 'AP', mgmtIp: '10.0.0.1' }]),
       inventory: () => Promise.resolve({ device: { stations } }),
     })
     renderWithAuth(<MapPage />, { gateway })

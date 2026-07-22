@@ -10,7 +10,7 @@ const device = {
   model: 'AP230',
   mgmtIp: '10.0.0.1',
   siteId: 's1',
-  agentId: 'lab-agent',
+  reachableAgents: ['lab-agent'],
   groups: [],
 }
 
@@ -91,6 +91,20 @@ describe('DeviceDetailPage', () => {
     fireEvent.click(screen.getByText('Power'))
     expect(screen.getByRole('button', { name: /restore config/i })).toBeDisabled()
     expect(screen.getByRole('button', { name: /firmware upgrade/i })).toBeDisabled()
+  })
+
+  it('lists the reachable agents and offers the serving-agent picker when two agents reach the device', async () => {
+    const twoAgent = { ...device, reachableAgents: ['lab-agent', 'lab-agent-02'] }
+    const gateway = fakeGateway({
+      devices: () => Promise.resolve([twoAgent]),
+      agents: () => Promise.resolve(['lab-agent', 'lab-agent-02']), // both connected
+    })
+    renderDevice(gateway)
+    await screen.findByText('SER123')
+    // the operator can pick which agent ops run through
+    expect(screen.getByLabelText('Serving agent')).toBeInTheDocument()
+    // both agents show as removable reachability chips (each can drive the AP)
+    expect(screen.getByRole('button', { name: /remove lab-agent-02/i })).toBeInTheDocument()
   })
 
   it('shows a not-found state for an unknown device', async () => {

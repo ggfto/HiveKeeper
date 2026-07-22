@@ -10,9 +10,9 @@ import {
 import { groupNamesFor, siteName } from '../../lib/fleet'
 
 /**
- * The fleet table: one registered device per row, with a live status (whether its agent is currently
- * connected — i.e. whether we can reach it), its agent and site, and its group tags. Clicking a row opens the
- * device's management page. `online` is computed by the page from the connected-agents list.
+ * The fleet table: one registered device per row, with a live status (whether ANY agent that can reach it is
+ * currently connected), its reachable agents and site, and its group tags. Clicking a row opens the device's
+ * management page. `online` is computed by the page from the connected-agents list.
  */
 export function DevicesTable({ devices, groups = [], sites = [], onOpen, loading }) {
   if (!devices || devices.length === 0) {
@@ -33,7 +33,7 @@ export function DevicesTable({ devices, groups = [], sites = [], onOpen, loading
           <MriTableHead>Serial</MriTableHead>
           <MriTableHead>Model</MriTableHead>
           <MriTableHead>Mgmt IP</MriTableHead>
-          <MriTableHead>Agent</MriTableHead>
+          <MriTableHead>Agents</MriTableHead>
           <MriTableHead>Site</MriTableHead>
           <MriTableHead>Groups</MriTableHead>
         </MriTableRow>
@@ -56,7 +56,9 @@ export function DevicesTable({ devices, groups = [], sites = [], onOpen, loading
             <MriTableCell className="font-mono text-xs">{d.serial}</MriTableCell>
             <MriTableCell>{d.model || '—'}</MriTableCell>
             <MriTableCell className="font-mono text-xs">{d.mgmtIp || '—'}</MriTableCell>
-            <MriTableCell className="font-mono text-xs">{d.agentId || '—'}</MriTableCell>
+            <MriTableCell className="font-mono text-xs">
+              {(d.reachableAgents || []).length ? d.reachableAgents.join(', ') : '—'}
+            </MriTableCell>
             <MriTableCell>{siteName(d.siteId, sites) || '—'}</MriTableCell>
             <MriTableCell>
               <div className="flex flex-wrap gap-1">

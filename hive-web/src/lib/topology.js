@@ -72,6 +72,10 @@ export function buildTopology(
     } else {
       for (const d of own) {
         const st = statuses[d.deviceId] || {}
+        // The agent that would serve this AP: the first reachable one that is connected, else the first
+        // reachable one (for the label). Online = ANY reachable agent is connected.
+        const reach = d.reachableAgents || []
+        const servingAgent = reach.find((a) => connected.has(a)) || reach[0] || null
         const apId = `ap:${d.deviceId}`
         const cap = expandedSet.has(d.deviceId) ? Infinity : clientCap
         const all = showClients ? sortBySignal(st.stations || []) : []
@@ -89,11 +93,11 @@ export function buildTopology(
             deviceId: d.deviceId,
             label: d.label || d.serial || d.deviceId,
             model: d.model || null,
-            agentId: d.agentId || null,
+            agentId: servingAgent,
             hive: st.hive || null,
             clientCount: st.clientCount ?? (st.stations ? st.stations.length : null),
             cloud: st.cloud ?? null,
-            online: st.online ?? connected.has(d.agentId),
+            online: st.online ?? reach.some((a) => connected.has(a)),
           },
         })
         edges.push({ id: `e:${site.siteId}:${d.deviceId}`, source: `site:${site.siteId}`, target: apId })

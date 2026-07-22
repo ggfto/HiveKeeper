@@ -45,13 +45,15 @@ export function AlertsPage() {
       ])
       const list = Array.isArray(devs) ? devs : []
       const connected = new Set(Array.isArray(agentIds) ? agentIds : [])
-      // Fan out one inventory read per online device; an offline device needs no read (it alerts as offline).
+      // Fan out one inventory read per online device, through its serving agent (the first reachable one that
+      // is connected); an offline device (no reachable agent up) needs no read — it alerts as offline.
       const results = await Promise.all(
         list.map(async (d) => {
-          const online = connected.has(d.agentId)
+          const serving = (d.reachableAgents || []).find((a) => connected.has(a))
+          const online = !!serving
           if (!online) return { device: d, online, snapshot: null }
           try {
-            const inv = await gateway.inventory(d.agentId, d.mgmtIp).then((r) => r.device)
+            const inv = await gateway.inventory(serving, d.mgmtIp).then((r) => r.device)
             return { device: d, online, snapshot: inv }
           } catch (e) {
             return { device: d, online, error: e.message }

@@ -10,13 +10,14 @@ import { BackupDestinationForm } from '../components/organisms/BackupDestination
 import { DiscoveredHosts } from '../components/organisms/DiscoveredHosts'
 import { siteName } from '../lib/fleet'
 
-/** Connected agents for the active org — each shown with how many fleet devices it fronts and their site, a
- *  jump into the filtered device list, and a discover -> adopt flow on the agent's LAN. */
+/** Enrolled agents for the active org — each shown online/offline, with how many fleet devices it can reach and
+ *  their site, a jump into the filtered device list, and a discover -> adopt flow on the agent's LAN. */
 export function AgentsPage() {
   const { gateway, activeOrg } = useAuth()
   const { toast } = useToast()
   const navigate = useNavigate()
-  const [agents, setAgents] = useState(null)
+  const [agents, setAgents] = useState(null)          // durable identities (agentsAll)
+  const [connectedAgents, setConnectedAgents] = useState([])
   const [devices, setDevices] = useState([])
   const [sites, setSites] = useState([])
   const [discovered, setDiscovered] = useState([])
@@ -32,12 +33,14 @@ export function AgentsPage() {
   const load = useCallback(async () => {
     setLoading(true)
     try {
-      const [a, d, s] = await Promise.all([
-        gateway.agents().catch(() => null),
+      const [all, conn, d, s] = await Promise.all([
+        gateway.agentsAll().catch(() => null),
+        gateway.agents().catch(() => []),
         gateway.devices().catch(() => []),
         gateway.sites().catch(() => []),
       ])
-      setAgents(Array.isArray(a) ? a : null)
+      setAgents(Array.isArray(all) ? all : null)
+      setConnectedAgents(Array.isArray(conn) ? conn : [])
       setDevices(Array.isArray(d) ? d : [])
       setSites(Array.isArray(s) ? s : [])
     } finally {
@@ -49,16 +52,18 @@ export function AgentsPage() {
     load()
   }, [load, activeOrg])
 
-  // Roll the fleet up per agent: device count + the site its devices sit in (first one wins; agents are
-  // single-site in practice). null stays null so the list can show "gateway unreachable".
+  // Roll up per enrolled agent: online (is it currently connected), how many fleet devices it can reach, and
+  // its site (from the agent record). null stays null so the list can show "gateway unreachable".
   const enriched = useMemo(() => {
     if (!Array.isArray(agents)) return agents
-    return agents.map((id) => {
-      const own = devices.filter((d) => d.agentId === id)
-      const siteId = own.find((d) => d.siteId)?.siteId
-      return { id, deviceCount: own.length, site: siteName(siteId, sites) }
-    })
-  }, [agents, devices, sites])
+    const connectedSet = new Set(connectedAgents)
+    return agents.map((a) => ({
+      id: a.agentId,
+      online: connectedSet.has(a.agentId),
+      deviceCount: devices.filter((d) => (d.reachableAgents || []).includes(a.agentId)).length,
+      site: siteName(a.siteId, sites),
+    }))
+  }, [agents, connectedAgents, devices, sites])
 
   const onDiscover = async (agentId) => {
     setBusy(true)
@@ -142,7 +147,7 @@ export function AgentsPage() {
         title="Agents"
         icon={Server}
         count={Array.isArray(agents) ? agents.length : undefined}
-        countLabel="connected"
+        countLabel="enrolled"
         className="flex-wrap gap-y-3"
       >
         <MriButton size="sm" variant="outline" disabled={busy} onClick={load}>

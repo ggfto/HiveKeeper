@@ -1,7 +1,7 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { MriPageHeader, MriButton, MriStatusBadge } from '@mriqbox/ui-kit'
-import { Boxes, Wifi, Network, Radar, Radio, Globe, Terminal, Power, ArrowLeft, Router, Activity, DoorOpen, KeyRound, ShieldUser, CalendarClock } from 'lucide-react'
+import { Boxes, Wifi, Network, Radar, Radio, Globe, Terminal, Power, ArrowLeft, Router, Activity, DoorOpen, KeyRound, ShieldUser, CalendarClock, X } from 'lucide-react'
 import { useAuth } from '../context/AuthProvider'
 import { useToast } from '../context/ToastProvider'
 import { ConfigNav } from '../components/molecules/ConfigNav'
@@ -81,18 +81,21 @@ export function DeviceDetailPage() {
   const [notFound, setNotFound] = useState(false)
   const [groups, setGroups] = useState([])
   const [sites, setSites] = useState([])
-  const [agents, setAgents] = useState([])
+  const [agents, setAgents] = useState([])            // currently-connected agent ids
+  const [allAgents, setAllAgents] = useState([])      // enrolled identities, for the "add reachable agent" picker
+  const [targetAgent, setTargetAgent] = useState(null) // the agent ops run through (operator's pick)
   const [section, setSection] = useState('overview')
   const [busy, setBusy] = useState(false)
   const [configResult, setConfigResult] = useState(null)
   const restoreInputRef = useRef(null)
 
   const load = useCallback(async () => {
-    const [list, g, s, a] = await Promise.all([
+    const [list, g, s, a, all] = await Promise.all([
       gateway.devices().catch(() => null),
       gateway.groups().catch(() => []),
       gateway.sites().catch(() => []),
       gateway.agents().catch(() => []),
+      gateway.agentsAll().catch(() => []),
     ])
     const d = Array.isArray(list) ? list.find((x) => x.deviceId === deviceId) : null
     setDevice(d || null)
@@ -100,11 +103,28 @@ export function DeviceDetailPage() {
     setGroups(Array.isArray(g) ? g : [])
     setSites(Array.isArray(s) ? s : [])
     setAgents(Array.isArray(a) ? a : [])
+    setAllAgents(Array.isArray(all) ? all : [])
   }, [gateway, deviceId])
 
   useEffect(() => {
     load()
   }, [load, activeOrg])
+
+  // Default the target agent to the one that would actually serve the device — the first reachable agent that
+  // is connected — falling back to the first reachable one when none is up. A still-valid operator pick is kept
+  // across reloads; a device with no reachable agents has no target (ops are disabled).
+  useEffect(() => {
+    const reach = device?.reachableAgents || []
+    setTargetAgent((prev) => (prev && reach.includes(prev) ? prev : reach.find((x) => agents.includes(x)) || reach[0] || null))
+  }, [device, agents])
+
+  // The device with the operator's chosen agent stamped as `agentId`, so the existing op/loader plumbing (which
+  // reads `d.agentId`) dispatches to the picked agent. Memoized so children keyed on the device prop don't
+  // reload on every render.
+  const activeDevice = useMemo(
+    () => (device ? { ...device, agentId: targetAgent } : null),
+    [device, targetAgent],
+  )
 
   // Run an op with a busy/status lifecycle. If fn returns a string, it becomes the success message (so reads
   // like inventory/backup can report what they found); otherwise we show a generic "done".
@@ -286,10 +306,10 @@ export function DeviceDetailPage() {
   const [scans, setScans] = useState([])
   const [scanning, setScanning] = useState(false)
   const onScan = useCallback(async () => {
-    if (!device) return
+    if (!device || !targetAgent) return
     setScanning(true)
     try {
-      const r = await gateway.agentOp(device.agentId, 'apply-config', {
+      const r = await gateway.agentOp(targetAgent, 'apply-config', {
         host: device.mgmtIp,
         port: 22,
         commands: ['show acsp channel-info', 'show acsp neighbor'],
@@ -302,7 +322,7 @@ export function DeviceDetailPage() {
     } finally {
       setScanning(false)
     }
-  }, [gateway, device])
+  }, [gateway, device, targetAgent])
 
   const loadStatus = useCallback(
     async (d) => {
@@ -391,6 +411,19 @@ export function DeviceDetailPage() {
       await load()
     })
 
+  // Device reachability: which agents may drive this AP. Adding a second agent lets it serve the AP too
+  // (active/standby, load, or a migration); the gateway authorizes both the device and the agent's site.
+  const onAddAgent = (agentId) =>
+    run('Add agent', async () => {
+      await gateway.addDeviceAgent(device.deviceId, agentId)
+      await load()
+    })
+  const onRemoveAgent = (agentId) =>
+    run('Remove agent', async () => {
+      await gateway.removeDeviceAgent(device.deviceId, agentId)
+      await load()
+    })
+
   if (notFound) {
     return (
       <div className="space-y-3">
@@ -403,8 +436,12 @@ export function DeviceDetailPage() {
   }
   if (!device) return <p className="text-sm text-muted-foreground">Loading…</p>
 
-  // Live status = the device's agent is currently connected to the gateway (so we can actually reach it).
-  const online = agents.includes(device.agentId)
+  // Live status = the target agent (the one ops run through) is currently connected, so we can reach the AP.
+  const online = !!targetAgent && agents.includes(targetAgent)
+  const reachable = device.reachableAgents || []
+  const connectedSet = new Set(agents)
+  // Enrolled agents not already reachable — the candidates the "add agent" picker offers.
+  const addableAgents = allAgents.filter((a) => !reachable.includes(a.agentId))
 
   return (
     <div className="space-y-5">
@@ -426,7 +463,7 @@ export function DeviceDetailPage() {
           variant="outline"
           disabled={busy || !online}
           title={online ? undefined : 'The device agent is offline'}
-          onClick={() => onInventory(device)}
+          onClick={() => onInventory(activeDevice)}
         >
           Inventory
         </MriButton>
@@ -435,7 +472,7 @@ export function DeviceDetailPage() {
           variant="outline"
           disabled={busy || !online}
           title={online ? undefined : 'The device agent is offline'}
-          onClick={() => onBackup(device)}
+          onClick={() => onBackup(activeDevice)}
         >
           Backup
         </MriButton>
@@ -455,16 +492,81 @@ export function DeviceDetailPage() {
         <Info label="Model" value={device.model} />
         <Info label="Mgmt IP" value={device.mgmtIp} mono />
         <Info label="Site" value={siteName(device.siteId, sites) || '—'} />
-        <Info label="Agent" value={device.agentId || '—'} mono />
+        <Info label="Serving agent" value={targetAgent || '—'} mono />
         <Info label="Groups" value={groupNamesFor(device, groups).join(', ') || '—'} />
       </div>
+
+      {/* Reachability: which agents can drive this AP, which one ops run through, and add/remove. Two or more
+          agents reaching the same AP is an active/standby pair, a load split, or a migration in progress. */}
+      <section className="space-y-3 rounded-lg border border-border bg-card p-3">
+        <div className="flex flex-wrap items-center gap-2">
+          <span className="text-xs text-muted-foreground">Ops run through</span>
+          <select
+            aria-label="Serving agent"
+            className="rounded border border-border bg-background px-2 py-1 font-mono text-xs"
+            value={targetAgent || ''}
+            disabled={busy || reachable.length === 0}
+            onChange={(e) => setTargetAgent(e.target.value || null)}
+          >
+            {reachable.length === 0 && <option value="">no reachable agent</option>}
+            {reachable.map((a) => (
+              <option key={a} value={a}>
+                {a} {connectedSet.has(a) ? '(online)' : '(offline)'}
+              </option>
+            ))}
+          </select>
+        </div>
+        <div className="flex flex-wrap items-center gap-1">
+          {reachable.length === 0 && (
+            <span className="text-xs text-muted-foreground">No agent can reach this device.</span>
+          )}
+          {reachable.map((a) => (
+            <span
+              key={a}
+              className="inline-flex items-center gap-1.5 rounded-full border border-border bg-muted px-2 py-0.5 font-mono text-xs"
+            >
+              <span className={`h-1.5 w-1.5 rounded-full ${connectedSet.has(a) ? 'bg-emerald-500' : 'bg-muted-foreground/40'}`} />
+              {a}
+              <button
+                type="button"
+                aria-label={`Remove ${a}`}
+                className="text-muted-foreground hover:text-destructive disabled:opacity-40"
+                disabled={busy || reachable.length <= 1}
+                title={reachable.length <= 1 ? 'A device needs at least one reachable agent' : undefined}
+                onClick={() => onRemoveAgent(a)}
+              >
+                <X className="h-3 w-3" />
+              </button>
+            </span>
+          ))}
+        </div>
+        {addableAgents.length > 0 && (
+          <div className="flex items-center gap-2">
+            <span className="text-xs text-muted-foreground">Add agent</span>
+            <select
+              aria-label="Add reachable agent"
+              className="rounded border border-border bg-background px-2 py-1 font-mono text-xs"
+              value=""
+              disabled={busy}
+              onChange={(e) => e.target.value && onAddAgent(e.target.value)}
+            >
+              <option value="">select…</option>
+              {addableAgents.map((a) => (
+                <option key={a.agentId} value={a.agentId}>
+                  {a.agentId}
+                </option>
+              ))}
+            </select>
+          </div>
+        )}
+      </section>
 
       <div className="flex flex-col gap-6 sm:flex-row">
         <ConfigNav sections={SECTIONS} active={section} onSelect={setSection} />
         <div className="min-w-0 flex-1">
           {section === 'overview' && (
             <DeviceOverviewForm
-              device={device}
+              device={activeDevice}
               sites={sites}
               groups={groups}
               onSave={onSaveDevice}
@@ -475,11 +577,11 @@ export function DeviceDetailPage() {
             />
           )}
           {section === 'credentials' && (
-            <CredentialForm device={device} onSetCredential={onSetCredential} busy={busy} allowOnDevice />
+            <CredentialForm device={activeDevice} onSetCredential={onSetCredential} busy={busy} allowOnDevice />
           )}
           {section === 'wifi' && (
             <WifiSection
-              device={device}
+              device={activeDevice}
               loadSsids={loadSsids}
               configureSsid={onConfigureSsid}
               onApply={onApplyConfig}
@@ -487,11 +589,11 @@ export function DeviceDetailPage() {
             />
           )}
           {section === 'captiveportal' && (
-            <CaptivePortalForm device={device} onApply={onApplyConfig} busy={busy} />
+            <CaptivePortalForm device={activeDevice} onApply={onApplyConfig} busy={busy} />
           )}
           {section === 'mesh' && (
             <MeshSection
-              device={device}
+              device={activeDevice}
               loadHives={loadHives}
               applyMesh={applyMesh}
               onApply={onApplyConfig}
@@ -500,20 +602,20 @@ export function DeviceDetailPage() {
           )}
           {section === 'radio' && (
             <div className="space-y-8">
-              <RadioForm device={device} onApply={onApplyConfig} busy={busy} loadRadios={loadRadios} />
-              <RadioProfileForm device={device} onApply={onApplyConfig} busy={busy} loadProfiles={loadProfiles} />
+              <RadioForm device={activeDevice} onApply={onApplyConfig} busy={busy} loadRadios={loadRadios} />
+              <RadioProfileForm device={activeDevice} onApply={onApplyConfig} busy={busy} loadProfiles={loadProfiles} />
             </div>
           )}
-          {section === 'clientmode' && <ClientModeForm device={device} onApply={onApplyConfig} busy={busy} />}
+          {section === 'clientmode' && <ClientModeForm device={activeDevice} onApply={onApplyConfig} busy={busy} />}
           {section === 'network' && (
-            <NetworkSection device={device} loadRoutes={loadRoutes} onApply={onApplyConfig} busy={busy} />
+            <NetworkSection device={activeDevice} loadRoutes={loadRoutes} onApply={onApplyConfig} busy={busy} />
           )}
           {section === 'policy' && (
-            <PolicySection device={device} loadPolicy={loadPolicy} onApply={onApplyConfig} busy={busy} />
+            <PolicySection device={activeDevice} loadPolicy={loadPolicy} onApply={onApplyConfig} busy={busy} />
           )}
           {section === 'ppskusers' && (
             <PpskUsersSection
-              device={device}
+              device={activeDevice}
               loadPpskUsers={loadPpskUsers}
               onCreate={onCreatePpskUser}
               onRotate={onRotatePpskUser}
@@ -522,11 +624,11 @@ export function DeviceDetailPage() {
             />
           )}
           {section === 'schedules' && (
-            <ScheduleSection device={device} loadSchedules={loadSchedules} onApply={onApplyConfig} busy={busy} />
+            <ScheduleSection device={activeDevice} loadSchedules={loadSchedules} onApply={onApplyConfig} busy={busy} />
           )}
           {section === 'monitoring' && (
             <MonitoringSection
-              device={device}
+              device={activeDevice}
               online={online}
               loadStatus={loadStatus}
               loadLog={loadLog}
@@ -540,18 +642,18 @@ export function DeviceDetailPage() {
             <ChannelScanSection scans={scans} onScan={onScan} busy={busy || scanning} />
           )}
           {section === 'advanced' && (
-            <AdvancedConfigForm device={device} onApply={onApplyConfig} result={configResult} busy={busy} />
+            <AdvancedConfigForm device={activeDevice} onApply={onApplyConfig} result={configResult} busy={busy} />
           )}
           {section === 'power' && (
             <div className="space-y-8">
-              <PowerForm device={device} onApply={onApplyConfig} onReboot={onReboot} busy={busy} />
+              <PowerForm device={activeDevice} onApply={onApplyConfig} onReboot={onReboot} busy={busy} />
               <ScheduledRebootForm
-                device={device}
+                device={activeDevice}
                 loadRebootSchedule={loadRebootSchedule}
                 onApply={onApplyConfig}
                 busy={busy}
               />
-              <LedForm device={device} onApply={onApplyConfig} busy={busy} />
+              <LedForm device={activeDevice} onApply={onApplyConfig} busy={busy} />
               <div className="space-y-3 rounded-lg border border-border bg-card p-4">
                 <div className="text-sm font-medium">Maintenance</div>
                 <p className="text-xs text-muted-foreground">
@@ -574,7 +676,7 @@ export function DeviceDetailPage() {
                     variant="outline"
                     disabled={busy || !online}
                     title={online ? undefined : 'The device agent is offline'}
-                    onClick={() => onFirmwareUpgrade(device)}
+                    onClick={() => onFirmwareUpgrade(activeDevice)}
                   >
                     Firmware upgrade…
                   </MriButton>
@@ -584,7 +686,7 @@ export function DeviceDetailPage() {
                     accept=".txt,.cfg,.conf,text/plain"
                     className="hidden"
                     onChange={(e) => {
-                      onRestoreFile(device, e.target.files?.[0])
+                      onRestoreFile(activeDevice, e.target.files?.[0])
                       e.target.value = ''
                     }}
                   />

@@ -2,9 +2,10 @@ import { MriCard, MriCardHeader, MriCardTitle, MriCardContent, MriButton, MriSta
 import { Boxes } from 'lucide-react'
 
 /**
- * The connected on-prem agents for the active organization, each with how many fleet devices it fronts and the
- * site those devices sit in. Anything listed is online (agents dial out to the gateway). View devices jumps to
- * the fleet filtered to that agent; Discover sweeps its LAN. Agents are { id, deviceCount, site }.
+ * The enrolled on-prem agents for the active organization, each shown online/offline (an agent is online while
+ * it holds a connection to the gateway), with how many fleet devices it can reach and its site. View devices
+ * jumps to the fleet filtered to that agent; Discover sweeps its LAN (only while it is online). Agents are
+ * { id, online, deviceCount, site }.
  */
 export function AgentsList({ agents, onView, onDiscover, busy, loading }) {
   if (loading && agents == null) {
@@ -14,7 +15,7 @@ export function AgentsList({ agents, onView, onDiscover, busy, loading }) {
     return <p className="text-sm text-muted-foreground">Gateway unreachable.</p>
   }
   if (agents.length === 0) {
-    return <p className="text-sm text-muted-foreground">No agents connected for this organization.</p>
+    return <p className="text-sm text-muted-foreground">No agents enrolled for this organization.</p>
   }
   return (
     <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
@@ -22,7 +23,11 @@ export function AgentsList({ agents, onView, onDiscover, busy, loading }) {
         <MriCard key={a.id}>
           <MriCardHeader className="flex flex-row items-center justify-between gap-2 space-y-0">
             <MriCardTitle className="font-mono text-sm">{a.id}</MriCardTitle>
-            <MriStatusBadge label="online" variant="success" size="xs" />
+            <MriStatusBadge
+              label={a.online ? 'online' : 'offline'}
+              variant={a.online ? 'success' : 'outline'}
+              size="xs"
+            />
           </MriCardHeader>
           <MriCardContent className="space-y-3">
             <div className="flex items-center gap-2 text-sm text-muted-foreground">
@@ -36,7 +41,13 @@ export function AgentsList({ agents, onView, onDiscover, busy, loading }) {
               <MriButton size="sm" disabled={busy} onClick={() => onView?.(a.id)}>
                 View devices
               </MriButton>
-              <MriButton size="sm" variant="outline" disabled={busy} onClick={() => onDiscover?.(a.id)}>
+              <MriButton
+                size="sm"
+                variant="outline"
+                disabled={busy || !a.online}
+                title={a.online ? undefined : 'The agent is offline'}
+                onClick={() => onDiscover?.(a.id)}
+              >
                 Discover
               </MriButton>
             </div>

@@ -33,14 +33,15 @@ const defaultSsids = () => [
   { name: 'Guest', security: 'wpa2-aes-psk', vlan: 20, radios: ['wifi1'] },
 ]
 
-// One AP. `agentId` not in the connected `agents` list => the AP reads as offline (inventory/backup reject).
+// One AP. An `agentId` whose id is not in the connected `agents` list => the AP reads as offline. Reachability
+// is a set now (a device may be driven by several agents); the demo seeds each AP with its one adopting agent.
 function ap(deviceId, serial, model, mgmtIp, agentId, label, siteId, groups, extra = {}) {
   return {
     deviceId,
     serial,
     model,
     mgmtIp,
-    agentId,
+    reachableAgents: agentId ? [agentId] : [],
     label,
     siteId,
     groups,
@@ -63,7 +64,14 @@ function seed() {
     { groupId: 'g-floor2', name: 'Floor 2', siteId: 's-hq' },
     { groupId: 'g-guest', name: 'Guest APs', siteId: null },
   ]
-  const agents = ['hq-agent', 'wh-agent'] // connected
+  const agents = ['hq-agent', 'wh-agent'] // currently connected
+  // Durable agent identities (connected or not) — what the agent list is built from. old-agent is enrolled but
+  // offline (it fronts the spare AP), so the console shows an offline agent, not a phantom.
+  const agentIdentities = [
+    { agentId: 'hq-agent', name: 'hq-agent', siteId: 's-hq', lastSeen: isoAgo(1) },
+    { agentId: 'wh-agent', name: 'wh-agent', siteId: 's-wh', lastSeen: isoAgo(2) },
+    { agentId: 'old-agent', name: 'old-agent', siteId: 's-hq', lastSeen: isoAgo(4320) },
+  ]
   const devices = [
     ap('d-rcp', 'AH01-2207-0011', 'AP230', '192.168.10.11', 'hq-agent', 'Reception', 's-hq', ['g-floor1', 'g-guest'], {
       stations: [
@@ -120,7 +128,7 @@ function seed() {
     { id: 'op-2', createdAt: isoAgo(140), agentId: 'hq-agent', opType: 'reboot', host: '192.168.10.12', summary: 'reboot requested' },
     { id: 'op-1', createdAt: isoAgo(180), agentId: 'hq-agent', opType: 'adopt', host: '192.168.10.13', summary: 'adopted AP250' },
   ]
-  return { sites, groups, agents, devices, members, operations }
+  return { sites, groups, agents, agentIdentities, devices, members, operations }
 }
 
 // --- canned HiveOS CLI output, shaped for the UI's parsers in lib/hiveosParse.js -------------------------
@@ -184,6 +192,8 @@ export function createDemoGateway() {
   const byIp = (host) => db.devices.find((d) => d.mgmtIp === host)
   const byId = (id) => db.devices.find((d) => d.deviceId === id)
   const connected = (agentId) => db.agents.includes(agentId)
+  // The agent that actually serves a device now: the first (by id) of its reachable agents that is connected.
+  const servingAgent = (d) => (d.reachableAgents || []).slice().sort().find((a) => connected(a))
   // Unadopted hosts a discover sweep turns up — one tested model, one HiveOS-but-untested, so Identify and the
   // support badge have something believable to show in the demo.
   const discoverable = {
@@ -198,7 +208,7 @@ export function createDemoGateway() {
     serial: d.serial,
     model: d.model,
     mgmtIp: d.mgmtIp,
-    agentId: d.agentId,
+    reachableAgents: [...(d.reachableAgents || [])],
     label: d.label,
     siteId: d.siteId,
     groups: [...(d.groups || [])],
@@ -263,6 +273,7 @@ export function createDemoGateway() {
     },
 
     agents: () => ok([...db.agents]),
+    agentsAll: () => ok(db.agentIdentities),
     sites: () => ok(db.sites),
     groups: () => ok(db.groups),
     devices: () => ok(db.devices.map(deviceView)),
@@ -313,6 +324,17 @@ export function createDemoGateway() {
     updateDevice: (deviceId, body) => {
       const d = byId(deviceId)
       if (d) Object.assign(d, body)
+      return ok({})
+    },
+    deviceAgents: (deviceId) => ok([...(byId(deviceId)?.reachableAgents || [])].sort()),
+    addDeviceAgent: (deviceId, agentId) => {
+      const d = byId(deviceId)
+      if (d && !(d.reachableAgents || []).includes(agentId)) d.reachableAgents = [...(d.reachableAgents || []), agentId]
+      return ok({})
+    },
+    removeDeviceAgent: (deviceId, agentId) => {
+      const d = byId(deviceId)
+      if (d) d.reachableAgents = (d.reachableAgents || []).filter((a) => a !== agentId)
       return ok({})
     },
 
@@ -489,9 +511,9 @@ export function createDemoGateway() {
       if (target?.kind === 'site') pool = pool.filter((d) => d.siteId === target.id)
       if (target?.kind === 'group') pool = pool.filter((d) => (d.groups || []).includes(target.id))
       const results = pool.map((d) =>
-        connected(d.agentId)
+        servingAgent(d)
           ? { deviceId: d.deviceId, host: d.mgmtIp, serial: d.serial, status: 'ok' }
-          : { deviceId: d.deviceId, host: d.mgmtIp, serial: d.serial, status: 'agent_offline', detail: 'agent not connected' },
+          : { deviceId: d.deviceId, host: d.mgmtIp, serial: d.serial, status: 'agent_offline', detail: 'no reachable agent connected' },
       )
       const okCount = results.filter((r) => r.status === 'ok').length
       logOp(op, target?.kind || 'org', `${okCount}/${results.length} ok`)
@@ -502,9 +524,9 @@ export function createDemoGateway() {
       if (target?.kind === 'site') pool = pool.filter((d) => d.siteId === target.id)
       if (target?.kind === 'group') pool = pool.filter((d) => (d.groups || []).includes(target.id))
       const results = pool.map((d) =>
-        connected(d.agentId)
+        servingAgent(d)
           ? { deviceId: d.deviceId, host: d.mgmtIp, serial: d.serial, status: 'ok' }
-          : { deviceId: d.deviceId, host: d.mgmtIp, serial: d.serial, status: 'agent_offline', detail: 'agent not connected' },
+          : { deviceId: d.deviceId, host: d.mgmtIp, serial: d.serial, status: 'agent_offline', detail: 'no reachable agent connected' },
       )
       const okCount = results.filter((r) => r.status === 'ok').length
       logOp('apply-config', target?.kind || 'org', `${(commands || []).length} line(s) · ${okCount}/${results.length} ok${save ? ' · saved' : ''}`)
