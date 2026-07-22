@@ -1,6 +1,7 @@
 package io.hivekeeper.gateway.fleet;
 
 import io.hivekeeper.gateway.access.ResourceScope;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Profile;
 import org.springframework.dao.DuplicateKeyException;
 import org.springframework.stereotype.Service;
@@ -12,6 +13,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
+import java.util.TreeSet;
 import java.util.UUID;
 
 /**
@@ -29,17 +31,19 @@ public class InMemoryFleetService implements FleetService {
 
     /** One organization's fleet. Only ever touched under the service monitor, so plain maps are safe. */
     private static final class Org {
-        final Map<String, String> siteNames = new LinkedHashMap<>();        // siteId -> name
-        final Map<String, Group> groups = new LinkedHashMap<>();            // groupId -> Group
-        final Map<String, DeviceRow> devices = new LinkedHashMap<>();       // deviceId -> row
-        final Map<String, Set<String>> deviceGroups = new LinkedHashMap<>(); // deviceId -> {groupId}
+        final Map<String, String> siteNames = new LinkedHashMap<>();          // siteId -> name
+        final Map<String, Group> groups = new LinkedHashMap<>();              // groupId -> Group
+        final Map<String, DeviceRow> devices = new LinkedHashMap<>();         // deviceId -> row
+        final Map<String, Set<String>> deviceGroups = new LinkedHashMap<>();  // deviceId -> {groupId}
+        final Map<String, Set<String>> deviceAgents = new LinkedHashMap<>();  // deviceId -> {agentId} (reach)
+        final Map<String, AgentSummary> agents = new LinkedHashMap<>();       // agentId -> identity
     }
 
-    /** A mutable device row; the public {@link Device} (with its live group list) is built on read. */
+    /** A mutable device row; the public {@link Device} (with its live group + reachable-agent lists) is built
+     *  on read. Reachability lives in {@link Org#deviceAgents}, not here, mirroring the many-to-many tags. */
     private static final class DeviceRow {
         String deviceId;
         String siteId;
-        String agentId;
         String serial;
         String model;
         String label;
@@ -48,6 +52,22 @@ public class InMemoryFleetService implements FleetService {
     }
 
     private final Map<String, Org> orgs = new HashMap<>();
+
+    /**
+     * Seeds the demo/solo agent identities so the console's agent list has something to show without a
+     * database (reachability itself is populated at runtime by {@code registerDevice}). Mirrors {@link
+     * io.hivekeeper.gateway.tenant.InMemoryTenantStore}'s seed: the same {@code lab-agent} / {@code
+     * local-agent} it enrolls. Sites are left null — the in-memory demo does not seed the site tree.
+     */
+    public InMemoryFleetService(@Value("${hivekeeper.demo-seed:false}") boolean demoSeed,
+                                @Value("${hivekeeper.solo:false}") boolean solo) {
+        if (demoSeed) {
+            org("acme").agents.put("lab-agent", new AgentSummary("lab-agent", "lab-agent", null, null));
+        }
+        if (solo) {
+            org("local").agents.put("local-agent", new AgentSummary("local-agent", "local-agent", null, null));
+        }
+    }
 
     private Org org(String tenantId) {
         return orgs.computeIfAbsent(tenantId, k -> new Org());
@@ -136,12 +156,55 @@ public class InMemoryFleetService implements FleetService {
         org.deviceGroups.values().forEach(set -> set.remove(groupId));   // device tags cascade away
     }
 
-    // -- agent enrollments ------------------------------------------------------
+    // -- agents + enrollments ---------------------------------------------------
 
     @Override
     public String createEnrollment(String tenantId, String agentId, String siteId) {
         throw new UnsupportedOperationException(
                 "adding agents requires the 'postgres' profile; the demo stack already ships the lab-agent");
+    }
+
+    @Override
+    public synchronized List<AgentSummary> listAgents(String tenantId) {
+        return org(tenantId).agents.values().stream()
+                .sorted(Comparator.comparing(AgentSummary::agentId)).toList();
+    }
+
+    @Override
+    public synchronized List<String> agentIdsForDevice(String tenantId, String deviceId) {
+        // Sorted for a deterministic primary. The in-memory store tracks no revocation (that lives in the
+        // tenant store), so — as with the single-pin default it replaces — it does not filter revoked agents.
+        return org(tenantId).deviceAgents.getOrDefault(deviceId, Set.of()).stream().sorted().toList();
+    }
+
+    @Override
+    public synchronized List<String> reachablePeers(String tenantId, String agentId) {
+        Set<String> peers = new TreeSet<>();
+        for (Set<String> reach : org(tenantId).deviceAgents.values()) {
+            if (reach.contains(agentId)) {
+                peers.addAll(reach);   // every agent that co-reaches a device with this one
+            }
+        }
+        peers.remove(agentId);
+        return List.copyOf(peers);
+    }
+
+    @Override
+    public synchronized List<String> reachableAgents(String tenantId, String deviceId) {
+        return agentIdsForDevice(tenantId, deviceId);
+    }
+
+    @Override
+    public synchronized void addDeviceAgent(String tenantId, String deviceId, String agentId) {
+        org(tenantId).deviceAgents.computeIfAbsent(deviceId, k -> new LinkedHashSet<>()).add(agentId);
+    }
+
+    @Override
+    public synchronized void removeDeviceAgent(String tenantId, String deviceId, String agentId) {
+        Set<String> set = org(tenantId).deviceAgents.get(deviceId);
+        if (set != null) {
+            set.remove(agentId);
+        }
     }
 
     // -- devices ----------------------------------------------------------------
@@ -165,10 +228,12 @@ public class InMemoryFleetService implements FleetService {
         // when the re-adopt supplies none.
         DeviceRow row = serial == null ? null
                 : org.devices.values().stream().filter(d -> serial.equals(d.serial)).findFirst().orElse(null);
-        if (row == null) {
+        boolean isNew = row == null;
+        if (isNew) {
             row = new DeviceRow();
             row.deviceId = "dev-" + UUID.randomUUID();
             row.serial = serial;
+            row.siteId = siteId;                 // logical site is set on first registration only
             org.devices.put(row.deviceId, row);
         } else if (credRef == null) {
             credRef = row.credRef;   // keep the existing credential on a plain re-adopt
@@ -176,9 +241,16 @@ public class InMemoryFleetService implements FleetService {
         row.model = model;
         row.label = label;
         row.mgmtIp = mgmtIp;
-        row.siteId = siteId;
-        row.agentId = agentId;
+        // A backup agent re-adopting must not relocate the device, so only fill the site when it was unset.
+        if (row.siteId == null) {
+            row.siteId = siteId;
+        }
         row.credRef = credRef;
+        // Adopting through an agent adds it to the reachability set (both agents can drive the AP); it never
+        // displaces a previously-adopting agent.
+        if (agentId != null) {
+            org.deviceAgents.computeIfAbsent(row.deviceId, k -> new LinkedHashSet<>()).add(agentId);
+        }
         return row.deviceId;
     }
 
@@ -260,7 +332,8 @@ public class InMemoryFleetService implements FleetService {
 
     private static Device toDevice(Org org, DeviceRow d) {
         List<String> groups = List.copyOf(org.deviceGroups.getOrDefault(d.deviceId, Set.of()));
-        return new Device(d.deviceId, d.siteId, d.agentId, d.serial, d.model, d.label, d.mgmtIp, d.credRef, groups);
+        List<String> agents = org.deviceAgents.getOrDefault(d.deviceId, Set.of()).stream().sorted().toList();
+        return new Device(d.deviceId, d.siteId, d.serial, d.model, d.label, d.mgmtIp, d.credRef, groups, agents);
     }
 
     private static String firstNonNull(String... values) {

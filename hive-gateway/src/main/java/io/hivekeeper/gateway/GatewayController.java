@@ -743,7 +743,11 @@ public class GatewayController {
     /** Revoke an agent's enrollment: the gateway then refuses its mTLS handshake AND its certificate renewals,
      *  so a compromised or decommissioned agent is locked out. Admin-level on the agent's scope. The agent's
      *  existing leaf cert is not magically un-trusted by TLS, but it can no longer connect or renew, and it
-     *  expires on its own (90 days). Use {@code re-enroll} to bring a replacement back online. */
+     *  expires on its own (90 days). Use {@code re-enroll} to bring a replacement back online.
+     *
+     *  <p>Its device reachability rows are intentionally KEPT: a revoked agent is simply filtered out of the
+     *  serving-agent choice (the reachability queries exclude revoked ids), so re-enrolling restores its reach
+     *  with no data loss. Only deleting the agent identity would cascade its {@code device_agent} rows away. */
     @PostMapping("/api/agents/{agentId}/revoke")
     public ResponseEntity<String> revokeAgent(@PathVariable String agentId,
                                               @RequestBody(required = false) RevokeAgentRequest req) {
@@ -1121,13 +1125,19 @@ public class GatewayController {
                         "not authorized to view this device"));
                 continue;
             }
-            if (d.agentId() == null || d.mgmtIp() == null) {
+            if (d.reachableAgents().isEmpty() || d.mgmtIp() == null) {
                 results.add(new BulkOutcome(d.deviceId(), d.serial(), d.mgmtIp(), "skipped", "no agent or host"));
                 continue;
             }
-            // Run on the site's current primary — so a second agent covers the site when the pinned one is
-            // down, and exactly one agent runs each device's task rather than every agent on the site.
-            String agent = sitePrimary.servingAgent(p.tenantId(), d.siteId(), d.agentId());
+            // Run on the device's serving agent — the first connected agent that can reach it — so a second
+            // agent covers it when the primary is down, and exactly one agent runs the task rather than all.
+            Optional<String> serving = sitePrimary.servingAgentForDevice(p.tenantId(), d.deviceId());
+            if (serving.isEmpty()) {
+                results.add(new BulkOutcome(d.deviceId(), d.serial(), d.mgmtIp(), "agent_offline",
+                        "no reachable agent is connected"));
+                continue;
+            }
+            String agent = serving.get();
             Optional<RemoteEngine> engine = registry.engine(p.tenantId(), agent);
             if (engine.isEmpty()) {
                 results.add(new BulkOutcome(d.deviceId(), d.serial(), d.mgmtIp(), "agent_offline", agent));
@@ -1140,7 +1150,7 @@ public class GatewayController {
                 Command cmd = "inventory".equals(op)
                         ? Command.Inventory.of(ref) : Command.BackupConfig.of(ref);
                 Result result = engine.get().execute(cmd, EventSink.NOOP);
-                record(p.tenantId(), d.agentId(), "bulk-" + op, d.mgmtIp(), result.getClass().getSimpleName());
+                record(p.tenantId(), agent, "bulk-" + op, d.mgmtIp(), result.getClass().getSimpleName());
                 results.add(new BulkOutcome(d.deviceId(), d.serial(), d.mgmtIp(), "ok", null));
                 ok++;
             } catch (Exception e) {
@@ -1189,13 +1199,19 @@ public class GatewayController {
                         "not authorized to configure this device"));
                 continue;
             }
-            if (d.agentId() == null || d.mgmtIp() == null) {
+            if (d.reachableAgents().isEmpty() || d.mgmtIp() == null) {
                 results.add(new BulkOutcome(d.deviceId(), d.serial(), d.mgmtIp(), "skipped", "no agent or host"));
                 continue;
             }
-            // Run on the site's current primary — so a second agent covers the site when the pinned one is
-            // down, and exactly one agent runs each device's task rather than every agent on the site.
-            String agent = sitePrimary.servingAgent(p.tenantId(), d.siteId(), d.agentId());
+            // Run on the device's serving agent — the first connected agent that can reach it — so a second
+            // agent covers it when the primary is down, and exactly one agent runs the task rather than all.
+            Optional<String> serving = sitePrimary.servingAgentForDevice(p.tenantId(), d.deviceId());
+            if (serving.isEmpty()) {
+                results.add(new BulkOutcome(d.deviceId(), d.serial(), d.mgmtIp(), "agent_offline",
+                        "no reachable agent is connected"));
+                continue;
+            }
+            String agent = serving.get();
             Optional<RemoteEngine> engine = registry.engine(p.tenantId(), agent);
             if (engine.isEmpty()) {
                 results.add(new BulkOutcome(d.deviceId(), d.serial(), d.mgmtIp(), "agent_offline", agent));
@@ -1205,7 +1221,7 @@ public class GatewayController {
                 // The device row's OWN credential reference — never a re-lookup by mgmt_ip (not unique).
                 DeviceRef ref = DeviceRef.ssh(d.mgmtIp(), 22, d.credRef());
                 Result result = engine.get().execute(Command.ApplyConfig.of(ref, commands, save), EventSink.NOOP);
-                record(p.tenantId(), d.agentId(), "bulk-apply-config", d.mgmtIp(), result.getClass().getSimpleName());
+                record(p.tenantId(), agent, "bulk-apply-config", d.mgmtIp(), result.getClass().getSimpleName());
                 results.add(new BulkOutcome(d.deviceId(), d.serial(), d.mgmtIp(), "ok", null));
                 ok++;
             } catch (Exception e) {

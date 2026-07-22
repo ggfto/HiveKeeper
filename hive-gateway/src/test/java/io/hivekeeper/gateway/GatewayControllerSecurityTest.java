@@ -87,9 +87,9 @@ class GatewayControllerSecurityTest {
         // lab-agent belongs to the caller's tenant (acme) and is on site-1
         when(tenants.enrollmentByAgentId("lab-agent")).thenReturn(Optional.of(new AgentEnrollment("t", "lab-agent", "acme")));
         when(tenants.agentSiteId("lab-agent")).thenReturn(Optional.of("site-1"));
-        // These tests predate active/standby: the serving agent is just the device's pinned one. (The election
-        // itself is covered by SitePrimaryTest.)
-        when(sitePrimary.servingAgent(any(), any(), any())).thenAnswer(i -> i.getArgument(2));
+        // These tests exercise the bulk paths against a device reachable by lab-agent; the serving-agent
+        // election itself is covered by SitePrimaryTest, so here it simply resolves to lab-agent.
+        when(sitePrimary.servingAgentForDevice(any(), any())).thenReturn(Optional.of("lab-agent"));
     }
 
     // -- role per endpoint ------------------------------------------------------
@@ -236,9 +236,9 @@ class GatewayControllerSecurityTest {
         // The scope-level check (group/site/org) passed, but a cross-site GROUP can contain a device pinned to
         // another site. Bulk must re-check each device against its OWN lineage and never touch a forbidden one.
         FleetService.Device viewable = new FleetService.Device(
-                "dev-A", "site-1", "lab-agent", "SER-A", "AP230", "A", "10.0.0.1", null, List.of());
+                "dev-A", "site-1", "SER-A", "AP230", "A", "10.0.0.1", null, List.of(), List.of("lab-agent"));
         FleetService.Device foreign = new FleetService.Device(
-                "dev-B", "site-2", "lab-agent", "SER-B", "AP230", "B", "10.0.0.2", null, List.of());
+                "dev-B", "site-2", "SER-B", "AP230", "B", "10.0.0.2", null, List.of(), List.of("lab-agent"));
         when(fleet.devicesFor("acme", null, null)).thenReturn(List.of(viewable, foreign));
         when(guard.allows(eq(principal), eq(Role.VIEWER), eq(ResourceScope.device("site-1", Set.of())))).thenReturn(true);
         // the site-2 device: guard.allows defaults to false -> "forbidden", never dispatched
@@ -257,7 +257,7 @@ class GatewayControllerSecurityTest {
     @Test
     void bulkAttachesEachDevicesOwnCredRefToTheDispatchedCommand() throws Exception {
         FleetService.Device d = new FleetService.Device(
-                "dev-A", "site-1", "lab-agent", "SER-A", "AP230", "A", "10.0.0.1", "cred-x", List.of());
+                "dev-A", "site-1", "SER-A", "AP230", "A", "10.0.0.1", "cred-x", List.of(), List.of("lab-agent"));
         when(fleet.devicesFor("acme", null, null)).thenReturn(List.of(d));
         when(guard.allows(eq(principal), eq(Role.VIEWER), any())).thenReturn(true);
         RemoteEngine engine = mock(RemoteEngine.class);
@@ -303,9 +303,9 @@ class GatewayControllerSecurityTest {
         // A cross-site group can carry a device pinned to another site; bulk apply-config must re-check each
         // device at OPERATOR against its OWN lineage and never configure a forbidden one.
         FleetService.Device writable = new FleetService.Device(
-                "dev-A", "site-1", "lab-agent", "SER-A", "AP230", "A", "10.0.0.1", null, List.of());
+                "dev-A", "site-1", "SER-A", "AP230", "A", "10.0.0.1", null, List.of(), List.of("lab-agent"));
         FleetService.Device foreign = new FleetService.Device(
-                "dev-B", "site-2", "lab-agent", "SER-B", "AP230", "B", "10.0.0.2", null, List.of());
+                "dev-B", "site-2", "SER-B", "AP230", "B", "10.0.0.2", null, List.of(), List.of("lab-agent"));
         when(fleet.devicesFor("acme", null, null)).thenReturn(List.of(writable, foreign));
         when(guard.allows(eq(principal), eq(Role.OPERATOR), eq(ResourceScope.device("site-1", Set.of())))).thenReturn(true);
         // the site-2 device: guard.allows defaults to false -> "forbidden", never dispatched
@@ -324,7 +324,7 @@ class GatewayControllerSecurityTest {
     @Test
     void bulkApplyConfigDispatchesApplyConfigWithTheDevicesOwnCredRefAndSaveFlag() throws Exception {
         FleetService.Device d = new FleetService.Device(
-                "dev-A", "site-1", "lab-agent", "SER-A", "AP230", "A", "10.0.0.1", "cred-x", List.of());
+                "dev-A", "site-1", "SER-A", "AP230", "A", "10.0.0.1", "cred-x", List.of(), List.of("lab-agent"));
         when(fleet.devicesFor("acme", null, null)).thenReturn(List.of(d));
         when(guard.allows(eq(principal), eq(Role.OPERATOR), any())).thenReturn(true);
         RemoteEngine engine = mock(RemoteEngine.class);

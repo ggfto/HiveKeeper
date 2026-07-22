@@ -1,6 +1,6 @@
 package io.hivekeeper.gateway;
 
-import io.hivekeeper.gateway.tenant.TenantStore;
+import io.hivekeeper.gateway.fleet.FleetService;
 import org.junit.jupiter.api.Test;
 import java.util.List;
 import java.util.Set;
@@ -10,17 +10,18 @@ import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
 /**
- * The active/standby election: among a site's agents that are connected, exactly one — the first by id — is
- * the primary, and it moves automatically as agents come and go.
+ * The serving-agent election: among a device's reachable agents that are connected, exactly one — the first
+ * by id — serves it, and it moves automatically as agents come and go. There is no single-pin fallback: a
+ * device with no connected reachable agent has no serving agent, and the caller skips it.
  */
 class SitePrimaryTest {
 
     private final AgentRegistry registry = mock(AgentRegistry.class);
-    private final TenantStore tenants = mock(TenantStore.class);
-    private final SitePrimary sitePrimary = new SitePrimary(registry, tenants);
+    private final FleetService fleet = mock(FleetService.class);
+    private final SitePrimary sitePrimary = new SitePrimary(registry, fleet);
 
-    private void siteHas(String... agentIds) {
-        when(tenants.agentIdsForSite("acme", "site-1")).thenReturn(List.of(agentIds));
+    private void deviceReachableBy(String... agentIds) {
+        when(fleet.agentIdsForDevice("acme", "dev-1")).thenReturn(List.of(agentIds));
     }
 
     private void connected(String... agentIds) {
@@ -28,60 +29,58 @@ class SitePrimaryTest {
     }
 
     @Test
-    void picksTheFirstConnectedAgentAsPrimary() {
-        siteHas("site-a-01", "site-a-02");
+    void picksTheFirstConnectedAgentAsServing() {
+        deviceReachableBy("site-a-01", "site-a-02");
         connected("site-a-01", "site-a-02");
 
-        assertEquals("site-a-01", sitePrimary.primaryForSite("acme", "site-1").orElseThrow());
+        assertEquals("site-a-01", sitePrimary.primaryForDevice("acme", "dev-1").orElseThrow());
     }
 
     @Test
     void failsOverToTheStandbyWhenThePrimaryIsGone() {
-        siteHas("site-a-01", "site-a-02");
+        deviceReachableBy("site-a-01", "site-a-02");
         connected("site-a-02");   // the primary dropped
 
-        assertEquals("site-a-02", sitePrimary.primaryForSite("acme", "site-1").orElseThrow());
+        assertEquals("site-a-02", sitePrimary.primaryForDevice("acme", "dev-1").orElseThrow());
     }
 
     @Test
     void failsBackWhenThePrimaryReturns() {
-        siteHas("site-a-01", "site-a-02");
+        deviceReachableBy("site-a-01", "site-a-02");
         connected("site-a-01", "site-a-02");   // it is back
 
-        assertEquals("site-a-01", sitePrimary.primaryForSite("acme", "site-1").orElseThrow(),
+        assertEquals("site-a-01", sitePrimary.primaryForDevice("acme", "dev-1").orElseThrow(),
                 "the deterministic order resumes the primary automatically");
     }
 
     @Test
-    void hasNoPrimaryWhenNoAgentOfTheSiteIsConnected() {
-        siteHas("site-a-01", "site-a-02");
-        connected("some-other-site-agent");
+    void hasNoServingAgentWhenNoReachableAgentIsConnected() {
+        deviceReachableBy("site-a-01", "site-a-02");
+        connected("some-other-agent");
 
-        assertTrue(sitePrimary.primaryForSite("acme", "site-1").isEmpty());
+        assertTrue(sitePrimary.primaryForDevice("acme", "dev-1").isEmpty());
     }
 
     @Test
-    void servingAgentIsThePrimaryWhenTheSiteHasOne() {
-        siteHas("site-a-01", "site-a-02");
-        connected("site-a-01", "site-a-02");
+    void servingAgentIsTheFirstConnectedReachableAgent() {
+        deviceReachableBy("site-a-01", "site-a-02");
+        connected("site-a-02");   // only the standby is up — the work goes to it
 
-        // The pinned agent is the standby, but the work must go to the primary.
-        assertEquals("site-a-01", sitePrimary.servingAgent("acme", "site-1", "site-a-02"));
+        assertEquals("site-a-02", sitePrimary.servingAgentForDevice("acme", "dev-1").orElseThrow());
     }
 
     @Test
-    void servingAgentFallsBackToThePinnedAgentWhenNoPrimaryIsAvailable() {
-        // A single-agent site, or the dev store that does not track site membership: agentIdsForSite is empty,
-        // so nothing changes from before — the device's own pinned agent serves it.
-        when(tenants.agentIdsForSite("acme", "site-1")).thenReturn(List.of());
-        connected("legacy-agent");
+    void servingAgentIsEmptyWhenTheReachableSetIsEmpty() {
+        // A device with no reachability rows (unmanaged) resolves to no serving agent — no pin to fall back to.
+        when(fleet.agentIdsForDevice("acme", "dev-1")).thenReturn(List.of());
+        connected("some-agent");
 
-        assertEquals("legacy-agent", sitePrimary.servingAgent("acme", "site-1", "legacy-agent"));
+        assertTrue(sitePrimary.servingAgentForDevice("acme", "dev-1").isEmpty());
     }
 
     @Test
-    void aSiteWithNoIdNeverResolvesAPrimary() {
-        assertTrue(sitePrimary.primaryForSite("acme", null).isEmpty());
-        assertEquals("pinned", sitePrimary.servingAgent("acme", null, "pinned"));
+    void aDeviceWithNoIdNeverResolvesAServingAgent() {
+        assertTrue(sitePrimary.primaryForDevice("acme", null).isEmpty());
+        assertTrue(sitePrimary.servingAgentForDevice("acme", null).isEmpty());
     }
 }

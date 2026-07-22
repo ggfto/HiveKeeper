@@ -18,6 +18,7 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
+import java.util.List;
 import java.util.Optional;
 
 /**
@@ -54,6 +55,9 @@ public class FleetController {
     }
 
     public record EnrollAgent(String agentId, String siteId) {
+    }
+
+    public record AgentRef(String agentId) {
     }
 
     /** {@code caPem} is the CA certificate the agent must trust (its ca.pem) — public, not a secret. Null when
@@ -282,6 +286,76 @@ public class FleetController {
         String label = isBlank(req.label()) ? null : req.label().trim();
         fleet.updateDevice(p.tenantId(), deviceId, label, siteId);
         return ResponseEntity.ok().build();
+    }
+
+    /** Every agent enrolled in the org, by durable identity — connected or not (distinct from {@code
+     *  GET /api/agents}, which is only the currently-connected set). Any member with org viewer may read it. */
+    @GetMapping("/api/agents/all")
+    public ResponseEntity<?> listAgents() {
+        Principal p = guard.authenticate();
+        guard.require(p, Role.VIEWER, ResourceScope.org());
+        return ResponseEntity.ok(fleet.listAgents(p.tenantId()));
+    }
+
+    /** The agents that can reach a device (its reachability set). Viewer on the device's lineage. */
+    @GetMapping("/api/devices/{deviceId}/agents")
+    public ResponseEntity<?> listDeviceAgents(@PathVariable String deviceId) {
+        Principal p = guard.authenticate();
+        Optional<ResourceScope> deviceScope = fleet.deviceScope(p.tenantId(), deviceId);
+        if (deviceScope.isEmpty()) {
+            return status404("device_not_found", deviceId);
+        }
+        guard.require(p, Role.VIEWER, deviceScope.get());
+        return ResponseEntity.ok(fleet.reachableAgents(p.tenantId(), deviceId));
+    }
+
+    /** Add an agent to a device's reachability set — declaring that this agent can also drive the AP. Like
+     *  tagging, it links a device to another resource, so require admin on BOTH the device's lineage AND the
+     *  agent's site (a site-scoped admin cannot pull in an agent on a site they do not control). */
+    @PostMapping("/api/devices/{deviceId}/agents")
+    public ResponseEntity<?> addDeviceAgent(@PathVariable String deviceId, @RequestBody AgentRef req) {
+        Principal p = guard.authenticate();
+        if (isBlank(req.agentId())) {
+            return badRequest("agentId is required");
+        }
+        Optional<ResourceScope> deviceScope = fleet.deviceScope(p.tenantId(), deviceId);
+        if (deviceScope.isEmpty()) {
+            return status404("device_not_found", deviceId);
+        }
+        Optional<FleetService.AgentSummary> agent = agent(p.tenantId(), req.agentId().trim());
+        if (agent.isEmpty()) {
+            return status404("agent_not_found", req.agentId());
+        }
+        guard.require(p, Role.ADMIN, deviceScope.get());
+        guard.require(p, Role.ADMIN, agentScope(agent.get()));
+        fleet.addDeviceAgent(p.tenantId(), deviceId, req.agentId().trim());
+        return ResponseEntity.ok().build();
+    }
+
+    /** Remove an agent from a device's reachability set. Like adding, it touches BOTH lineages — admin on each. */
+    @DeleteMapping("/api/devices/{deviceId}/agents/{agentId}")
+    public ResponseEntity<?> removeDeviceAgent(@PathVariable String deviceId, @PathVariable String agentId) {
+        Principal p = guard.authenticate();
+        Optional<ResourceScope> deviceScope = fleet.deviceScope(p.tenantId(), deviceId);
+        if (deviceScope.isEmpty()) {
+            return status404("device_not_found", deviceId);
+        }
+        Optional<FleetService.AgentSummary> agent = agent(p.tenantId(), agentId);
+        if (agent.isEmpty()) {
+            return status404("agent_not_found", agentId);
+        }
+        guard.require(p, Role.ADMIN, deviceScope.get());
+        guard.require(p, Role.ADMIN, agentScope(agent.get()));
+        fleet.removeDeviceAgent(p.tenantId(), deviceId, agentId);
+        return ResponseEntity.ok().build();
+    }
+
+    private Optional<FleetService.AgentSummary> agent(String tenantId, String agentId) {
+        return fleet.listAgents(tenantId).stream().filter(a -> a.agentId().equals(agentId)).findFirst();
+    }
+
+    private static ResourceScope agentScope(FleetService.AgentSummary agent) {
+        return agent.siteId() == null ? ResourceScope.org() : ResourceScope.site(agent.siteId());
     }
 
     /**

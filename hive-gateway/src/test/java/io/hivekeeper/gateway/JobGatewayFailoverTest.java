@@ -4,7 +4,7 @@ import io.hivekeeper.core.api.Command;
 import io.hivekeeper.core.crypto.SecretCipher;
 import io.hivekeeper.core.model.DeviceRef;
 import io.hivekeeper.gateway.JobService.JobRow;
-import io.hivekeeper.gateway.tenant.TenantStore;
+import io.hivekeeper.gateway.fleet.FleetService;
 import io.hivekeeper.protocol.Frame;
 import io.hivekeeper.protocol.FrameChannel;
 import io.hivekeeper.wire.JsonCodec;
@@ -95,18 +95,17 @@ class JobGatewayFailoverTest {
     }
 
     private MapJobService store;
-    private TenantStore tenants;
+    private FleetService fleet;
     private JobGateway gateway;
 
     @BeforeEach
     void setUp() {
         store = new MapJobService();
-        tenants = mock(TenantStore.class);
-        gateway = new JobGateway(store, SecretCipher.fromBase64(KEY), tenants);
-        // Two agents share site-1; the primary sorts first.
-        when(tenants.agentSiteId("site-a-01")).thenReturn(Optional.of("site-1"));
-        when(tenants.agentSiteId("site-a-02")).thenReturn(Optional.of("site-1"));
-        when(tenants.agentIdsForSite("acme", "site-1")).thenReturn(List.of("site-a-01", "site-a-02"));
+        fleet = mock(FleetService.class);
+        gateway = new JobGateway(store, SecretCipher.fromBase64(KEY), fleet);
+        // Two agents both reach the same device(s), so they are each other's peers; the serving one sorts first.
+        when(fleet.reachablePeers("acme", "site-a-01")).thenReturn(List.of("site-a-02"));
+        when(fleet.reachablePeers("acme", "site-a-02")).thenReturn(List.of("site-a-01"));
     }
 
     private String submitTo(String agentId) {
@@ -132,11 +131,10 @@ class JobGatewayFailoverTest {
 
     @Test
     void doesNotStealJobsWhenAnotherAgentIsStillPrimary() {
-        // Three agents; the disconnecting one (site-a-03) is NOT the primary, so nothing fails over — the
-        // primary is still up and owns the site.
-        when(tenants.agentSiteId("site-a-03")).thenReturn(Optional.of("site-1"));
-        when(tenants.agentIdsForSite("acme", "site-1"))
-                .thenReturn(List.of("site-a-01", "site-a-02", "site-a-03"));
+        // Three agents all reach the same device(s); the disconnecting one (site-a-03) is NOT the serving
+        // agent, so its jobs fail over to the serving peer (site-a-01) that is still up.
+        when(fleet.reachablePeers("acme", "site-a-01")).thenReturn(List.of("site-a-02", "site-a-03"));
+        when(fleet.reachablePeers("acme", "site-a-03")).thenReturn(List.of("site-a-01", "site-a-02"));
         FakeChannel primary = new FakeChannel();
         FakeChannel other = new FakeChannel();
         gateway.onAgentConnected("acme", "site-a-01", primary);
@@ -165,8 +163,7 @@ class JobGatewayFailoverTest {
 
     @Test
     void doesNothingForASingleAgentSite() {
-        when(tenants.agentSiteId("solo")).thenReturn(Optional.of("site-solo"));
-        when(tenants.agentIdsForSite("acme", "site-solo")).thenReturn(List.of("solo"));
+        when(fleet.reachablePeers("acme", "solo")).thenReturn(List.of());
         FakeChannel ch = new FakeChannel();
         gateway.onAgentConnected("acme", "solo", ch);
         String jobId = gateway.submit("acme", "solo", "configure-ssid",

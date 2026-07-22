@@ -100,17 +100,24 @@ public class FleetPoller {
 
         Set<String> seen = new HashSet<>();
         for (FleetService.Device d : devices) {
-            if (d.agentId() == null) {
-                continue;   // unmanaged device — not pollable
+            if (d.reachableAgents().isEmpty()) {
+                continue;   // unmanaged device — no agent can reach it, not pollable
             }
-            for (AlertRules.Alert a : evaluateDevice(tenantId, d, connected, thresholds)) {
+            // Two agents for one device: the nominal owner (first reachable, for the alert's label — always
+            // present) vs. the serving agent that actually reaches it now (the first CONNECTED reachable one,
+            // possibly none). Polling through the serving agent means the standby covers a down primary, so a
+            // device still reachable via a peer does not alert offline.
+            String labelAgent = d.reachableAgents().get(0);
+            String serving = sitePrimary.servingAgentForDevice(tenantId, d.deviceId()).orElse(null);
+            for (AlertRules.Alert a : evaluateDevice(tenantId, d, serving, connected, thresholds)) {
                 String key = d.deviceId() + "/" + a.id();
                 seen.add(key);
                 boolean isNew = !firing.containsKey(key);
-                alerts.markFiring(tenantId, new FiringAlert(d.deviceId(), d.agentId(), a.id(), a.severity(),
+                alerts.markFiring(tenantId, new FiringAlert(d.deviceId(), labelAgent, a.id(), a.severity(),
                         a.message(), null, null));
                 if (isNew) {
-                    notifier.notify(channels, event("firing", tenantId, d, a.id(), a.severity(), a.message()));
+                    notifier.notify(channels, event("firing", tenantId, d, labelAgent, a.id(), a.severity(),
+                            a.message()));
                 }
             }
         }
@@ -129,13 +136,10 @@ public class FleetPoller {
         }
     }
 
-    private List<AlertRules.Alert> evaluateDevice(String tenantId, FleetService.Device d, Set<String> connected,
-                                                  AlertRules.Thresholds thresholds) {
-        // Poll through the site's current primary, not the pinned agent: with an active/standby pair, the
-        // device is still reachable via the standby when the primary is down, so it must not alert offline.
-        String agent = sitePrimary.servingAgent(tenantId, d.siteId(), d.agentId());
+    private List<AlertRules.Alert> evaluateDevice(String tenantId, FleetService.Device d, String agent,
+                                                  Set<String> connected, AlertRules.Thresholds thresholds) {
         if (agent == null || !connected.contains(agent)) {
-            return AlertRules.evaluate(false, null, thresholds);   // no agent on the site can reach it
+            return AlertRules.evaluate(false, null, thresholds);   // no reachable agent is connected
         }
         Optional<RemoteEngine> engine = registry.engine(tenantId, agent);
         if (engine.isEmpty() || d.mgmtIp() == null) {
@@ -170,9 +174,9 @@ public class FleetPoller {
         return new AlertRules.RadioView(r.name(), channel, r.power(), null);
     }
 
-    private static AlertEvent event(String state, String tenantId, FleetService.Device d, String alertId,
-                                    String severity, String message) {
-        return new AlertEvent(state, tenantId, d.agentId(), d.deviceId(), d.label(), d.mgmtIp(), alertId,
+    private static AlertEvent event(String state, String tenantId, FleetService.Device d, String agentId,
+                                    String alertId, String severity, String message) {
+        return new AlertEvent(state, tenantId, agentId, d.deviceId(), d.label(), d.mgmtIp(), alertId,
                 severity, message, Instant.now());
     }
 }
