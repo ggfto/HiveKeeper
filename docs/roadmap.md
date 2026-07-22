@@ -312,8 +312,12 @@ Driven by a live session against an AP230, an AP630 and an AP410C-1 (HiveOS 10.6
   as-adopted git baseline; the radio-profile form preloads an existing profile's values and the Radio form
   shows current channel/width/power/mode. (Full preload for the remaining value forms — captive portal, client
   mode, mgt0 network — is a follow-up.)
-- **Active/standby agents — SHIPPED.** Two agents per site elect a gateway-side primary; unattended work runs
-  on one, and durable jobs fail over to the standby. Adopting an AP from either agent dedups to one row.
+- **Multiple agents per device — SHIPPED.** Agents are first-class and device reachability is an explicit
+  many-to-many set (editable in the console), so two or more agents can drive the same AP — active/standby, a
+  load split, distinct network paths, or a migration — no longer tied to the device's site. The gateway elects
+  one serving agent (deterministic by id over the connected reachable set); unattended work runs on it and
+  durable jobs fail over to a reachable peer. Adopting an AP from either agent dedups to one row, reachable by
+  both.
 - **Agent auto-update + drain — SHIPPED.** Opt-in, tag-following, label-scoped; the agent drains its running
   job before any restart.
 

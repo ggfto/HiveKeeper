@@ -220,7 +220,8 @@ the agent follow releases on its own with the opt-in auto-updater (`--profile au
 [Running in production](/production/) → *Letting the agent update itself*; on Podman it needs the
 Docker-compatible socket).
 
-For a redundant site, enrol a **second agent** on the same site and the two run active/standby automatically;
+For redundancy, enrol a **second agent** that can reach the same APs (add it to a device from the console, or
+adopt the AP from it) and the two run active/standby automatically — it need not share the device's site;
 and set the organization's **backup destination** (a git repository) in the console so the fleet's config
 history lands off the agents. Both are covered in [Running in production](/production/).
 

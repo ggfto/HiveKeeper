@@ -107,15 +107,18 @@ The gateway:
 - **Agent auto-update (opt-in).** An on-prem agent can follow new releases on its own — it fires only when its
   image tag *moves*, is scoped to the agent alone, and **drains** the running job before the swap so a restart
   never interrupts work. See [Running in production](/production/).
-- **Active/standby agents per site.** Enrol a second agent on a site's LAN and the two become a redundant
-  pair: exactly one — the primary — runs each device's unattended task, so a backup capture never runs twice,
-  and if the primary goes offline the standby takes over the next dispatch on its own. The primary is the
-  connected agent whose id sorts first, so you choose it by naming (e.g. `site-a-01` ahead of `site-a-02`);
-  election and failover are the gateway's, and the agents never talk to each other. This governs the
-  background poller and scope-targeted bulk operations — the unattended work; a single-device console
-  operation still runs on the agent you pick. A **durable job** queued to a primary that then drops is moved
-  to the standby and dispatched there, rather than waiting for the primary to return; and **adopting the same
-  access point from either agent** converges to one device row, so it is never configured twice.
+- **Multiple agents per device (reachability).** Which agents can drive a device is an explicit set you can
+  edit on the device page — so two or more agents can control the same access point (an active/standby pair, a
+  load split, agents on different network paths, or a migration), and they need not share the device's site.
+  Exactly one — the **serving agent** — runs each device's unattended task, so a backup capture never runs
+  twice, and if it goes offline the next connected reachable agent takes over the next dispatch on its own. The
+  serving agent is the connected reachable agent whose id sorts first, so you choose it by naming (e.g.
+  `site-a-01` ahead of `site-a-02`); election and failover are the gateway's, and the agents never talk to each
+  other. This governs the background poller and scope-targeted bulk operations — the unattended work; a
+  single-device console operation still runs on the agent you pick. A **durable job** queued to an agent that
+  then drops is moved to a reachable peer and dispatched there, rather than waiting for it to return; and
+  **adopting the same access point from either agent** converges to one device row, reachable by both, so it is
+  never configured twice.
 - A **backup destination** for the organization: one git repository every agent pushes its config history to,
   set from the console so no one has to touch an agent's machine. The token is sealed to each agent's own key
   on the way out and held encrypted at rest on both ends. **A failed push is not a failed backup** — the local

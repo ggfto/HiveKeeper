@@ -152,11 +152,13 @@ backups do not cover it.
 
 ### A second agent for redundancy (active/standby)
 
-Enrol a second agent **on the same site**, on the same LAN, reaching the same APs. One becomes the primary and
-does all unattended work; the other stands by and takes over automatically if the primary drops. The primary
-is the connected agent whose id sorts first, so choose it by naming — `site-a-01` (primary), `site-a-02`
-(standby). Nothing else to configure: the gateway elects and fails over, and the agents never talk to each
-other. Adopting the same AP from either agent converges to one device.
+Enrol a second agent that can reach the same APs — typically another node on the same LAN, but it needn't share
+the device's site. Point both at an AP (adopt it from either, or add the agent on the device page) and they can
+both drive it: one becomes the serving agent and does all unattended work; the other stands by and takes over
+automatically if it drops. The serving agent is the connected reachable agent whose id sorts first, so choose it
+by naming — `site-a-01` (serving), `site-a-02` (standby). Nothing else to configure: the gateway elects and
+fails over, and the agents never talk to each other. Adopting the same AP from either agent converges to one
+device, reachable by both.
 
 ### Where the fleet's config history goes
 

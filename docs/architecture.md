@@ -61,16 +61,26 @@ exactly like a bulk inventory, evaluates the shared `hive-core` `alerts` rules, 
 Delivery fans out to per-tenant **webhook** and **email** channels. It is the only background scheduler;
 operator-initiated durable jobs use the separate `JobGateway` redelivery path, not the scheduler.
 
-## Redundant agents (active/standby)
+## Multiple agents per device (reachability)
 
-Two agents enrolled to the same **site** are a redundant pair on one LAN. `SitePrimary` elects a deterministic
-**primary** — the connected site-agent whose id sorts first — and all *unattended* dispatch (the poller and
-scope-targeted bulk ops) resolves the serving agent through it, so exactly one agent runs each device's task
-and a standby takes over the moment the primary drops. Election is gateway-side and stateless; **the agents
-never talk to each other** and hold no peer awareness, which keeps the "agent dials out, opens no inbound
-port" property intact and avoids split-brain. Durable jobs queued to a primary that then disconnects are
-**atomically reassigned** to the standby by `JobGateway` (an `UPDATE … RETURNING` guarded by the addressed
-agent — the same single-winner claim idiom as one-time enrollment consumption) and redispatched there.
+An **agent** is a first-class entity, and which agents can drive a device is an explicit many-to-many
+**reachability** set (`device_agent`) — not a single owning pin, and no longer tied to the device's site. So
+two or more agents can control the same access point: an active/standby pair on one LAN, a load split, agents
+on different network paths that both reach the AP, or a migration where a replacement runs alongside the old
+one. A device's **logical** site (for RBAC and grouping) and its **physical** reach (which agents can talk to
+it) are now separate axes; adopting an AP through an agent simply adds that agent to its reachable set.
+
+For *unattended* dispatch (the poller and scope-targeted bulk ops), `SitePrimary` picks the one **serving
+agent** deterministically — among a device's reachable agents that are currently connected, the one whose id
+sorts first — so exactly one agent runs each device's task and the next connected agent takes over the moment
+it drops. You choose the serving agent by naming (e.g. `site-a-01` ahead of `site-a-02`). Election is
+gateway-side and stateless; **the agents never talk to each other** and hold no peer awareness, which keeps
+the "agent dials out, opens no inbound port" property intact and avoids split-brain. A single-device console
+operation still runs on the agent the operator picks (a serving-agent picker on the device page). Durable jobs
+queued to an agent that then disconnects are **atomically reassigned** to a reachable peer by `JobGateway` (an
+`UPDATE … RETURNING` guarded by the addressed agent — the same single-winner claim idiom as one-time
+enrollment consumption) and redispatched there. Revoking an agent drops it from serving selection but keeps
+its reachability rows, so re-enrolling restores its reach with no data loss.
 
 ## Agent lifecycle
 
