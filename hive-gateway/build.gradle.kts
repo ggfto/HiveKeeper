@@ -21,7 +21,10 @@ dependencies {
     implementation("org.springframework.boot:spring-boot-starter-mail")
     // Persistence (active only under the 'postgres' profile)
     implementation("org.springframework.boot:spring-boot-starter-jdbc")
-    runtimeOnly("org.postgresql:postgresql")
+    // Pinned ahead of the Spring Boot 4.1.0 BOM (which still ships 42.7.11): CVE-2026-54291 is a
+    // SCRAM-SHA-256-PLUS downgrade / MITM-protection bypass, fixed in 42.7.12. Gradle resolves to the higher
+    // version, so this also lifts the copy pulled transitively by flyway-database-postgresql.
+    runtimeOnly("org.postgresql:postgresql:42.7.12")
     implementation("org.flywaydb:flyway-core")
     runtimeOnly("org.flywaydb:flyway-database-postgresql")
     // Spring Boot 4 moved Flyway auto-configuration out of spring-boot-autoconfigure into its own module;
