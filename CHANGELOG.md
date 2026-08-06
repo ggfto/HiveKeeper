@@ -1,3 +1,10 @@
+## [0.16.1](https://github.com/ggfto/HiveKeeper/compare/v0.16.0...v0.16.1) (2026-08-06)
+
+
+### Bug Fixes
+
+* **fleet:** write the agent last_seen column that was only ever read ([3307acb](https://github.com/ggfto/HiveKeeper/commit/3307acb0a23306c56f35b6ed2e5f7a99812c8781))
+
 # [0.16.0](https://github.com/ggfto/HiveKeeper/compare/v0.15.0...v0.16.0) (2026-08-06)
 
 
