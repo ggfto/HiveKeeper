@@ -101,6 +101,28 @@ export function AgentsPage() {
     }
   }
 
+  // Delete an agent outright, freeing its id for a clean re-install. Irreversible, and it takes the agent's
+  // device reachability with it — the confirm step in the list is what states that cost.
+  const onRemove = async (agentId) => {
+    setBusy(true)
+    try {
+      await gateway.deleteAgent(agentId)
+      // Any discover results on screen belong to an agent that no longer exists — clear them rather than leave
+      // an adopt flow pointing at a deleted agent.
+      if (discoverAgent === agentId) {
+        setDiscovered([])
+        setIdentified({})
+        setDiscoverAgent('')
+      }
+      toast(`Removed ${agentId}. Enroll it again to re-install.`, 'success')
+      await load()
+    } catch (e) {
+      toast(`Remove ${agentId}: ${e.message}`, 'error')
+    } finally {
+      setBusy(false)
+    }
+  }
+
   // Register a new agent -> its one-time enrollment token. Refresh the list (it shows once the agent connects).
   const createEnrollment = (agentId, siteId) =>
     gateway.createEnrollment({ agentId, siteId }).then((r) => {
@@ -170,6 +192,7 @@ export function AgentsPage() {
         loading={loading}
         onView={(id) => navigate(`/devices?agent=${id}`)}
         onDiscover={onDiscover}
+        onRemove={onRemove}
         busy={busy}
       />
       <AddAgentForm sites={sites} createEnrollment={createEnrollment} busy={busy} />

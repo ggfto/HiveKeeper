@@ -350,6 +350,39 @@ public class FleetController {
         return ResponseEntity.ok().build();
     }
 
+    /**
+     * Delete an agent for good — its identity, its enrollment, and its device reachability — freeing the agent
+     * id so the same machine can be re-installed from a clean enrollment. Admin on the agent's scope.
+     *
+     * <p>Deliberately NOT the same thing as {@code POST /api/agents/{id}/revoke}: revoke is the reversible
+     * lockout that keeps reachability for a later re-enroll, this is the irreversible teardown. Its devices stay
+     * in the fleet but lose this agent from their reachable set, so any AP it alone could reach becomes
+     * unmanageable until another agent is pointed at it. Unfinished jobs for the agent are failed, not carried
+     * over to whatever claims the id next.
+     *
+     * <p>A currently-connected agent is not forced off its socket here — like revoke, this closes the door
+     * rather than pushing anyone through it: the handshake fails the moment it next reconnects, because the
+     * enrollment its certificate CN resolves to is gone. Stop the on-prem container as part of the re-install
+     * and the session goes with it.
+     */
+    @DeleteMapping("/api/agents/{agentId}")
+    public ResponseEntity<?> deleteAgent(@PathVariable String agentId) {
+        Principal p = guard.authenticate();
+        Optional<FleetService.AgentSummary> agent = agent(p.tenantId(), agentId);
+        if (agent.isEmpty()) {
+            return status404("agent_not_found", agentId);
+        }
+        guard.require(p, Role.ADMIN, agentScope(agent.get()));
+        try {
+            if (!fleet.deleteAgent(p.tenantId(), agentId)) {
+                return status404("agent_not_found", agentId);
+            }
+            return ResponseEntity.ok().build();
+        } catch (UnsupportedOperationException e) {
+            return ResponseEntity.status(501).body(new ApiError("not_supported", e.getMessage()));
+        }
+    }
+
     private Optional<FleetService.AgentSummary> agent(String tenantId, String agentId) {
         return fleet.listAgents(tenantId).stream().filter(a -> a.agentId().equals(agentId)).findFirst();
     }

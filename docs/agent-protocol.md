@@ -52,6 +52,15 @@ channel — no socket.)
 - **Heartbeat** ~20–30s each way; miss N in a row ⇒ reconnect.
 - **Reconnect** with exponential backoff + jitter. On reconnect the agent sends `Resume`; the gateway
   redelivers un-acked work from its job DB.
+- **A reconnect outruns the old socket's close, and the registry expects it.** When the uplink dies abruptly —
+  a tunnel or NAT dropping the stream, which the agent sees as a bare `1006` close with no close frame — the
+  gateway is left holding a *half-open* socket that nothing closes until a write fails or an idle timeout
+  fires. The agent is back in about a second on a new session, so the stale close lands **after** the live
+  registration. `AgentRegistry` therefore tags each entry with the session that owns it and evicts only on a
+  close from that session; `AgentWebSocketHandler` likewise treats a superseded close as a non-event rather
+  than a disconnect. Without that, a straggling close deletes the entry the reconnect just installed and the
+  agent goes on running while the gateway believes it is gone: missing from `GET /api/agents`, **offline** in
+  the console, and `agent_not_connected` for every job — until its next reconnect, which may be hours away.
 - **Idempotency**: `Job.idempotencyKey` lets the agent dedupe a redelivered job; `JobEvent.seq` + `Ack`
   give at-least-once streaming with gap/dup detection.
 - **Graceful drain on shutdown**: the agent stops accepting new jobs and lets the running one finish and send
@@ -113,6 +122,20 @@ channel — no socket.)
     client certs, so it enforces revocation directly at the auth seam — no CRL/OCSP distribution is needed.
     `POST /api/agents/{id}/re-enroll` (admin) clears the revoked/consumed marks and mints a **fresh one-time
     token** so a replacement agent can bootstrap. Flyway `V12` adds `revoked_at` / `revoked_reason`.
+  - **Deletion** — `DELETE /api/agents/{id}` (admin on the agent's scope) removes the agent outright: its
+    durable `agent` identity, its `agent_enrollment` credential, and — by cascade — every `device_agent`
+    reachability row it held. Unfinished jobs addressed to it are marked `FAILED` rather than left to be
+    redelivered to whatever next claims the id (`job` is granted update, not delete). Flyway `V15` adds the
+    missing `delete` grant on `agent_enrollment`.
+
+    Delete is the **destructive** counterpart to revoke, and the two answer different questions. Revoke is
+    reversible and *keeps* reachability, so re-enrolling restores the agent with no data loss — use it for a
+    compromised or temporarily decommissioned agent. Delete frees the agent id for a clean re-install and
+    cannot be undone: the devices survive, but they lose this agent from their reachable set, so an AP only
+    this agent could drive is unmanageable until another agent is pointed at it. The console states that
+    device count on the confirm button. A currently-connected agent is not forced off its socket — as with
+    revoke, the handshake simply fails at its next reconnect, so stop the on-prem container as part of the
+    re-install.
   - **Deferred to a later slice:** an intermediate CA and KMS/HSM custody of the CA key (slice 1's CA key is a
     file on the gateway — dev/self-hosted only).
 - **Multi-tenancy** — `(tenantId, agentId)`-keyed registry; REST scoped by `X-Tenant-Key`; cross-tenant

@@ -107,6 +107,12 @@ The gateway:
 - **Agent auto-update (opt-in).** An on-prem agent can follow new releases on its own — it fires only when its
   image tag *moves*, is scoped to the agent alone, and **drains** the running job before the swap so a restart
   never interrupts work. See [Running in production](/production/).
+- **Remove an agent** from the Agents page to free its id for a clean re-install. This is the irreversible one:
+  it deletes the agent's identity, its enrollment, and its device reachability, and any unfinished job queued
+  to it is failed rather than handed to whatever enrolls under that id next. The devices stay in the fleet, so
+  the cost is reachability — an access point only this agent could drive is unmanageable until you point
+  another one at it, which is why the confirm button names how many devices that is. To lock an agent out
+  *without* losing its reachability (a compromise, or a machine coming back later), revoke it instead.
 - **Multiple agents per device (reachability).** Which agents can drive a device is an explicit set you can
   edit on the device page — so two or more agents can control the same access point (an active/standby pair, a
   load split, agents on different network paths, or a migration), and they need not share the device's site.

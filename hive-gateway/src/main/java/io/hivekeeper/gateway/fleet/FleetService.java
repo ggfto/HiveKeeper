@@ -68,6 +68,20 @@ public interface FleetService {
     /** Every agent enrolled in the org, by durable identity (connected or not), ordered by agent id. */
     List<AgentSummary> listAgents(String tenantId);
 
+    /**
+     * Delete an agent outright — the exact inverse of {@link #createEnrollment}: its durable identity, its
+     * enrollment credential, and (by cascade) every {@code device_agent} reachability row it held. Unfinished
+     * jobs addressed to it are failed rather than left to be redelivered to whatever next claims the id.
+     *
+     * <p>This is the DESTRUCTIVE counterpart to revoking. Revoke locks an agent out but keeps its reachability
+     * so re-enrolling restores it; delete frees the agent id for a clean re-install and cannot be undone —
+     * re-adding the same id afterwards starts from nothing and its devices must be made reachable again. The
+     * devices themselves, the operation log, and any PPSK users minted through the agent all survive.
+     *
+     * @return true when the agent existed in this tenant (and is now gone), false when it did not.
+     */
+    boolean deleteAgent(String tenantId, String agentId);
+
     /** The agents that can reach a device (its reachability set), ordered by agent id and excluding revoked
      *  ones — so the first that is also connected is the deterministic serving agent. */
     List<String> agentIdsForDevice(String tenantId, String deviceId);

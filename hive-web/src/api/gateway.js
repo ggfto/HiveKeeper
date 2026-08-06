@@ -73,6 +73,9 @@ export function createGateway({ getAuth = () => ({}), fetchImpl = fetch, baseUrl
     devices: () => req('/api/devices'),
     operations: () => req('/api/operations'),
     createEnrollment: (body) => req('/api/enrollments', { method: 'POST', body }),
+    // Delete an agent for good — identity, enrollment and device reachability — freeing its id for a clean
+    // re-install. Distinct from revoking, which is the reversible lockout that keeps reachability.
+    deleteAgent: (agentId) => req(`/api/agents/${agentId}`, { method: 'DELETE' }),
     createSite: (name) => req('/api/sites', { method: 'POST', body: { name } }),
     renameSite: (siteId, name) => req(`/api/sites/${siteId}`, { method: 'PATCH', body: { name } }),
     deleteSite: (siteId) => req(`/api/sites/${siteId}`, { method: 'DELETE' }),

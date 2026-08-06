@@ -284,6 +284,17 @@ export function createDemoGateway() {
         token: `demo-enroll-${uid('t')}`,
         caPem: '-----BEGIN CERTIFICATE-----\n(demo CA — this sandbox has no real gateway)\n-----END CERTIFICATE-----\n',
       }),
+    // Mirrors the real teardown: the identity goes, the connection with it, and the agent drops out of every
+    // device's reachable set — but the devices themselves stay in the fleet, some now unreachable.
+    deleteAgent: (agentId) => {
+      if (!db.agentIdentities.some((a) => a.agentId === agentId)) return fail(`unknown agent ${agentId}`, 404)
+      db.agentIdentities = db.agentIdentities.filter((a) => a.agentId !== agentId)
+      db.agents = db.agents.filter((a) => a !== agentId)
+      db.devices.forEach((d) => {
+        d.reachableAgents = (d.reachableAgents || []).filter((a) => a !== agentId)
+      })
+      return ok({})
+    },
 
     createSite: (name) => {
       db.sites.push({ siteId: uid('s'), name })

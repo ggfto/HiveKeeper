@@ -171,6 +171,15 @@ public class InMemoryFleetService implements FleetService {
     }
 
     @Override
+    public synchronized boolean deleteAgent(String tenantId, String agentId) {
+        // Symmetric with createEnrollment: this stack cannot mint an agent's enrollment credential, so it must
+        // not pretend to destroy one either — a delete here would drop the identity while the enrollment the
+        // handshake actually checks lived elsewhere, leaving the agent able to connect but invisible.
+        throw new UnsupportedOperationException(
+                "deleting agents requires the 'postgres' profile; the demo stack ships a fixed lab-agent");
+    }
+
+    @Override
     public synchronized List<String> agentIdsForDevice(String tenantId, String deviceId) {
         // Sorted for a deterministic primary. The in-memory store tracks no revocation (that lives in the
         // tenant store), so — as with the single-pin default it replaces — it does not filter revoked agents.

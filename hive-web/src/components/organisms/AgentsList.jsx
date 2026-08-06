@@ -1,13 +1,19 @@
 import { MriCard, MriCardHeader, MriCardTitle, MriCardContent, MriButton, MriStatusBadge } from '@mriqbox/ui-kit'
 import { Boxes } from 'lucide-react'
+import { ConfirmButton } from '../molecules/ConfirmButton'
 
 /**
  * The enrolled on-prem agents for the active organization, each shown online/offline (an agent is online while
  * it holds a connection to the gateway), with how many fleet devices it can reach and its site. View devices
  * jumps to the fleet filtered to that agent; Discover sweeps its LAN (only while it is online). Agents are
  * { id, online, deviceCount, site }.
+ *
+ * `onRemove(agentId)` deletes the agent outright — the teardown half of a re-install, and irreversible. It is
+ * omitted entirely when the caller cannot delete, and its confirm step names the devices that lose their way to
+ * the fleet: the reachability goes with the agent, so an AP only this agent could drive is stranded until
+ * another one is pointed at it. That number is the whole cost of the click, so it is on the button.
  */
-export function AgentsList({ agents, onView, onDiscover, busy, loading }) {
+export function AgentsList({ agents, onView, onDiscover, onRemove, busy, loading }) {
   if (loading && agents == null) {
     return <p className="text-sm text-muted-foreground">Loading agents…</p>
   }
@@ -50,6 +56,19 @@ export function AgentsList({ agents, onView, onDiscover, busy, loading }) {
               >
                 Discover
               </MriButton>
+              {onRemove && (
+                <ConfirmButton
+                  disabled={busy}
+                  confirmLabel={
+                    a.deviceCount > 0
+                      ? `Remove agent + ${a.deviceCount} device${a.deviceCount === 1 ? '' : 's'} unreachable`
+                      : 'Remove agent'
+                  }
+                  onConfirm={() => onRemove(a.id)}
+                >
+                  Remove
+                </ConfirmButton>
+              )}
             </div>
           </MriCardContent>
         </MriCard>

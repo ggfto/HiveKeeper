@@ -127,6 +127,40 @@ class FleetControllerSecurityTest {
     }
 
     @Test
+    void deleteAgentRequiresAdminOnTheAgentsSite() throws Exception {
+        when(fleet.listAgents("acme"))
+                .thenReturn(List.of(new FleetService.AgentSummary("agent-1", "agent-1", "s1", null)));
+        when(fleet.deleteAgent("acme", "agent-1")).thenReturn(true);
+
+        mvc.perform(delete("/api/agents/agent-1")).andExpect(status().isOk());
+
+        verify(guard).require(eq(principal), eq(Role.ADMIN), eq(ResourceScope.site("s1")));
+        verify(fleet).deleteAgent("acme", "agent-1");
+    }
+
+    @Test
+    void deleteAgentIsAuthorizedBeforeAnythingIsDeleted() throws Exception {
+        // The scope check must gate the delete, not follow it — a refused caller must leave the agent intact.
+        when(fleet.listAgents("acme"))
+                .thenReturn(List.of(new FleetService.AgentSummary("agent-1", "agent-1", "s1", null)));
+        doThrow(new AccessException(403, "forbidden", "requires ADMIN"))
+                .when(guard).require(eq(principal), eq(Role.ADMIN), eq(ResourceScope.site("s1")));
+
+        mvc.perform(delete("/api/agents/agent-1")).andExpect(status().isForbidden());
+
+        verify(fleet, never()).deleteAgent(any(), any());
+    }
+
+    @Test
+    void deletingAnUnknownAgentIs404() throws Exception {
+        when(fleet.listAgents("acme")).thenReturn(List.of());
+
+        mvc.perform(delete("/api/agents/ghost")).andExpect(status().isNotFound());
+
+        verify(fleet, never()).deleteAgent(any(), any());
+    }
+
+    @Test
     void tagDeviceRequiresAdminOnBothTheDeviceAndTheTargetGroup() throws Exception {
         ResourceScope deviceScope = ResourceScope.device("s1", Set.of("g0"));
         ResourceScope groupScope = ResourceScope.group("s2", "g1");

@@ -262,6 +262,54 @@ class GatewayPostgresIT {
     }
 
     @Test
+    void deletingAnAgentFreesItsIdAndTakesItsReachabilityAndPendingJobsWithIt() {
+        // The teardown behind a clean re-install: everything that would make a fresh enrollment of the same id
+        // inherit the old agent's state has to be gone, while the fleet around it survives.
+        String site = fleet.createSite("acme", "Delete site");
+        fleet.createEnrollment("acme", "del-agent", site);
+        fleet.createEnrollment("acme", "keep-agent", site);
+        String dev = fleet.registerDevice("acme", "SER-DEL", "AP230", "del", "10.7.0.1", site, "del-agent", null);
+        fleet.addDeviceAgent("acme", dev, "keep-agent");
+        jobs.create("acme", "del-agent", "idem-del", "configure-ssid", "cipher-del");
+        jobs.create("acme", "keep-agent", "idem-keep", "configure-ssid", "cipher-keep");
+
+        assertTrue(fleet.deleteAgent("acme", "del-agent"));
+
+        assertTrue(fleet.listAgents("acme").stream().noneMatch(a -> a.agentId().equals("del-agent")),
+                "the durable identity is gone");
+        assertTrue(tenants.enrollmentByAgentId("del-agent").isEmpty(),
+                "and so is the enrollment the handshake resolves — a stale cert can no longer authenticate");
+        assertEquals(List.of("keep-agent"), fleet.reachableAgents("acme", dev),
+                "its device_agent rows cascaded away; the peer's reachability is untouched");
+        assertTrue(jobs.pendingFor("acme", "del-agent").isEmpty(),
+                "its unfinished job is failed, so a re-install of the same id does not inherit it");
+        assertEquals(1, jobs.pendingFor("acme", "keep-agent").size(), "another agent's job is not touched");
+
+        // The device itself survives the loss of one of the agents that could reach it.
+        assertTrue(fleet.devicesFor("acme", site, null).stream().anyMatch(d -> d.deviceId().equals(dev)));
+
+        // Idempotent-ish: deleting again reports "not found" rather than pretending to succeed.
+        assertFalse(fleet.deleteAgent("acme", "del-agent"));
+
+        // And the id is genuinely free — a clean re-enrollment mints a fresh token for it.
+        assertTrue(fleet.createEnrollment("acme", "del-agent", site).startsWith("enroll-"));
+        assertTrue(fleet.reachableAgents("acme", dev).stream().noneMatch(a -> a.equals("del-agent")),
+                "the re-installed agent starts with no reachability — it must be pointed at its APs again");
+    }
+
+    @Test
+    void deletingAnAgentCannotReachIntoAnotherTenant() {
+        String site = fleet.createSite("acme", "Tenant wall");
+        fleet.createEnrollment("acme", "walled-agent", site);
+
+        assertFalse(fleet.deleteAgent("globex", "walled-agent"), "another tenant must not delete it");
+
+        assertTrue(fleet.listAgents("acme").stream().anyMatch(a -> a.agentId().equals("walled-agent")));
+        assertTrue(tenants.enrollmentByAgentId("walled-agent").isPresent(),
+                "and must not strip the RLS-free enrollment either");
+    }
+
+    @Test
     void reassignMovesUnfinishedJobsToTheStandbyAndReturnsThem() {
         // The atomic claim behind failover, against real Postgres (UPDATE ... RETURNING and the RLS context).
         String a = jobs.create("acme", "primary", "idem-a", "configure-ssid", "cipher-a");

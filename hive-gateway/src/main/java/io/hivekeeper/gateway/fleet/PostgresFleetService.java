@@ -148,6 +148,25 @@ public class PostgresFleetService implements FleetService {
     }
 
     @Override
+    @Transactional
+    public boolean deleteAgent(String tenantId, String agentId) {
+        setTenant(tenantId);
+        // Fail the agent's unfinished work FIRST, while its rows still exist. If these were left PENDING they
+        // would sit in the queue and be redelivered the moment anything enrolled under the same agent id — a
+        // re-install would inherit commands aimed at the machine it replaced. `job` is granted select/insert/
+        // update but NOT delete (V2), so the terminal status is also the only move available, and it is the
+        // better one: the operator still sees what was cancelled and why.
+        jdbc.update("update job set status = 'FAILED', error = ?, updated_at = now() "
+                        + "where agent_id = ? and status in ('PENDING', 'DISPATCHED')",
+                "agent deleted", agentId);
+        // The enrollment is RLS-free (it is resolved cross-tenant on the auth path), so scope it by tenant
+        // explicitly here — unlike `agent`, whose RLS policy already confines the delete to this tenant.
+        jdbc.update("delete from agent_enrollment where agent_id = ? and tenant_id = ?", agentId, tenantId);
+        // device_agent cascades off this (composite FK, on delete cascade), taking the reachability with it.
+        return jdbc.update("delete from agent where agent_id = ?", agentId) == 1;
+    }
+
+    @Override
     @Transactional(readOnly = true)
     public List<String> agentIdsForDevice(String tenantId, String deviceId) {
         setTenant(tenantId);
