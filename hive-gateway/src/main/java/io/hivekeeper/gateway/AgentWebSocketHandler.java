@@ -76,7 +76,16 @@ class AgentWebSocketHandler extends TextWebSocketHandler {
     @Override
     public void afterConnectionClosed(WebSocketSession session, CloseStatus status) {
         channels.remove(session.getId());
-        registry.unregisterBySession(session.getId());
+        // Only a close from the session that still OWNS the agent is a real disconnect. When an abrupt drop
+        // leaves the gateway holding a half-open socket, the agent is already back on a new session by the time
+        // this fires; treating that straggler as a disconnect would evict the live agent from job dispatch and
+        // strand it as "offline" until its next reconnect. See AgentRegistry.
+        boolean wasLive = registry.unregisterBySession(session.getId());
+        if (!wasLive) {
+            log.info("ignoring close of superseded agent socket {} ({}) — '{}' is connected on a newer session",
+                    session.getId(), status, agentId(session));
+            return;
+        }
         jobGateway.ifPresent(jg -> jg.onAgentDisconnected(tenantId(session), agentId(session)));
         log.info("agent socket closed: {} ({})", session.getId(), status);
     }
