@@ -62,6 +62,9 @@ export function AgentsPage() {
       online: connectedSet.has(a.agentId),
       deviceCount: devices.filter((d) => (d.reachableAgents || []).includes(a.agentId)).length,
       site: siteName(a.siteId, sites),
+      // Only meaningful while it is offline, which is where the card shows it. Null = enrolled but never
+      // dialed in.
+      lastSeen: a.lastSeen,
     }))
   }, [agents, connectedAgents, devices, sites])
 

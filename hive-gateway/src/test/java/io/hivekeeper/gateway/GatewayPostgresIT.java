@@ -20,12 +20,16 @@ import org.springframework.test.context.DynamicPropertySource;
 import org.testcontainers.containers.PostgreSQLContainer;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
+import java.time.Instant;
 import java.util.List;
 import java.util.Optional;
 import java.util.Set;
 import java.util.stream.Collectors;
+import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -259,6 +263,31 @@ class GatewayPostgresIT {
 
         // Another tenant cannot see this device's reachable agents (RLS on device_agent).
         assertTrue(fleet.agentIdsForDevice("globex", dev).isEmpty());
+    }
+
+    @Test
+    void marksAnAgentSeenUnderRlsWithoutCrossingTenants() {
+        String site = fleet.createSite("acme", "Seen site");
+        fleet.createEnrollment("acme", "seen-agent", site);
+        assertNull(agent("acme", "seen-agent").lastSeen(), "null until it has dialed in at least once");
+
+        fleet.markAgentSeen("acme", "seen-agent");
+
+        Instant first = agent("acme", "seen-agent").lastSeen();
+        assertNotNull(first, "V14's last_seen column is written, not just read");
+
+        // Another tenant's stamp must not reach it — the update rides the same RLS policy as the reads.
+        fleet.markAgentSeen("globex", "seen-agent");
+        assertEquals(first, agent("acme", "seen-agent").lastSeen());
+
+        // An id with no durable agent row is a no-op, not an error: the socket lifecycle calls this and an
+        // exception there would cost the connection.
+        assertDoesNotThrow(() -> fleet.markAgentSeen("acme", "never-enrolled"));
+    }
+
+    private FleetService.AgentSummary agent(String tenantId, String agentId) {
+        return fleet.listAgents(tenantId).stream()
+                .filter(a -> a.agentId().equals(agentId)).findFirst().orElseThrow();
     }
 
     @Test

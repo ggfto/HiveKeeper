@@ -61,6 +61,27 @@ describe('AgentsList', () => {
     expect(screen.getByRole('button', { name: /remove agent \+ 3 devices/i })).toBeInTheDocument()
   })
 
+  it('shows when an offline agent was last connected', () => {
+    const lastSeen = new Date(Date.now() - 3 * 3600 * 1000).toISOString()
+    render(<AgentsList agents={[{ id: 'old-agent', online: false, deviceCount: 1, lastSeen }]} />)
+
+    expect(screen.getByText(/last seen 3 h ago/i)).toBeInTheDocument()
+  })
+
+  it('calls out an agent that was enrolled but never connected', () => {
+    render(<AgentsList agents={[{ id: 'new-agent', online: false, deviceCount: 0, lastSeen: null }]} />)
+
+    expect(screen.getByText(/never connected/i)).toBeInTheDocument()
+  })
+
+  it('does not show a last-seen line for an agent that is online now', () => {
+    // The badge already says online; a stale "last seen" beside it would only read as a contradiction.
+    const lastSeen = new Date(Date.now() - 3 * 3600 * 1000).toISOString()
+    render(<AgentsList agents={[{ id: 'lab-agent', online: true, deviceCount: 1, lastSeen }]} />)
+
+    expect(screen.queryByText(/last seen/i)).not.toBeInTheDocument()
+  })
+
   it('offers no remove action when the caller cannot delete agents', () => {
     render(<AgentsList agents={[{ id: 'lab-agent', online: true, deviceCount: 1 }]} />)
     expect(screen.queryByRole('button', { name: /^remove$/i })).not.toBeInTheDocument()

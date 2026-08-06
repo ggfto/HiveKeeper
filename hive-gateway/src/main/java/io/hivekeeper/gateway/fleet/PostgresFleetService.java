@@ -149,6 +149,18 @@ public class PostgresFleetService implements FleetService {
 
     @Override
     @Transactional
+    public void markAgentSeen(String tenantId, String agentId) {
+        if (tenantId == null || agentId == null) {
+            return;
+        }
+        setTenant(tenantId);
+        // RLS confines this to the caller's tenant, so the agent id alone is a safe predicate. A row count of
+        // 0 means no durable identity for that id — nothing to record, and not an error.
+        jdbc.update("update agent set last_seen = now() where agent_id = ?", agentId);
+    }
+
+    @Override
+    @Transactional
     public boolean deleteAgent(String tenantId, String agentId) {
         setTenant(tenantId);
         // Fail the agent's unfinished work FIRST, while its rows still exist. If these were left PENDING they

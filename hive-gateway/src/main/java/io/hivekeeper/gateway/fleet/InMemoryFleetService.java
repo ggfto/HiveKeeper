@@ -5,6 +5,7 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Profile;
 import org.springframework.dao.DuplicateKeyException;
 import org.springframework.stereotype.Service;
+import java.time.Instant;
 import java.util.Comparator;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
@@ -168,6 +169,17 @@ public class InMemoryFleetService implements FleetService {
     public synchronized List<AgentSummary> listAgents(String tenantId) {
         return org(tenantId).agents.values().stream()
                 .sorted(Comparator.comparing(AgentSummary::agentId)).toList();
+    }
+
+    @Override
+    public synchronized void markAgentSeen(String tenantId, String agentId) {
+        // Unlike enrolling and deleting, this one the in-memory stack CAN do: last_seen is derived from the
+        // connection the gateway is holding right now, not from the enrollment record it has no access to.
+        AgentSummary agent = org(tenantId).agents.get(agentId);
+        if (agent != null) {
+            org(tenantId).agents.put(agentId,
+                    new AgentSummary(agent.agentId(), agent.name(), agent.siteId(), Instant.now()));
+        }
     }
 
     @Override

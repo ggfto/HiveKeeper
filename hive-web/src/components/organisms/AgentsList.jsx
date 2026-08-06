@@ -1,6 +1,7 @@
 import { MriCard, MriCardHeader, MriCardTitle, MriCardContent, MriButton, MriStatusBadge } from '@mriqbox/ui-kit'
-import { Boxes } from 'lucide-react'
+import { Boxes, Clock } from 'lucide-react'
 import { ConfirmButton } from '../molecules/ConfirmButton'
+import { lastSeenLabel } from '../../lib/fleet'
 
 /**
  * The enrolled on-prem agents for the active organization, each shown online/offline (an agent is online while
@@ -43,6 +44,14 @@ export function AgentsList({ agents, onView, onDiscover, onRemove, busy, loading
               </span>
               {a.site && <span>· {a.site}</span>}
             </div>
+            {/* Only while it is offline: next to an "online" badge a last-seen time reads as a contradiction,
+                and the answer there is just "now". */}
+            {!a.online && (
+              <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                <Clock className="h-3.5 w-3.5 shrink-0" />
+                <span>{a.lastSeen ? `Last seen ${lastSeenLabel(a.lastSeen)}` : 'Never connected'}</span>
+              </div>
+            )}
             <div className="flex gap-2">
               <MriButton size="sm" disabled={busy} onClick={() => onView?.(a.id)}>
                 View devices

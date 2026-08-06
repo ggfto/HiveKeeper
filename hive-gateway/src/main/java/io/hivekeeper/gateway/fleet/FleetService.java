@@ -69,6 +69,18 @@ public interface FleetService {
     List<AgentSummary> listAgents(String tenantId);
 
     /**
+     * Stamp an agent's {@code last_seen} to now. Called when it connects and again when it really disconnects,
+     * which is what makes the value useful: for an agent that is currently connected the console shows it
+     * online anyway, so the timestamp only has to answer "when was this offline agent last here" — and that is
+     * the moment its session ended.
+     *
+     * <p>Bookkeeping only: this must never be allowed to break the agent's uplink, so callers swallow its
+     * failures. Unknown agent ids are ignored rather than an error — an enrollment can exist without a
+     * durable {@code agent} row in stores that do not create one.
+     */
+    void markAgentSeen(String tenantId, String agentId);
+
+    /**
      * Delete an agent outright — the exact inverse of {@link #createEnrollment}: its durable identity, its
      * enrollment credential, and (by cascade) every {@code device_agent} reachability row it held. Unfinished
      * jobs addressed to it are failed rather than left to be redelivered to whatever next claims the id.

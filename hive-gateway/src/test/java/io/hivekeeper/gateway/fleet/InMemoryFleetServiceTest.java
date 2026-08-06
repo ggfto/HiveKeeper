@@ -9,6 +9,8 @@ import java.util.Set;
 import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -31,6 +33,21 @@ class InMemoryFleetServiceTest {
         assertEquals("HQ2", fleet.listSites("acme").get(0).name());
         fleet.deleteSite("acme", id);
         assertFalse(fleet.siteExists("acme", id));
+    }
+
+    @Test
+    void marksAnAgentSeenAndLeavesUnknownIdsAlone() {
+        InMemoryFleetService seeded = new InMemoryFleetService(true, false);
+        assertNull(seeded.listAgents("acme").get(0).lastSeen(), "null until it has dialed in at least once");
+
+        seeded.markAgentSeen("acme", "lab-agent");
+
+        assertNotNull(seeded.listAgents("acme").get(0).lastSeen());
+        // Bookkeeping must never throw on an id it does not know — the gateway calls this from the socket
+        // lifecycle, where an exception would cost the connection, not just the timestamp.
+        assertDoesNotThrow(() -> seeded.markAgentSeen("acme", "never-enrolled"));
+        assertDoesNotThrow(() -> seeded.markAgentSeen("globex", "lab-agent"));
+        assertEquals(1, seeded.listAgents("acme").size());
     }
 
     @Test

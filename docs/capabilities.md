@@ -107,6 +107,9 @@ The gateway:
 - **Agent auto-update (opt-in).** An on-prem agent can follow new releases on its own — it fires only when its
   image tag *moves*, is scoped to the agent alone, and **drains** the running job before the swap so a restart
   never interrupts work. See [Running in production](/production/).
+- Each agent's card shows **when it was last connected** while it is offline — and says *never connected*
+  outright for one that was enrolled but never dialed in, which is the usual sign that a token was issued and
+  the install never finished. An online agent shows no such line: the answer there is "now".
 - **Remove an agent** from the Agents page to free its id for a clean re-install. This is the irreversible one:
   it deletes the agent's identity, its enrollment, and its device reachability, and any unfinished job queued
   to it is failed rather than handed to whatever enrolls under that id next. The devices stay in the fleet, so

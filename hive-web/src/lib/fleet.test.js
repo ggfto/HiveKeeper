@@ -6,6 +6,7 @@ import {
   parseBulkTarget,
   summarizeBulk,
   outcomeVariant,
+  lastSeenLabel,
 } from './fleet'
 
 describe('groupNamesFor', () => {
@@ -69,4 +70,29 @@ describe('outcomeVariant', () => {
     expect(outcomeVariant('timeout')).toBe('warning')
   })
   it('defaults unknown statuses to outline', () => expect(outcomeVariant('???')).toBe('outline'))
+})
+
+describe('lastSeenLabel', () => {
+  const now = new Date('2026-08-06T12:00:00Z').getTime()
+  const ago = (ms) => new Date(now - ms).toISOString()
+
+  it('says so outright when the agent has never dialed in', () => {
+    // Distinct from "a long time ago": this is usually an enrollment whose install never finished.
+    expect(lastSeenLabel(null, now)).toBe('never connected')
+    expect(lastSeenLabel(undefined, now)).toBe('never connected')
+    expect(lastSeenLabel('not-a-date', now)).toBe('never connected')
+  })
+
+  it('scales the unit to the gap', () => {
+    expect(lastSeenLabel(ago(5 * 1000), now)).toBe('just now')
+    expect(lastSeenLabel(ago(18 * 60 * 1000), now)).toBe('18 min ago')
+    expect(lastSeenLabel(ago(3 * 3600 * 1000), now)).toBe('3 h ago')
+    expect(lastSeenLabel(ago(2 * 86400 * 1000), now)).toBe('2 d ago')
+  })
+
+  it('falls back to a date once the relative form stops meaning anything', () => {
+    expect(lastSeenLabel(ago(30 * 86400 * 1000), now)).toBe('30 d ago')
+    const old = ago(60 * 86400 * 1000)
+    expect(lastSeenLabel(old, now)).toBe(new Date(old).toLocaleDateString())
+  })
 })

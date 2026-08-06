@@ -30,12 +30,30 @@ class AgentWebSocketHandler extends TextWebSocketHandler {
     private final Map<String, SpringWsFrameChannel> channels = new ConcurrentHashMap<>();
 
     private final BackupDestinationProvisioner backupDestinations;
+    private final Optional<io.hivekeeper.gateway.fleet.FleetService> fleet;
 
     AgentWebSocketHandler(AgentRegistry registry, Optional<JobGateway> jobGateway,
-                          BackupDestinationProvisioner backupDestinations) {
+                          BackupDestinationProvisioner backupDestinations,
+                          Optional<io.hivekeeper.gateway.fleet.FleetService> fleet) {
         this.registry = registry;
         this.jobGateway = jobGateway;
         this.backupDestinations = backupDestinations;
+        this.fleet = fleet;
+    }
+
+    /**
+     * Records that we have the agent on the wire right now. Deliberately swallows every failure: this is
+     * bookkeeping for a console column, and a flaky database must not be able to sever — or refuse — an
+     * agent's uplink. Losing a timestamp is a cosmetic regression; losing the connection is an outage.
+     */
+    private void markSeen(String tenantId, String agentId) {
+        fleet.ifPresent(f -> {
+            try {
+                f.markAgentSeen(tenantId, agentId);
+            } catch (RuntimeException e) {
+                log.warn("could not record last-seen for agent '{}': {}", agentId, e.getMessage());
+            }
+        });
     }
 
     @Override
@@ -52,6 +70,7 @@ class AgentWebSocketHandler extends TextWebSocketHandler {
         if (pubKey instanceof java.security.PublicKey key) {
             registry.registerPublicKey(tenantId, agentId, key);
         }
+        markSeen(tenantId, agentId);
         jobGateway.ifPresent(jg -> jg.onAgentConnected(tenantId, agentId, channel));
         // An agent that was offline when the destination was set picks it up here.
         backupDestinations.onAgentConnected(tenantId, agentId);
@@ -86,6 +105,10 @@ class AgentWebSocketHandler extends TextWebSocketHandler {
                     session.getId(), status, agentId(session));
             return;
         }
+        // Stamped here too, and only on a REAL disconnect: this is the moment the value actually has to
+        // answer for, since it is offline agents whose "last seen" anyone reads. Doing it on a superseded
+        // close would instead record a time the agent was demonstrably still connected.
+        markSeen(tenantId(session), agentId(session));
         jobGateway.ifPresent(jg -> jg.onAgentDisconnected(tenantId(session), agentId(session)));
         log.info("agent socket closed: {} ({})", session.getId(), status);
     }
