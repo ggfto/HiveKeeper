@@ -1,3 +1,15 @@
+# [0.16.0](https://github.com/ggfto/HiveKeeper/compare/v0.15.0...v0.16.0) (2026-08-06)
+
+
+### Bug Fixes
+
+* **gateway:** keep a reconnected agent registered when its old socket closes late ([e4ab2a9](https://github.com/ggfto/HiveKeeper/commit/e4ab2a9f169bb8dc6d4b90e24064eec0d6ff17c5))
+
+
+### Features
+
+* **fleet:** delete an agent to free its id for a clean re-install ([c56b3f4](https://github.com/ggfto/HiveKeeper/commit/c56b3f4cb1b5d3343f89f54d38f16c8a631b8f97))
+
 # [0.15.0](https://github.com/ggfto/HiveKeeper/compare/v0.14.0...v0.15.0) (2026-07-22)
 
 
