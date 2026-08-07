@@ -1,3 +1,16 @@
+# [0.17.0](https://github.com/ggfto/HiveKeeper/compare/v0.16.1...v0.17.0) (2026-08-07)
+
+
+### Bug Fixes
+
+* **web:** bump mermaid to 11.16.1 ([d946f90](https://github.com/ggfto/HiveKeeper/commit/d946f9055d2aaf25c5192474e5c808906ec8070b))
+* **website:** upgrade Astro 5 -> 7, repairing the docs build ([13d9c9b](https://github.com/ggfto/HiveKeeper/commit/13d9c9b1296b4e8e41b3ef933ad7812399106bc5))
+
+
+### Features
+
+* **docker:** run the gateway, server and agent as an unprivileged user ([fe722e1](https://github.com/ggfto/HiveKeeper/commit/fe722e15416afcafb8028a3e67496dfea92a78a4))
+
 ## [0.16.1](https://github.com/ggfto/HiveKeeper/compare/v0.16.0...v0.16.1) (2026-08-06)
 
 
