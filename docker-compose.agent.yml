@@ -33,6 +33,12 @@ services:
       - ./ca.pem:/etc/hivekeeper/ca.pem:ro
       # BACK THIS UP. It holds the agent's identity (its keystore), the credential vault, the pinned SSH host
       # keys, and the git history of every device config — which is your rollback path.
+      #
+      # ONE-TIME, FOR A VOLUME CREATED BEFORE THE AGENT BECAME NON-ROOT: it is still owned by root, so the
+      # now-unprivileged agent cannot write to it. Docker only seeds ownership into an EMPTY
+      # volume, so an existing one has to be converted by hand, once, before starting the new image:
+      #   docker run --rm -v agent-data:/data alpine chown -R 1001:1001 /data
+      # A fresh install needs none of this.
       - agent-data:/data
     # The agent opens no ports. It dials out.
     restart: unless-stopped

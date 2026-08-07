@@ -106,6 +106,13 @@ services:
     volumes:
       # BACK THIS UP. It holds the agent's identity, the credential vault, the pinned SSH host keys, and the
       # git history of every device config — which is your rollback path.
+      #
+      # ONE-TIME, FOR A VOLUME CREATED BEFORE THE AGENT BECAME NON-ROOT: it is still owned by root, so the
+      # now-unprivileged agent (uid 1001) cannot write to it and will fail on its first job. Docker only seeds
+      # ownership into an EMPTY volume, so an existing one must be converted by hand, once, before redeploying
+      # this stack — on the Docker host, not in Portainer's UI:
+      #   docker run --rm -v <stack>_agent-data:/data alpine chown -R 1001:1001 /data
+      # A fresh install needs none of this.
       - agent-data:/data
       # The CA certificate. Public, not a secret; copy it from the pki-init container's log in Portainer.
       - ./ca.pem:/etc/hivekeeper/ca.pem:ro

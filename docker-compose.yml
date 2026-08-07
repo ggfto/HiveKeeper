@@ -63,6 +63,8 @@ services:
       HIVEKEEPER_DEFAULT_PASSWORD: ${HIVEKEEPER_DEFAULT_PASSWORD:-}
       HIVEKEEPER_BACKUP_DIR: /data/backups
     volumes:
+      # If this volume predates the agent becoming non-root, it is still root-owned and the agent cannot write
+      # to it: `docker volume rm` it, or see the chown note in docker-compose.agent.yml.
       - agent-data:/data
     depends_on:
       # Wait for the gateway to actually answer its health check, not merely for its container to exist —

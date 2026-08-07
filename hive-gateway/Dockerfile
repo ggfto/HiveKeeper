@@ -20,8 +20,15 @@ RUN apt-get update \
     && rm -rf /var/lib/apt/lists/* \
     # pebble is Canonical's service manager, bundled in the temurin base and never used here (the ENTRYPOINT
     # runs the app directly). It is a static Go binary apt cannot patch, and it carries its own CVEs, so drop it.
-    && rm -f /usr/bin/pebble
+    && rm -f /usr/bin/pebble \
+    # An unprivileged account to run as. This process holds the CA that signs every agent certificate in the
+    # fleet, so a remote-code bug in it must not also be uid 0 inside the container.
+    && groupadd --system --gid 1001 hivekeeper \
+    && useradd --system --uid 1001 --gid 1001 --home-dir /app --shell /usr/sbin/nologin hivekeeper
 WORKDIR /app
+# Left owned by root and therefore read-only to the account below — the gateway writes nothing to disk. Its
+# state is Postgres, and its only mount (secrets/pki) is bound read-only. Nothing needs to rewrite /app, so
+# nothing may.
 COPY --from=build /src/hive-gateway/build/install/hive-gateway/ /app/
 ENV SERVER_ADDRESS=0.0.0.0 \
     SERVER_PORT=8090
@@ -33,4 +40,6 @@ EXPOSE 9091
 HEALTHCHECK --interval=30s --timeout=5s --start-period=60s --retries=3 \
     CMD curl -fsS http://127.0.0.1:9091/actuator/health || exit 1
 
+# Both published ports are above 1024, so dropping the root privilege costs nothing here.
+USER hivekeeper
 ENTRYPOINT ["/app/bin/hive-gateway"]
