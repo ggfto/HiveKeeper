@@ -1,3 +1,10 @@
+# [0.18.0](https://github.com/ggfto/HiveKeeper/compare/v0.17.0...v0.18.0) (2026-08-07)
+
+
+### Features
+
+* **fleet:** download a ready-to-run agent install bundle from the console ([7245691](https://github.com/ggfto/HiveKeeper/commit/72456911091ac598663c650a82371f37b54db362))
+
 # [0.17.0](https://github.com/ggfto/HiveKeeper/compare/v0.16.1...v0.17.0) (2026-08-07)
 
 
