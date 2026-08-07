@@ -10,6 +10,20 @@ import { BackupDestinationForm } from '../components/organisms/BackupDestination
 import { DiscoveredHosts } from '../components/organisms/DiscoveredHosts'
 import { siteName } from '../lib/fleet'
 
+/** Hand a downloaded blob to the browser as a file. A no-op outside a browser (tests), where there is nothing
+ *  to save to and the caller's own assertions cover the request. */
+function saveBlob(blob, filename) {
+  if (typeof URL.createObjectURL !== 'function') return
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = url
+  a.download = filename
+  document.body.appendChild(a)
+  a.click()
+  a.remove()
+  URL.revokeObjectURL(url)
+}
+
 /** Enrolled agents for the active org — each shown online/offline, with how many fleet devices it can reach and
  *  their site, a jump into the filtered device list, and a discover -> adopt flow on the agent's LAN. */
 export function AgentsPage() {
@@ -29,6 +43,9 @@ export function AgentsPage() {
   const [adoptCred, setAdoptCred] = useState({ username: 'admin', password: '' })
   const [busy, setBusy] = useState(false)
   const [loading, setLoading] = useState(true)
+  // Where agents dial in, per the gateway's own certificate — prefills the enrollment form. Null on a gateway
+  // that cannot tell (or an older one that has no such endpoint), in which case the form asks as it used to.
+  const [agentEndpoint, setAgentEndpoint] = useState(null)
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -51,6 +68,19 @@ export function AgentsPage() {
   useEffect(() => {
     load()
   }, [load, activeOrg])
+
+  // A deployment fact, not org state: fetched once and left alone. A failure is not worth a toast — the form
+  // just falls back to asking for the hostname.
+  useEffect(() => {
+    let live = true
+    gateway
+      .agentEndpoint?.()
+      .then((e) => live && setAgentEndpoint(e))
+      .catch(() => {})
+    return () => {
+      live = false
+    }
+  }, [gateway])
 
   // Roll up per enrolled agent: online (is it currently connected), how many fleet devices it can reach, and
   // its site (from the agent record). null stays null so the list can show "gateway unreachable".
@@ -133,6 +163,14 @@ export function AgentsPage() {
       return r
     })
 
+  // Package that enrollment as the install bundle and save it. The gateway names the file; the fallback name
+  // only matters against an older gateway that sends no Content-Disposition.
+  const downloadBundle = async (agentId, token, domain) => {
+    const { blob, filename } = await gateway.agentBundle({ agentId, token, domain: domain || null })
+    saveBlob(blob, filename || `${agentId}-agent-install.zip`)
+    toast(`Downloaded the install bundle for ${agentId}.`, 'success')
+  }
+
   const onAdopt = async (host) => {
     if (!discoverAgent) return
     setBusy(true)
@@ -198,7 +236,13 @@ export function AgentsPage() {
         onRemove={onRemove}
         busy={busy}
       />
-      <AddAgentForm sites={sites} createEnrollment={createEnrollment} busy={busy} />
+      <AddAgentForm
+        sites={sites}
+        createEnrollment={createEnrollment}
+        downloadBundle={downloadBundle}
+        agentEndpoint={agentEndpoint}
+        busy={busy}
+      />
       {/* Org-wide, so it lives beside the agent list rather than on any one agent. */}
       <section className="rounded-md border border-border bg-card p-3">
         <BackupDestinationForm gateway={gateway} busy={busy} />

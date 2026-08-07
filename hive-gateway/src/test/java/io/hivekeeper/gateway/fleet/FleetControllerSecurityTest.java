@@ -7,6 +7,7 @@ import io.hivekeeper.gateway.access.AccessService;
 import io.hivekeeper.gateway.access.Principal;
 import io.hivekeeper.gateway.access.ResourceScope;
 import io.hivekeeper.gateway.access.Role;
+import io.hivekeeper.gateway.enroll.AgentEndpoint;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -30,6 +31,7 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -53,6 +55,9 @@ class FleetControllerSecurityTest {
     private FleetService fleet;
     @MockitoBean
     private AccessService access;
+    // A @Component, so the slice does not scan it in; the controller needs one to answer "where do agents dial".
+    @MockitoBean
+    private AgentEndpoint agentEndpoint;
 
     private final Principal principal = Principal.user("acme", "usr-1");
 
@@ -124,6 +129,92 @@ class FleetControllerSecurityTest {
                         .content("{\"agentId\":\"agent-2\",\"siteId\":\"s1\"}"))
                 .andExpect(status().isOk());
         verify(guard).require(eq(principal), eq(Role.ADMIN), eq(ResourceScope.site("s1")));
+    }
+
+    @Test
+    void agentEndpointIsReadableByAnyAuthenticatedMember() throws Exception {
+        when(agentEndpoint.host()).thenReturn("agents.gf2.in");
+        when(agentEndpoint.port()).thenReturn(9443);
+        when(agentEndpoint.gatewayUrl()).thenReturn("wss://agents.gf2.in:9443/agent");
+        when(agentEndpoint.enrollmentUrl()).thenReturn("https://agents.gf2.in:9443");
+
+        mvc.perform(get("/api/enrollments/endpoint"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.host").value("agents.gf2.in"))
+                .andExpect(jsonPath("$.gatewayUrl").value("wss://agents.gf2.in:9443/agent"));
+    }
+
+    @Test
+    void installBundleRequiresAdminOnTheAgentsScopeAndReturnsAZipAttachment() throws Exception {
+        when(agentEndpoint.host()).thenReturn("agents.gf2.in");
+        when(fleet.listAgents("acme"))
+                .thenReturn(List.of(new FleetService.AgentSummary("agent-1", "agent-1", null, null)));
+
+        mvc.perform(post("/api/enrollments/bundle").contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"agentId\":\"agent-1\",\"token\":\"enroll-xyz\"}"))
+                .andExpect(status().isOk())
+                .andExpect(header().string("Content-Disposition",
+                        "attachment; filename=\"agent-1-agent-install.zip\""));
+        verify(guard).require(eq(principal), eq(Role.ADMIN), eq(ResourceScope.org()));
+    }
+
+    @Test
+    void installBundleForASitePinnedAgentRequiresAdminOnThatSite() throws Exception {
+        when(agentEndpoint.host()).thenReturn("agents.gf2.in");
+        when(fleet.listAgents("acme"))
+                .thenReturn(List.of(new FleetService.AgentSummary("agent-2", "agent-2", "s1", null)));
+
+        mvc.perform(post("/api/enrollments/bundle").contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"agentId\":\"agent-2\",\"token\":\"enroll-2\"}"))
+                .andExpect(status().isOk());
+        verify(guard).require(eq(principal), eq(Role.ADMIN), eq(ResourceScope.site("s1")));
+    }
+
+    @Test
+    void installBundleForAnUnknownAgentIs404() throws Exception {
+        when(fleet.listAgents("acme")).thenReturn(List.of());
+
+        mvc.perform(post("/api/enrollments/bundle").contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"agentId\":\"ghost\",\"token\":\"t\"}"))
+                .andExpect(status().isNotFound());
+    }
+
+    @Test
+    void installBundleWithNoResolvableHostnameIsRefused() throws Exception {
+        // A bundle whose gateway.url is blank produces an agent that starts, fails to dial, and looks like a
+        // network problem. Refusing here puts the error where someone can act on it.
+        when(agentEndpoint.host()).thenReturn(null);
+        when(fleet.listAgents("acme"))
+                .thenReturn(List.of(new FleetService.AgentSummary("agent-1", "agent-1", null, null)));
+
+        mvc.perform(post("/api/enrollments/bundle").contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"agentId\":\"agent-1\",\"token\":\"t\"}"))
+                .andExpect(status().isBadRequest());
+    }
+
+    @Test
+    void installBundleAcceptsAnOperatorSuppliedHostnameOverride() throws Exception {
+        when(agentEndpoint.host()).thenReturn(null);
+        when(fleet.listAgents("acme"))
+                .thenReturn(List.of(new FleetService.AgentSummary("agent-1", "agent-1", null, null)));
+
+        mvc.perform(post("/api/enrollments/bundle").contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"agentId\":\"agent-1\",\"token\":\"t\",\"domain\":\"agents.override.example\"}"))
+                .andExpect(status().isOk());
+    }
+
+    @Test
+    void installBundleNeverEnrollsAnything() throws Exception {
+        // It packages an existing enrollment. Minting here too would make "add the agent, then download it"
+        // fail on agent_exists — the exact trap this endpoint is shaped to avoid.
+        when(agentEndpoint.host()).thenReturn("agents.gf2.in");
+        when(fleet.listAgents("acme"))
+                .thenReturn(List.of(new FleetService.AgentSummary("agent-1", "agent-1", null, null)));
+
+        mvc.perform(post("/api/enrollments/bundle").contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"agentId\":\"agent-1\",\"token\":\"enroll-xyz\"}"))
+                .andExpect(status().isOk());
+        verify(fleet, never()).createEnrollment(any(), any(), any());
     }
 
     @Test

@@ -54,3 +54,27 @@ application {
     mainClass.set("io.hivekeeper.gateway.HiveGatewayApplication")
     applicationName = "hive-gateway"
 }
+
+// The console's "download install bundle" ships the operator a ready-to-run agent install, so the gateway has
+// to carry the agent's compose + env template inside its jar. They are COPIED from deploy/portainer at build
+// time rather than duplicated into resources: one source of truth, so a change to the real compose cannot
+// silently leave the generated bundle behind. The bundle also pins HIVEKEEPER_TAG to the gateway's own version
+// (agent and gateway must match), which is why the version is baked in as a property here.
+tasks.named<ProcessResources>("processResources") {
+    val agentDeploy = rootProject.layout.projectDirectory.dir("deploy/portainer")
+    inputs.dir(agentDeploy)
+    from(agentDeploy.file("agent-compose.yml")) {
+        into("agent-install")
+        rename { "docker-compose.yml" }
+    }
+    from(agentDeploy.file("agent.env.example")) {
+        into("agent-install")
+        rename { "env.template" }
+    }
+    val projectVersion = project.version.toString()
+    inputs.property("projectVersion", projectVersion)
+    doLast {
+        destinationDir.resolve("agent-install/build.properties")
+            .writeText("version=$projectVersion\n")
+    }
+}

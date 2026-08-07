@@ -5,6 +5,7 @@ import io.hivekeeper.gateway.access.AccessService;
 import io.hivekeeper.gateway.access.Principal;
 import io.hivekeeper.gateway.access.ResourceScope;
 import io.hivekeeper.gateway.access.Role;
+import io.hivekeeper.gateway.enroll.AgentEndpoint;
 import io.hivekeeper.gateway.enroll.CertificateAuthority;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.http.MediaType;
@@ -18,8 +19,13 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
+import java.io.IOException;
+import java.io.InputStream;
+import java.security.SecureRandom;
+import java.util.Base64;
 import java.util.List;
 import java.util.Optional;
+import java.util.Properties;
 
 /**
  * The organization's fleet + access API. Every endpoint resolves the caller via {@link AccessGuard} (a
@@ -57,6 +63,17 @@ public class FleetController {
     public record EnrollAgent(String agentId, String siteId) {
     }
 
+    /** Package an enrolled agent's install bundle. {@code token} is the one the caller just received from
+     *  {@code POST /api/enrollments}; {@code domain} optionally overrides the hostname the gateway resolves for
+     *  itself, for a deployment whose public name differs from its certificate's. */
+    public record BundleRequest(String agentId, String token, String domain) {
+    }
+
+    /** Where agents dial in. Every field is null/0-safe: a gateway with no agent listener honestly reports that
+     *  it does not know, rather than inventing a hostname the TLS handshake would reject. */
+    public record AgentEndpointResponse(String host, int port, String gatewayUrl, String enrollmentUrl) {
+    }
+
     public record AgentRef(String agentId) {
     }
 
@@ -75,6 +92,9 @@ public class FleetController {
     public record ApiError(String error, String detail) {
     }
 
+    /** Mints the per-agent secrets that go into the install bundle (vault key, keystore password). */
+    private static final SecureRandom RANDOM = new SecureRandom();
+
     private final AccessGuard guard;
     private final FleetService fleet;
     // Optional: the per-user grant resolver only exists under postgres; the in-memory stack authorizes via the
@@ -83,13 +103,18 @@ public class FleetController {
     // Optional: the CA only exists under the mtls profile. When absent, enrollment still mints a token but the
     // response carries no ca.pem (a token-only/dev deployment).
     private final ObjectProvider<CertificateAuthority> certificateAuthority;
+    // Where agents dial in, so the console can prefill it instead of asking the operator to retype a hostname
+    // that must match the gateway certificate's SAN exactly.
+    private final AgentEndpoint agentEndpoint;
 
     public FleetController(AccessGuard guard, FleetService fleet, ObjectProvider<AccessService> access,
-                           ObjectProvider<CertificateAuthority> certificateAuthority) {
+                           ObjectProvider<CertificateAuthority> certificateAuthority,
+                           AgentEndpoint agentEndpoint) {
         this.guard = guard;
         this.fleet = fleet;
         this.access = access;
         this.certificateAuthority = certificateAuthority;
+        this.agentEndpoint = agentEndpoint;
     }
 
     /** The CA the agent must trust, as PEM — public, not a secret. Null when no CA is configured. */
@@ -414,6 +439,113 @@ public class FleetController {
             // the in-memory dev/demo stack cannot mint enrollments (they live in the agent-handshake auth store)
             return ResponseEntity.status(501).body(new ApiError("not_supported", e.getMessage()));
         }
+    }
+
+    /**
+     * Where agents dial in: the hostname, the port, and the two URLs an agent is configured with. The console
+     * prefills its enrollment form from this instead of making the operator retype a hostname that has to match
+     * the gateway certificate's SAN character for character. Any authenticated member may read it — it is the
+     * public address of a port that is published to the internet by design.
+     *
+     * <p>{@code host} is null on a gateway that cannot tell (no {@code mtls} profile, no explicit domain); the
+     * console then falls back to asking, which is the behaviour this replaced.
+     */
+    @GetMapping("/api/enrollments/endpoint")
+    public ResponseEntity<?> agentEndpoint() {
+        guard.authenticate();
+        return ResponseEntity.ok(new AgentEndpointResponse(agentEndpoint.host(), agentEndpoint.port(),
+                agentEndpoint.gatewayUrl(), agentEndpoint.enrollmentUrl()));
+    }
+
+    /**
+     * Package an already-enrolled agent as a ready-to-run <b>install bundle</b>: a zip the operator unpacks on
+     * the on-prem machine, carrying the agent's compose, a {@code .env} filled in with the one-time token, the
+     * URLs and freshly generated secrets, the CA certificate, and a README. Admin on the agent's scope.
+     *
+     * <p>It <b>packages</b> rather than enrolls, taking the token the caller just received from {@code POST
+     * /api/enrollments}. That is what keeps enrollment a single flow: an endpoint that minted its own token
+     * would be a second way to create the same agent, and using both — the obvious reading of "add the agent,
+     * then download it" — would fail the second call with {@code agent_exists} after the operator had already
+     * been shown a token. Echoing the caller's own token back into a file leaks nothing, and the admin check on
+     * the agent's scope is unchanged.
+     *
+     * <p>The vault key and the keystore password are minted here with a {@link SecureRandom} rather than left as
+     * placeholders — a placeholder that works is a placeholder that ships to production, and this one would mean
+     * the device credential vault is written in plaintext.
+     */
+    // No `produces = application/zip`: that would restrict this handler's content types to zip and leave Spring
+    // with no converter for the {error,detail} JSON the failure paths return — every 400/409/501 would surface
+    // as an opaque 500. The success path sets the zip content type on the response itself instead.
+    @PostMapping("/api/enrollments/bundle")
+    public ResponseEntity<?> agentInstallBundle(@RequestBody BundleRequest req) {
+        Principal p = guard.authenticate();
+        if (isBlank(req.agentId()) || isBlank(req.token())) {
+            return badRequest("agentId and token are required");
+        }
+        String agentId = req.agentId().trim();
+        Optional<FleetService.AgentSummary> agent = agent(p.tenantId(), agentId);
+        if (agent.isEmpty()) {
+            return status404("agent_not_found", agentId);
+        }
+        guard.require(p, Role.ADMIN, agentScope(agent.get()));
+
+        // The operator may override the hostname (a CNAME, split-horizon DNS); otherwise use what we know.
+        String domain = isBlank(req.domain()) ? agentEndpoint.host() : req.domain().trim();
+        if (isBlank(domain)) {
+            return badRequest("this gateway cannot determine the hostname agents dial — supply 'domain', "
+                    + "or set HIVEKEEPER_AGENT_DOMAIN on the gateway");
+        }
+
+        byte[] zip;
+        try {
+            zip = AgentInstallBundle.zip(
+                    new AgentInstallBundle.Inputs(agentId, req.token().trim(), domain, caPem(), agentVersion(),
+                            randomHex(24), randomBase64Key()),
+                    AgentInstallBundle.resource("docker-compose.yml"),
+                    AgentInstallBundle.resource("env.template"));
+        } catch (IOException e) {
+            return ResponseEntity.status(500).body(new ApiError("bundle_failed",
+                    "could not build the install bundle for '" + agentId + "': " + e.getMessage()));
+        }
+
+        return ResponseEntity.ok()
+                .header("Content-Disposition", "attachment; filename=\"" + agentId + "-agent-install.zip\"")
+                .contentType(MediaType.valueOf("application/zip"))
+                .body(zip);
+    }
+
+    /** The gateway's own version, which the bundle pins the agent image to — they must move in step. */
+    private static String agentVersion() throws IOException {
+        Properties props = new Properties();
+        try (InputStream in = FleetController.class.getResourceAsStream("/agent-install/build.properties")) {
+            if (in == null) {
+                throw new IOException("missing packaged resource /agent-install/build.properties");
+            }
+            props.load(in);
+        }
+        String version = props.getProperty("version");
+        if (version == null || version.isBlank()) {
+            throw new IOException("no version in /agent-install/build.properties");
+        }
+        return version;
+    }
+
+    /** A hex secret of {@code bytes} random bytes — the keystore/truststore password. */
+    private static String randomHex(int bytes) {
+        byte[] raw = new byte[bytes];
+        RANDOM.nextBytes(raw);
+        StringBuilder hex = new StringBuilder(bytes * 2);
+        for (byte b : raw) {
+            hex.append(String.format("%02x", b));
+        }
+        return hex.toString();
+    }
+
+    /** A base64 AES-256 key — what {@code openssl rand -base64 32} would have produced by hand. */
+    private static String randomBase64Key() {
+        byte[] raw = new byte[32];
+        RANDOM.nextBytes(raw);
+        return Base64.getEncoder().encodeToString(raw);
     }
 
     /**

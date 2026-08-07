@@ -115,10 +115,22 @@ sign-in creates one** — so you cannot add them to your organization in advance
 
 ## 4. Run the agent, on-prem
 
-On a machine **on the same network as your access points** — not the server:
+On a machine **on the same network as your access points** — not the server.
+
+:::note[The console's install bundle is the Cloudflare-tunnel variant.]
+**Agents → Add agent → Download install bundle** hands you a ready-to-run zip — compose, a `.env` already
+carrying the token, the URLs and generated secrets, plus `ca.pem`. Its compose is
+`deploy/portainer/agent-compose.yml`, which reaches the gateway through a `cloudflared access tcp` sidecar, so
+it fits the [Portainer + Cloudflare](/portainer-cloudflare/) deployment. This page publishes port 9443
+directly, where the agent dials the gateway with no tunnel — so use the manual setup below and take from the
+bundle only what is useful (the token and the generated vault key are in its `.env`).
+
+Either way the **agent domain** is prefilled in the console from the gateway's own server certificate, so it
+matches the name agents must dial by construction rather than by your retyping it correctly.
+:::
 
 ```sh
-# In the console: Fleet -> Agents -> Enroll. Copy the one-time token.
+# In the console: Agents -> Add agent. Copy the one-time token.
 cp hive-agent/agent.conf.example agent.conf
 # Copy secrets/pki/ca.pem from the server, next to agent.conf.
 docker compose -f docker-compose.agent.yml up -d

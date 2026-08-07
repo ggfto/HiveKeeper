@@ -284,6 +284,16 @@ export function createDemoGateway() {
         token: `demo-enroll-${uid('t')}`,
         caPem: '-----BEGIN CERTIFICATE-----\n(demo CA — this sandbox has no real gateway)\n-----END CERTIFICATE-----\n',
       }),
+    agentEndpoint: () =>
+      ok({
+        host: 'agents.demo.example',
+        port: 9443,
+        gatewayUrl: 'wss://agents.demo.example:9443/agent',
+        enrollmentUrl: 'https://agents.demo.example:9443',
+      }),
+    // The sandbox has no gateway to build a real zip, and handing out a broken one would be worse than saying
+    // so: the console surfaces this as the download error it is.
+    agentBundle: () => fail('the demo sandbox cannot build an install bundle — there is no real gateway', 501),
     // Mirrors the real teardown: the identity goes, the connection with it, and the agent drops out of every
     // device's reachable set — but the devices themselves stay in the fleet, some now unreachable.
     deleteAgent: (agentId) => {

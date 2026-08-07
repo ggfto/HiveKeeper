@@ -49,8 +49,40 @@ export function createGateway({ getAuth = () => ({}), fetchImpl = fetch, baseUrl
     return data
   }
 
+  /**
+   * A request whose success body is a FILE, not JSON — the agent install bundle. Errors still come back as the
+   * usual {error,detail} JSON, so those are parsed exactly as `req` does; only the 2xx path takes the blob.
+   * Returns { blob, filename }, the filename read from Content-Disposition when the server names one.
+   */
+  async function download(path, { method = 'POST', body } = {}) {
+    const headers = buildHeaders(getAuth(), body !== undefined ? { 'Content-Type': 'application/json' } : {})
+    const res = await fetchImpl(baseUrl + path, {
+      method,
+      headers,
+      body: body !== undefined ? JSON.stringify(body) : undefined,
+    })
+    if (!res.ok) {
+      const text = await res.text()
+      let data = null
+      try {
+        data = text ? JSON.parse(text) : null
+      } catch {
+        // a non-JSON error body (a proxy's HTML 502, say) — fall through to the status message
+      }
+      const error = new Error((data && (data.error || data.detail)) || `HTTP ${res.status}`)
+      error.status = res.status
+      error.body = data
+      throw error
+    }
+    const disposition = res.headers?.get?.('Content-Disposition') || ''
+    const match = /filename="?([^"]+)"?/.exec(disposition)
+    return { blob: await res.blob(), filename: match ? match[1] : null }
+  }
+
   return {
     req,
+    // `download` is deliberately NOT part of the surface: it is the transport for agentBundle, and exposing it
+    // would oblige the demo sandbox to implement a blob path it has no gateway to serve.
     // first-run setup (unauthenticated; gated server-side by a setup token + the uninitialized state)
     setupStatus: () => req('/api/setup/status'),
     setup: (body) => req('/api/setup', { method: 'POST', body }),
@@ -73,6 +105,12 @@ export function createGateway({ getAuth = () => ({}), fetchImpl = fetch, baseUrl
     devices: () => req('/api/devices'),
     operations: () => req('/api/operations'),
     createEnrollment: (body) => req('/api/enrollments', { method: 'POST', body }),
+    // Where agents dial in, as the gateway resolved it from its own server certificate — so the enrollment form
+    // prefills a hostname that provably matches the certificate instead of asking the operator to retype it.
+    agentEndpoint: () => req('/api/enrollments/endpoint'),
+    // The install bundle for an agent enrolled a moment ago: it PACKAGES that enrollment (hence the token going
+    // back), it does not mint a second one.
+    agentBundle: (body) => download('/api/enrollments/bundle', { method: 'POST', body }),
     // Delete an agent for good — identity, enrollment and device reachability — freeing its id for a clean
     // re-install. Distinct from revoking, which is the reversible lockout that keeps reachability.
     deleteAgent: (agentId) => req(`/api/agents/${agentId}`, { method: 'DELETE' }),

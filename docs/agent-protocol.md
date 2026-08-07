@@ -109,6 +109,20 @@ channel — no socket.)
   `dev-pki/ca.p12`) behind a `CertificateAuthority` interface, so a KMS/HSM intermediate CA can replace it
   later. Agent env: `HIVEKEEPER_ENROLLMENT_TOKEN` / `HIVEKEEPER_ENROLLMENT_URL` (+ `HIVEKEEPER_ENROLLMENT_CACERT`
   for an https bootstrap).
+- **Install bundle + a self-known agent endpoint** — the console hands the operator a ready-to-run zip instead
+  of a wall of values to transcribe: `POST /api/enrollments/bundle` packages an agent enrolled a moment ago as
+  its compose, a `.env` filled in with the one-time token, the URLs and freshly generated secrets (vault key,
+  keystore password), `ca.pem` and a README. It **packages rather than enrolls** — it takes the token the caller
+  just received — so "add the agent, then download it" stays one flow instead of failing the second call with
+  `agent_exists`. The compose and env template are copied out of `deploy/portainer/` at build time, so the
+  bundle cannot drift from the deployment the docs describe.
+
+  The hostname comes from `GET /api/enrollments/endpoint`, which reads the **dNSName SAN of the gateway's own
+  server certificate**. The application never had `HIVEKEEPER_AGENT_DOMAIN` (only the PKI and tunnel init
+  containers do), but it did not need it: an agent's handshake verifies the name it dialed against that SAN, so
+  the SAN *is* the agent-facing hostname and any other value would fail closed. `hivekeeper.agent.domain`
+  overrides it for a deployment whose public name is a CNAME; a gateway that can determine neither reports
+  `host: null` and the console asks, as it did before.
 - **Certificate auto-renewal & revocation (slice 2)** — the agent re-issues its cert before expiry and an
   operator can revoke/re-enroll an agent:
   - **Auto-renewal** — a background loop checks the leaf's expiry (`HIVEKEEPER_CERT_RENEW_WINDOW_DAYS`,

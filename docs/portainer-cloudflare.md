@@ -161,18 +161,24 @@ deployment. Invite each user in the console after they have signed in once.
 
 On a machine inside your access points' network — **not** the server:
 
-1. Copy `deploy/portainer/agent-compose.yml` and `deploy/portainer/agent.env.example` to it, and rename the
-   latter to `.env`.
-2. Get the CA certificate: in Portainer, open the `pki-init` container's log and copy the block between
-   `BEGIN ca.pem` and `END ca.pem` into a file named `ca.pem` next to the compose file. It is the CA
-   certificate — public, not a secret. The log prints it on every deploy, so it stays available for the
-   next agent.
-3. In the console, **Fleet → Agents → Enroll**, and put the one-time token into `.env` along with the
-   Access service token from step 1.
-4. `docker compose -f agent-compose.yml up -d`
+1. In the console, **Agents → Add agent**: give it an id, then **Download install bundle**. The agent domain
+   is filled in for you — the gateway reads it from its own server certificate, so it is guaranteed to be the
+   name the TLS handshake will accept.
+2. Unpack the zip on that machine. It contains `docker-compose.yml`, a `.env` already carrying the one-time
+   token, the URLs, a generated vault key and keystore password, plus `ca.pem` and a README.
+3. Put the **Access service token** from step 1 of this guide into `.env` (`CF_ACCESS_CLIENT_ID` /
+   `CF_ACCESS_CLIENT_SECRET`). It is the one thing the gateway cannot know — it is issued in Cloudflare.
+4. `docker compose up -d`
 
 The agent generates a keypair, posts a CSR, receives its certificate, and only then opens its uplink. The
 token is spent; from then on the agent renews its own certificate over mutual TLS.
+
+:::note[Installing by hand instead?]
+The enrollment panel keeps the raw values under *Installing by hand* — the token, the URLs and the CA — for a
+native-service install or a machine you configure with `agent.conf`. The CA is also printed by the `pki-init`
+container's log on every deploy (the block between `BEGIN ca.pem` and `END ca.pem`), and re-offered by
+`GET /api/enrollments/ca`, so a lost `ca.pem` never needs a re-enrollment.
+:::
 
 :::danger[Do not "simplify" `HIVEKEEPER_ENROLLMENT_URL` to the public console URL.]
 It would work. Enrollment is authenticated by the one-time token, so it survives a TLS-terminating proxy
