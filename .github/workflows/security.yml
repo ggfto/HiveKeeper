@@ -1,0 +1,122 @@
+name: Security
+
+# The standing watch, as opposed to the CI gate.
+#
+# ci.yml answers "does THIS change introduce a vulnerability?" and blocks the merge. It cannot answer the
+# question that actually bites a deployed fleet: a CVE disclosed on Tuesday against a base image that was
+# clean when it was published on Monday. Nothing re-examines a released image — the code did not change, so
+# no workflow runs — and the agents in the field keep running it regardless.
+#
+# So this workflow re-scans what is ALREADY PUBLISHED on a schedule, against a vulnerability database that
+# has moved on, and files what it finds into GitHub code scanning (Security tab) where it accumulates
+# history, deduplicates, and stops being a log line nobody reads.
+#
+# Policy — severity, ignore-unfixed, the ignore file — comes from trivy.yaml, the same file the CI gate and
+# scripts/scan-security.ps1 use. The one deliberate override is exit-code: see the last step of each job.
+
+on:
+  schedule:
+    # Mondays, 06:17 UTC. Off the hour on purpose: GitHub queues the enormous pile of `0 * * * *` jobs first,
+    # and a scan that starts 40 minutes late is a scan whose results land after the day has started.
+    - cron: '17 6 * * 1'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: security-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # What operators are actually running right now.
+  published-images:
+    name: Published image (${{ matrix.module }})
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: read # pull from GHCR
+      security-events: write # upload SARIF to code scanning
+    strategy:
+      fail-fast: false # one rotten image must not hide the state of the other three
+      matrix:
+        module: [gateway, agent, server, web]
+    steps:
+      - uses: actions/checkout@v4 # for trivy.yaml + .trivyignore.yaml
+
+      # The packages are public, so an anonymous pull would work today. Logging in anyway keeps this workflow
+      # correct if they are ever made private, and lifts the anonymous rate limit.
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      # `latest` is what scripts/release-images.sh tags on every release, so this is the newest published
+      # build — not necessarily the newest commit, which is exactly the point.
+      - name: Scan the published image
+        uses: aquasecurity/trivy-action@0.35.0
+        with:
+          image-ref: ghcr.io/${{ github.repository_owner }}/hivekeeper-${{ matrix.module }}:latest
+          trivy-config: trivy.yaml
+          format: sarif
+          output: trivy-${{ matrix.module }}.sarif
+          limit-severities-for-sarif: true # honour trivy.yaml's CRITICAL/HIGH instead of reporting every LOW
+          exit-code: '0' # findings must not abort the step before the SARIF is uploaded; see the gate below
+
+      # A distinct category per module: without it, each upload would overwrite the previous one and the
+      # Security tab would only ever show whichever image scanned last.
+      # always(), so a scan that found something still reports it — but guarded on the file existing, because
+      # if the scan itself broke (image pulled from a registry that is down, say) the useful error is that
+      # one, not "sarif_file does not exist" stacked on top of it.
+      - name: Upload to code scanning
+        if: always() && hashFiles(format('trivy-{0}.sarif', matrix.module)) != ''
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: trivy-${{ matrix.module }}.sarif
+          category: trivy-image-${{ matrix.module }}
+
+      # Code scanning alerts are easy to never look at. A red scheduled run sends mail, which is the whole
+      # difference between knowing on Monday and knowing in November.
+      - name: Fail if anything was found
+        run: |
+          count=$(jq '[.runs[].results[]] | length' trivy-${{ matrix.module }}.sarif)
+          echo "$count finding(s) in the published ${{ matrix.module }} image"
+          [ "$count" -eq 0 ] || { echo "::error::rebuild and republish hivekeeper-${{ matrix.module }}"; exit 1; }
+
+  # The same repo scan the CI gate runs, but reported into the Security tab and re-run against a database
+  # that has moved on since the last push.
+  working-tree:
+    name: Working tree (deps, secrets, IaC)
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      security-events: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Scan the working tree
+        uses: aquasecurity/trivy-action@0.35.0
+        with:
+          scan-type: fs
+          scan-ref: .
+          scanners: vuln,secret,misconfig
+          trivy-config: trivy.yaml
+          format: sarif
+          output: trivy-repo.sarif
+          limit-severities-for-sarif: true
+          exit-code: '0'
+
+      - name: Upload to code scanning
+        if: always() && hashFiles('trivy-repo.sarif') != ''
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: trivy-repo.sarif
+          category: trivy-repo
+
+      - name: Fail if anything was found
+        run: |
+          count=$(jq '[.runs[].results[]] | length' trivy-repo.sarif)
+          echo "$count finding(s) in the working tree"
+          [ "$count" -eq 0 ] || { echo "::error::see the Security tab, or run scripts/scan-security.ps1"; exit 1; }

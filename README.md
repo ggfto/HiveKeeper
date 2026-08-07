@@ -128,6 +128,27 @@ are configured in `gradle.properties` (`org.gradle.java.installations.paths`) �
 machine, or add the [foojay-resolver](https://github.com/gradle/foojay-toolchains) plugin to
 auto-provision a JDK 21.
 
+### Security scanning
+
+HiveKeeper holds SSH credentials for a fleet of access points, so the supply chain is part of the threat
+model. [Trivy](https://trivy.dev) gates every pull request on two passes that see different things: the
+**images** (base OS packages *and* the JVM dependency tree, which is only readable as the jars inside them)
+and the **working tree** (pnpm lockfiles, committed secrets, Dockerfile misconfiguration). A weekly
+[`security.yml`](.github/workflows/security.yml) run re-scans the *published* images against a newer
+database — the CVE that matters is usually the one disclosed after the release — and files results into the
+repository's Security tab.
+
+```powershell
+# The same checks CI runs, same policy, same verdict. Needs trivy on PATH.
+powershell -ExecutionPolicy Bypass -File scripts/scan-security.ps1
+powershell -ExecutionPolicy Bypass -File scripts/scan-security.ps1 -Images   # + build and scan the images
+```
+
+Policy lives in [`trivy.yaml`](trivy.yaml) (fail on fixable CRITICAL/HIGH). Exceptions live in
+[`.trivyignore.yaml`](.trivyignore.yaml); every one states why, and carries an expiry date after which it
+stops being ignored — the only exceptions without a date are the ones nothing can ever fix, where Trivy is
+reading a Dockerfile it cannot fully understand.
+
 ## Running the stack
 
 The web UI (`hive-web`) needs **Node + pnpm**. Two scripts bring up everything and open the browser at

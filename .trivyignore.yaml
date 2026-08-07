@@ -1,0 +1,52 @@
+# Trivy exceptions. Two rules for anything that gets added here:
+#
+#   1. Say WHY. A bare ID is indistinguishable from someone silencing a real problem.
+#   2. Give it an `expired-at` unless the finding can never become actionable. On that date Trivy stops
+#      ignoring it and the build goes red again — which is the point. An exception is a deadline, not a delete.
+#
+# The list is deliberately short. Everything the first scan found on 2026-08-07 was fixed rather than
+# suppressed — astro 5 -> 7, js-yaml, postcss, svgo, sharp and mermaid were bumped, and the gateway, server
+# and agent images now run as an unprivileged user. What is left is what could not be fixed by a bump.
+
+vulnerabilities:
+  # react-router 7.18.1, reachable only in RSC mode. BLOCKED ON @mriqbox/ui-kit, not on effort here.
+  #
+  # The advisory (GHSA-qwww-vcr4-c8h2, "RSC Mode CSRF Bypass Allows Action Execution Before 400 Response")
+  # covers >= 7.12.0, < 8.3.0 with no 7.x backport. react-router-dom was discontinued in v8, and
+  # react-router 8 requires React >= 19.2.7 against this console's React 18.3.1.
+  #
+  # The upgrade was attempted on 2026-08-07 and reverted. React 19 + react-router 8 install and the imports
+  # move cleanly, but @mriqbox/ui-kit 4.15.1 declares react/react-dom as ordinary DEPENDENCIES rather than
+  # peers, and its published bundle reads React 18 internals — `ReactCurrentDispatcher`, which React 19
+  # removed. A pnpm override deduplicates to one React 19 copy and every ui-kit component then throws at
+  # import time (58 of 80 test files). Nothing in this repo can fix that: the ui-kit has to declare React as
+  # a peer dependency and ship a build against 19 first.
+  #
+  # Meanwhile the finding is not reachable here: hive-web is a static Vite SPA served by nginx, using
+  # HashRouter, with no server runtime, no server actions and no RSC. The vulnerable code path is not in the
+  # bundle. The date stays anyway — "not reachable" is a statement about today's architecture.
+  - id: GHSA-qwww-vcr4-c8h2
+    statement: 'RSC-mode CSRF; hive-web is a static SPA with no RSC. Fix needs React 19, blocked by @mriqbox/ui-kit 4.15.1 bundling React 18 internals.'
+    expired-at: 2026-11-05
+
+misconfigurations:
+  # --- DS-0002: "Image user should not be 'root'" -----------------------------------------------------------
+  #
+  # The gateway, server and agent images were fixed (they run as uid 1001). These five remain because Trivy
+  # reads the Dockerfile text and nothing else: it cannot see a USER set by a base image, nor a privilege drop
+  # performed by an entrypoint. No expiry — there is nothing here to fix, and a date would only schedule a
+  # false alarm.
+  - id: DS-0002
+    paths:
+      - deploy/portainer/postgres.Dockerfile
+      - deploy/portainer/backup.Dockerfile
+    statement: "postgres:16-alpine's entrypoint drops to the postgres user with gosu; a USER line would break initdb."
+  - id: DS-0002
+    paths:
+      - deploy/portainer/keycloak-init.Dockerfile
+    statement: 'The Keycloak base image already sets a non-root USER, which Trivy cannot see from the Dockerfile.'
+  - id: DS-0002
+    paths:
+      - deploy/portainer/pki-init.Dockerfile
+      - deploy/portainer/cloudflared-init.Dockerfile
+    statement: 'Init containers: they exist to write into a fresh volume before anything else starts, which needs root.'

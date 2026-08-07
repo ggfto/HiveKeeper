@@ -1,0 +1,46 @@
+# The one place HiveKeeper's Trivy policy lives. Every caller passes `--config` on this file — the CI gate
+# (.github/workflows/ci.yml), the scheduled watch (.github/workflows/security.yml) and the local
+# scripts/scan-security.ps1 — so a scan on a laptop and a scan on a runner reach the same verdict. A gate that
+# only fails in CI is a gate people learn to route around.
+#
+# Two passes cover the whole surface, because neither can see what the other does:
+#
+#   * IMAGE scan (`trivy image`, per Dockerfile) — the base OS packages AND the Java dependency tree. The jars
+#     that `installDist` drops in /app/lib are the only place the Gradle tree becomes visible to Trivy: it
+#     cannot parse build.gradle.kts or gradle/libs.versions.toml, and this build keeps no gradle.lockfile for
+#     it to read. So "we scan the images" is also how the JVM dependencies get scanned at all.
+#
+#   * REPO scan (`trivy fs`) — the pnpm lockfiles (whose packages never reach an image: hive-web ships as a
+#     static bundle and the build stage is discarded), committed secrets, and Dockerfile misconfiguration.
+#
+# Trivy's own vulnerability DB is refreshed daily upstream, which is why security.yml re-scans on a schedule:
+# a CVE published the day after a release does not go looking for the release on its own.
+
+# Fail on what is both severe AND actually fixable. A HIGH with no available patch is noise that would block
+# every PR and teach everyone to ignore the job; ignore-unfixed drops exactly those, and the scheduled scan
+# picks them back up the moment a fix ships.
+severity:
+  - CRITICAL
+  - HIGH
+ignore-unfixed: true
+
+# A finding is a build failure, not a report. security.yml overrides this to 0 on purpose — its job is to
+# publish results to GitHub code scanning, not to fail a nightly.
+exit-code: 1
+
+# Time-boxed exceptions, each with a reason and a date it stops working. See the file.
+ignorefile: .trivyignore.yaml
+
+scan:
+  # Filesystem-scan only; an image has none of these paths. Build output and vendored trees are not sources —
+  # node_modules is the resolved form of the lockfiles Trivy already reads, so scanning it adds minutes and
+  # finds nothing new. captures/ and hivekeeper-backups/ hold device data, not code.
+  skip-dirs:
+    - '**/node_modules'
+    - '**/dist'
+    - '*/build'
+    - build
+    - .gradle
+    - captures
+    - hivekeeper-backups
+    - .code-review-graph

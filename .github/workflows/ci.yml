@@ -84,7 +84,8 @@ jobs:
         working-directory: hive-web
 
   # The images are what people actually run. A critical CVE in a base image is exactly as exploitable as one in
-  # our own code, and nothing was looking for either.
+  # our own code, and nothing was looking for either. This pass also covers the JVM dependency tree — the jars
+  # under /app/lib are the only form of it Trivy can read (see trivy.yaml).
   images:
     name: Image scan
     runs-on: ubuntu-latest
@@ -98,12 +99,29 @@ jobs:
       - name: Build the image
         run: docker build -f hive-${{ matrix.module }}/Dockerfile -t hivekeeper-${{ matrix.module }}:ci .
 
+      # Severity, ignore-unfixed, exit-code and the ignore file are set in trivy.yaml and deliberately NOT
+      # here. The action exports a TRIVY_* environment variable for every input you actually pass, and an env
+      # var beats the config file — so adding `severity:` to this step would silently fork the policy, leaving
+      # the local scan and the CI scan disagreeing about what counts as a failure.
       - name: Scan it
         uses: aquasecurity/trivy-action@0.35.0
         with:
           image-ref: hivekeeper-${{ matrix.module }}:ci
-          # Fail only on what is both severe AND actually fixable. A HIGH with no available patch is noise that
-          # would block every PR and teach everyone to ignore the job.
-          severity: CRITICAL,HIGH
-          ignore-unfixed: true
-          exit-code: '1'
+          trivy-config: trivy.yaml
+
+  # Everything the image scan structurally cannot see: the pnpm trees (hive-web ships as a static bundle, so
+  # its dependencies are gone by the time the runtime stage exists), anything secret-shaped that got committed,
+  # and the Dockerfiles as text — including the five under deploy/portainer/ that no image job builds.
+  repo:
+    name: Repo scan (deps, secrets, IaC)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Scan the working tree
+        uses: aquasecurity/trivy-action@0.35.0
+        with:
+          scan-type: fs
+          scan-ref: .
+          scanners: vuln,secret,misconfig
+          trivy-config: trivy.yaml
