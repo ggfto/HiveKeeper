@@ -6,13 +6,13 @@
 # which override the file.
 
 # --- build stage ---------------------------------------------------------------
-FROM --platform=$BUILDPLATFORM eclipse-temurin:25-jdk AS build
+FROM --platform=$BUILDPLATFORM eclipse-temurin:26-jdk AS build
 WORKDIR /src
 COPY . .
 RUN chmod +x ./gradlew && ./gradlew --no-daemon :hive-agent:installDist -x test
 
 # --- runtime stage -------------------------------------------------------------
-FROM eclipse-temurin:25-jre
+FROM eclipse-temurin:26-jre
 # Patch the base image's OS packages — a JRE base drifts behind the distro's security fixes between its own
 # rebuilds, and the CI image scan fails the build on a fixable CRITICAL/HIGH.
 RUN apt-get update && apt-get upgrade -y && rm -rf /var/lib/apt/lists/* \
