@@ -5,7 +5,7 @@
 # network isolates it); map the port and put it behind your own TLS/ingress.
 
 # --- build stage ---------------------------------------------------------------
-FROM --platform=$BUILDPLATFORM eclipse-temurin:25-jdk AS build
+FROM --platform=$BUILDPLATFORM eclipse-temurin:26-jdk AS build
 WORKDIR /src
 COPY . .
 # The running JVM (21) satisfies the Java 21 toolchain via Gradle's current-JVM detection,
@@ -13,7 +13,7 @@ COPY . .
 RUN chmod +x ./gradlew && ./gradlew --no-daemon :hive-server:installDist -x test
 
 # --- runtime stage -------------------------------------------------------------
-FROM eclipse-temurin:25-jre
+FROM eclipse-temurin:26-jre
 # Patch the base image's OS packages — a JRE base drifts behind the distro's security fixes between its own
 # rebuilds, and the CI image scan fails the build on a fixable CRITICAL/HIGH.
 RUN apt-get update && apt-get upgrade -y && rm -rf /var/lib/apt/lists/* \
