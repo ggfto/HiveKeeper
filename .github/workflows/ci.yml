@@ -26,7 +26,7 @@ jobs:
     name: JVM tests
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Set up JDK 21
         uses: actions/setup-java@v5
@@ -54,7 +54,7 @@ jobs:
     name: hive-web tests
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       # No version here on purpose: it is read from hive-web/package.json's "packageManager" field, so CI, the
       # container image and a developer's machine all install with the same pnpm.
@@ -94,7 +94,7 @@ jobs:
       matrix:
         module: [gateway, agent, server, web]
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Build the image
         run: docker build -f hive-${{ matrix.module }}/Dockerfile -t hivekeeper-${{ matrix.module }}:ci .
@@ -116,7 +116,7 @@ jobs:
     name: Repo scan (deps, secrets, IaC)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Scan the working tree
         uses: aquasecurity/trivy-action@0.35.0
