@@ -13,9 +13,19 @@ on:
   workflow_call:
   workflow_dispatch:
 
-# A superseded run of an open PR is wasted work; a run on main is the gate for a release, so let it finish.
+# A superseded run of an open PR is wasted work; every other run is the gate for a release, so it must happen.
+#
+# Only PRs share a group, keyed on the PR number: pushing again to a PR branch cancels the older run. Anything
+# else - a push to main, the workflow_call release.yml makes for that same commit, a manual dispatch - gets a
+# group of its own via run_id, so nothing ever waits on anything.
+#
+# The group used to be `ci-${{ github.ref }}` for all events, which put every push to main in ONE group. That
+# reads like "queue them up", but GitHub keeps at most one running plus one pending run per group and CANCELS
+# the rest: merge three PRs in a minute and the middle runs simply never happen. On 2026-08-21 that is exactly
+# how a broken lockfile on main went unnoticed until the docs deploy went red - the CI runs that would have
+# caught it were cancelled as the merges landed. Per-commit isolation is the whole point of a test gate.
 concurrency:
-  group: ci-${{ github.ref }}
+  group: ci-${{ github.event.pull_request.number || github.run_id }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 permissions:
