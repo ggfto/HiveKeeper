@@ -1,3 +1,10 @@
+## [0.18.1](https://github.com/ggfto/HiveKeeper/compare/v0.18.0...v0.18.1) (2026-08-21)
+
+
+### Bug Fixes
+
+* **web:** repair the hive-web lockfile after two overlapping dependency merges ([#53](https://github.com/ggfto/HiveKeeper/issues/53)) ([f91f662](https://github.com/ggfto/HiveKeeper/commit/f91f66215a1e088b00a7f42dc342541d03c7b9a4)), closes [#25](https://github.com/ggfto/HiveKeeper/issues/25) [#46](https://github.com/ggfto/HiveKeeper/issues/46)
+
 # [0.18.0](https://github.com/ggfto/HiveKeeper/compare/v0.17.0...v0.18.0) (2026-08-07)
 
 
