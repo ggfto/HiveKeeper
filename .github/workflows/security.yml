@@ -42,7 +42,7 @@ jobs:
       matrix:
         module: [gateway, agent, server, web]
     steps:
-      - uses: actions/checkout@v4 # for trivy.yaml + .trivyignore.yaml
+      - uses: actions/checkout@v7 # for trivy.yaml + .trivyignore.yaml
 
       # The packages are public, so an anonymous pull would work today. Logging in anyway keeps this workflow
       # correct if they are ever made private, and lifts the anonymous rate limit.
@@ -94,7 +94,7 @@ jobs:
       contents: read
       security-events: write
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Scan the working tree
         uses: aquasecurity/trivy-action@v0.36.0
