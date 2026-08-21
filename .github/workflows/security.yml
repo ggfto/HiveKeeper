@@ -47,7 +47,7 @@ jobs:
       # The packages are public, so an anonymous pull would work today. Logging in anyway keeps this workflow
       # correct if they are ever made private, and lifts the anonymous rate limit.
       - name: Log in to GHCR
-        uses: docker/login-action@v3
+        uses: docker/login-action@v4
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
