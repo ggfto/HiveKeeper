@@ -23,6 +23,20 @@ updates:
     groups:
       minor-and-patch:
         update-types: [minor, patch]
+    ignore:
+      # React 19 is not installable in this console, and the blocker is not in this repo. @mriqbox/ui-kit
+      # declares react/react-dom as ordinary DEPENDENCIES pinned to ^18.2.0 rather than peers, and its
+      # published bundle reads React 18 internals that React 19 removed. Attempted on 2026-08-07 and reverted:
+      # a pnpm override deduplicates to one React 19 copy and every ui-kit component throws at import time.
+      # Re-checked on 2026-08-21 against ui-kit 4.20.1 - still ^18.2.0, still a dependency, still blocked.
+      #
+      # Dependabot cannot hold an expiry, so the deadline lives next door: .trivyignore.yaml suppresses
+      # GHSA-qwww-vcr4-c8h2 (the react-router advisory this same pin keeps us from fixing) until 2026-11-05.
+      # When that goes red, this entry is what has to be revisited. Minor and patch bumps still come through.
+      - dependency-name: react
+        update-types: [version-update:semver-major]
+      - dependency-name: react-dom
+        update-types: [version-update:semver-major]
 
   - package-ecosystem: npm
     directory: /website
@@ -54,3 +68,13 @@ updates:
       - /hive-web
     schedule:
       interval: weekly
+    ignore:
+      # Stay on the Java LTS train. Temurin cuts an image for every feature release, so Dependabot proposed
+      # 25 -> 26 within days of it shipping (#40, #41, #42, closed on 2026-08-21). A feature release is
+      # supported for roughly six months and then stops getting security rebuilds entirely - which for a
+      # base image is the opposite of what this ecosystem is configured for. 25 is the current LTS; 29 is
+      # the next one, due September 2027, and that is when this entry should be removed.
+      #
+      # Only majors are ignored: 25.0.1 -> 25.0.2, the rebuilds that carry the CVE fixes, still arrive weekly.
+      - dependency-name: eclipse-temurin
+        update-types: [version-update:semver-major]
