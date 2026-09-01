@@ -12,11 +12,11 @@
     "astro": "astro"
   },
   "dependencies": {
-    "@astrojs/starlight": "^0.41.7",
-    "astro": "^7.2.3",
+    "@astrojs/starlight": "^0.41.10",
+    "astro": "^7.2.9",
     "astro-mermaid": "^2.1.0",
-    "mermaid": "^11.16.1",
-    "sharp": "^0.35.3",
+    "mermaid": "^11.17.2",
+    "sharp": "^0.35.4",
     "unist-util-visit": "^5.0.0"
   },
   "pnpm": {
