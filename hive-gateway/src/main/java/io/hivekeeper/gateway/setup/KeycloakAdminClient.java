@@ -14,17 +14,17 @@ import java.util.Map;
 import java.util.Optional;
 
 /**
- * Minimal Keycloak Admin API client — only what first-run setup needs: create the very first realm admin user
+ * Keycloak Admin API client — only what first-run setup needs: create the very first realm admin user
  * with a password. It authenticates to the admin realm (default {@code master}, client {@code admin-cli}) with
  * the configured admin credentials to get a short-lived token, then creates the user in the application realm
  * and returns the new user's id (which becomes the {@code sub} of the JWTs they will later sign in with).
  *
- * <p>Only present under the {@code oidc} profile. The admin credentials are configuration the operator
- * provides for their own Keycloak; they are never exposed to clients.
+ * <p>Only present under the {@code oidc} profile when using Keycloak. The admin credentials are configuration
+ * the operator provides for their own Keycloak; they are never exposed to clients.
  */
 @Component
-@Profile("oidc")
-public class KeycloakAdminClient {
+@Profile({"oidc", "oidc-keycloak"})
+public class KeycloakAdminClient implements IdpAdminClient {
 
     private final RestClient http = RestClient.create();
     private final String baseUrl;
@@ -107,6 +107,11 @@ public class KeycloakAdminClient {
     public record KeycloakUser(String id, String email, String name) {
     }
 
+    @Override
+    public Optional<IdpUser> findUser(String usernameOrEmail) {
+        return findKeycloakUser(usernameOrEmail).map(u -> new IdpUser(u.id(), u.email(), u.name()));
+    }
+
     /**
      * Find an existing realm user by exact username or e-mail.
      *
@@ -116,7 +121,7 @@ public class KeycloakAdminClient {
      * They sign in once (and are told they belong to no organization), and the admin then admits the account
      * that by then exists. Hence: look up, do not create.
      */
-    public Optional<KeycloakUser> findUser(String usernameOrEmail) {
+    public Optional<KeycloakUser> findKeycloakUser(String usernameOrEmail) {
         String query = enc(usernameOrEmail.trim());
         String token = adminToken();
         try {

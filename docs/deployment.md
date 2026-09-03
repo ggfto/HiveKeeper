@@ -25,6 +25,7 @@ The repo root ships a layered set of compose files:
 | `docker-compose.yml` | The base: the **gateway** (in-memory, no DB) and one **agent**. |
 | `docker-compose.postgres.yml` | **Postgres** + switches the gateway to the `postgres` profile (durable jobs, org/users/fleet, audit log, RLS). |
 | `docker-compose.keycloak.yml` | A dev **Keycloak** (imports the `hivekeeper` realm) + the `oidc` profile for per-user login. |
+| `docker-compose.authentik.yml` | A dev **Authentik** (OAuth2/OIDC provider) + the `oidc,oidc-authentik` profile for per-user login. |
 
 ### Bring it up
 
@@ -37,6 +38,9 @@ docker compose -f docker-compose.yml -f docker-compose.postgres.yml up -d --buil
 
 # With persistence + OIDC/SSO (sign in at the console with owner/owner):
 docker compose -f docker-compose.yml -f docker-compose.postgres.yml -f docker-compose.keycloak.yml up -d --build
+
+# OR with Authentik:
+docker compose -f docker-compose.yml -f docker-compose.postgres.yml -f docker-compose.authentik.yml up -d --build
 ```
 
 The gateway listens on `:8090`. The agent dials **out** to it over WebSocket (no inbound ports) and resolves

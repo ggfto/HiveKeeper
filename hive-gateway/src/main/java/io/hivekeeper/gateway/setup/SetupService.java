@@ -31,15 +31,15 @@ public class SetupService {
     private static final SecureRandom RANDOM = new SecureRandom();
 
     private final JdbcTemplate jdbc;
-    private final KeycloakAdminClient keycloak;
+    private final IdpAdminClient idp;
     private final UserService users;
     private final String issuer;
     private final String setupToken;
 
-    public SetupService(JdbcTemplate jdbc, KeycloakAdminClient keycloak, UserService users,
+    public SetupService(JdbcTemplate jdbc, IdpAdminClient idp, UserService users,
                         @Value("${hivekeeper.oidc.issuer}") String issuer) {
         this.jdbc = jdbc;
-        this.keycloak = keycloak;
+        this.idp = idp;
         this.users = users;
         this.issuer = issuer;
         this.setupToken = randomToken();
@@ -94,7 +94,7 @@ public class SetupService {
         }
 
         String name = isBlank(displayName) ? username.trim() : displayName.trim();
-        String kcUserId = keycloak.createUser(username.trim(), email, password, name);
+        String idpUserId = idp.createUser(username.trim(), email, password, name);
 
         String tenantId = slug(orgName);
         // A random operator key keeps the not-null/unique column satisfied (for automation parity); this org
@@ -104,7 +104,7 @@ public class SetupService {
                 "insert into tenant (tenant_id, name, operator_api_key, operator_role) values (?, ?, ?, 'owner')",
                 tenantId, orgName.trim(), operatorKey);
 
-        UserService.AppUser user = users.provision(issuer, kcUserId, email, name);
+        UserService.AppUser user = users.provision(issuer, idpUserId, email, name);
 
         // membership + role_grant are RLS-protected: the policy's WITH CHECK compares tenant_id to the
         // transaction-local app.current_tenant, so set it before inserting (the same pattern the other services

@@ -11,6 +11,13 @@ dependencies {
     implementation(libs.bcpkix)
 
     implementation(platform("org.springframework.boot:spring-boot-dependencies:4.1.0"))
+    // Override Tomcat version to fix CVE-2026-65182 (security constraint bypass)
+    // Spring Boot 4.1.0 ships with Tomcat 11.0.22; 11.0.25 contains the fix.
+    // This override can be removed when Spring Boot BOM is updated to include 11.0.25+
+    constraints {
+        implementation("org.apache.tomcat.embed:tomcat-embed-core:11.0.25")
+        implementation("org.apache.tomcat.embed:tomcat-embed-websocket:11.0.25")
+    }
     implementation("org.springframework.boot:spring-boot-starter-web")
     implementation("org.springframework.boot:spring-boot-starter-websocket")
     // Health + metrics, served on a SEPARATE management port that no deployment publishes (see
