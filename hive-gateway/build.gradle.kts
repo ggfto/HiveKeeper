@@ -10,7 +10,7 @@ dependencies {
     // Agent enrollment: parse the agent's PKCS#10 CSR and sign a leaf cert with the file-backed CA.
     implementation(libs.bcpkix)
 
-    implementation(platform("org.springframework.boot:spring-boot-dependencies:4.1.0"))
+    implementation(platform("org.springframework.boot:spring-boot-dependencies:4.1.1"))
     // Override Tomcat version to fix CVE-2026-65182 (security constraint bypass)
     // Spring Boot 4.1.0 ships with Tomcat 11.0.22; 11.0.25 contains the fix.
     // This override can be removed when Spring Boot BOM is updated to include 11.0.25+
