@@ -1,6 +1,6 @@
 [versions]
 sshj = "0.40.0"
-jschMwiede = "2.28.6"
+jschMwiede = "2.28.7"
 jgit = "7.7.1.202607240634-r"
 picocli = "4.7.7"
 jackson = "2.22.2"
