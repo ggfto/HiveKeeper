@@ -1,3 +1,10 @@
+# [0.19.0](https://github.com/ggfto/HiveKeeper/compare/v0.18.1...v0.19.0) (2026-09-03)
+
+
+### Features
+
+* add Authentik as identity provider alternative to Keycloak ([#64](https://github.com/ggfto/HiveKeeper/issues/64)) ([5e38435](https://github.com/ggfto/HiveKeeper/commit/5e3843506af2f3fc899c6894e79b1a64de03a626))
+
 ## [0.18.1](https://github.com/ggfto/HiveKeeper/compare/v0.18.0...v0.18.1) (2026-08-21)
 
 
