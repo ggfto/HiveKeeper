@@ -1,0 +1,110 @@
+# OIDC / SSO override: adds a dev Authentik configured with the 'hivekeeper' application and provider,
+# and switches the gateway to the 'postgres,oidc,oidc-authentik' profile.
+# Requires the postgres override too — layer all three:
+#
+#   docker compose -f docker-compose.yml -f docker-compose.postgres.yml -f docker-compose.authentik.yml up -d --build
+#
+# Sign in at the console with the user you create via the Authentik admin panel.
+# Admin console: http://localhost:9000/if/admin/
+#
+# Issuer note: tokens are minted for the BROWSER-facing URL (http://localhost:9000), so the gateway validates
+# the `iss` claim against that — while it calls the Authentik API over the CONTAINER network (http://authentik-server:9000).
+# If you reach the console from another host/port, change HIVEKEEPER_OIDC_ISSUER to match where the browser logs in.
+
+services:
+  authentik-db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: authentik
+      POSTGRES_USER: authentik
+      POSTGRES_PASSWORD: ${AUTHENTIK_DB_PASSWORD:-authentik}
+    volumes:
+      - authentik-db-data:/var/lib/postgresql/data
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U authentik"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  authentik-redis:
+    image: redis:7-alpine
+    command: --save 60 1 --loglevel warning
+    volumes:
+      - authentik-redis-data:/data
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "redis-cli ping | grep PONG"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+
+  authentik-server:
+    image: ghcr.io/goauthentik/server:2024.8.3
+    command: server
+    environment:
+      AUTHENTIK_REDIS__HOST: authentik-redis
+      AUTHENTIK_POSTGRESQL__HOST: authentik-db
+      AUTHENTIK_POSTGRESQL__NAME: authentik
+      AUTHENTIK_POSTGRESQL__USER: authentik
+      AUTHENTIK_POSTGRESQL__PASSWORD: ${AUTHENTIK_DB_PASSWORD:-authentik}
+      AUTHENTIK_SECRET_KEY: ${AUTHENTIK_SECRET_KEY:-changeme-generate-a-random-key-in-production}
+      AUTHENTIK_ERROR_REPORTING__ENABLED: "false"
+      # Bootstrap token for initial admin account (first-time only)
+      AUTHENTIK_BOOTSTRAP_PASSWORD: ${AUTHENTIK_BOOTSTRAP_PASSWORD:-admin}
+      AUTHENTIK_BOOTSTRAP_TOKEN: ${AUTHENTIK_BOOTSTRAP_TOKEN}
+    ports:
+      - "${HIVEKEEPER_AUTHENTIK_PORT:-9000}:9000"
+    volumes:
+      - authentik-media:/media
+      - authentik-custom-templates:/templates
+    depends_on:
+      authentik-db:
+        condition: service_healthy
+      authentik-redis:
+        condition: service_healthy
+    restart: unless-stopped
+
+  authentik-worker:
+    image: ghcr.io/goauthentik/server:2024.8.3
+    command: worker
+    environment:
+      AUTHENTIK_REDIS__HOST: authentik-redis
+      AUTHENTIK_POSTGRESQL__HOST: authentik-db
+      AUTHENTIK_POSTGRESQL__NAME: authentik
+      AUTHENTIK_POSTGRESQL__USER: authentik
+      AUTHENTIK_POSTGRESQL__PASSWORD: ${AUTHENTIK_DB_PASSWORD:-authentik}
+      AUTHENTIK_SECRET_KEY: ${AUTHENTIK_SECRET_KEY:-changeme-generate-a-random-key-in-production}
+      AUTHENTIK_ERROR_REPORTING__ENABLED: "false"
+    volumes:
+      - authentik-media:/media
+      - authentik-certs:/certs
+      - authentik-custom-templates:/templates
+    depends_on:
+      authentik-db:
+        condition: service_healthy
+      authentik-redis:
+        condition: service_healthy
+    restart: unless-stopped
+
+  gateway:
+    environment:
+      SPRING_PROFILES_ACTIVE: postgres,oidc,oidc-authentik
+      # Browser-facing issuer — must match where users actually log in.
+      HIVEKEEPER_OIDC_ISSUER: ${HIVEKEEPER_OIDC_ISSUER:-http://localhost:9000/application/o/hivekeeper/}
+      # Container-facing JWKs + admin API (the gateway reaches Authentik by its service name).
+      HIVEKEEPER_OIDC_JWK_SET_URI: http://authentik-server:9000/application/o/hivekeeper/jwks/
+      HIVEKEEPER_OIDC_AUDIENCE: hive-gateway
+      HIVEKEEPER_AUTHENTIK_BASE_URL: http://authentik-server:9000
+      HIVEKEEPER_AUTHENTIK_API_TOKEN: ${HIVEKEEPER_AUTHENTIK_API_TOKEN}
+      # Hardened: accept ONLY user JWTs, so a static tenant key cannot bypass per-user authorization.
+      HIVEKEEPER_TENANTKEY_ENABLED: "false"
+    depends_on:
+      - authentik-server
+
+volumes:
+  authentik-db-data:
+  authentik-redis-data:
+  authentik-media:
+  authentik-certs:
+  authentik-custom-templates:

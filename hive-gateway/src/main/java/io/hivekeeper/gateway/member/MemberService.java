@@ -1,7 +1,8 @@
 package io.hivekeeper.gateway.member;
 
 import io.hivekeeper.gateway.access.Role;
-import io.hivekeeper.gateway.setup.KeycloakAdminClient;
+import io.hivekeeper.gateway.setup.IdpAdminClient;
+import io.hivekeeper.gateway.setup.IdpAdminClient.IdpUser;
 import io.hivekeeper.gateway.user.UserService;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Profile;
@@ -14,14 +15,14 @@ import java.util.Optional;
 import java.util.UUID;
 
 /**
- * Steady-state organization membership: list the people in an org, add a teammate (a Keycloak login + an
+ * Steady-state organization membership: list the people in an org, add a teammate (an IdP login + an
  * app_user + an active membership + one org-scoped role grant), change someone's org role, or remove them.
  * This mirrors {@link io.hivekeeper.gateway.setup.SetupService}'s identity writes, but for the running system
  * rather than first-run bootstrap. Every write first sets the transaction-local tenant context the RLS
  * policies key off, so a caller can only ever read or change their own org's membership/role_grant rows — the
  * database is the hard wall between organizations; the controller layers on who-may-call authorization.
  *
- * <p>Only present under the {@code oidc} profile (it provisions Keycloak identities); like SetupService it
+ * <p>Only present under the {@code oidc} profile (it provisions IdP identities); like SetupService it
  * also needs the {@code postgres} profile for the JdbcTemplate it writes through.
  */
 @Service
@@ -38,14 +39,14 @@ public class MemberService {
             rs.getString("status"), rs.getString("role"));
 
     private final JdbcTemplate jdbc;
-    private final KeycloakAdminClient keycloak;
+    private final IdpAdminClient idp;
     private final UserService users;
     private final String issuer;
 
-    public MemberService(JdbcTemplate jdbc, KeycloakAdminClient keycloak, UserService users,
+    public MemberService(JdbcTemplate jdbc, IdpAdminClient idp, UserService users,
                          @Value("${hivekeeper.oidc.issuer}") String issuer) {
         this.jdbc = jdbc;
-        this.keycloak = keycloak;
+        this.idp = idp;
         this.users = users;
         this.issuer = issuer;
     }
@@ -65,19 +66,19 @@ public class MemberService {
     }
 
     /**
-     * Add a teammate: create their Keycloak login with a temporary password (UPDATE_PASSWORD required action,
-     * so they pick their own at first sign-in), provision the app_user keyed by the new Keycloak subject, then
-     * write an active membership + a single org-scoped role grant. Returns the new user id. A duplicate Keycloak
-     * username surfaces as a {@link io.hivekeeper.gateway.setup.KeycloakAdminException} (the controller maps it
-     * to 409). Keycloak is created first because its id becomes the app_user's OIDC subject; if the DB writes
-     * then fail the transaction rolls back but the Keycloak user remains (retry with a different username).
+     * Add a teammate: create their IdP login with a temporary password (forced password change on first sign-in),
+     * provision the app_user keyed by the new IdP subject, then write an active membership + a single org-scoped
+     * role grant. Returns the new user id. A duplicate username surfaces as an IdP-specific exception (the
+     * controller maps it to 409). IdP user is created first because its subject becomes the app_user's OIDC
+     * subject; if the DB writes then fail the transaction rolls back but the IdP user remains (retry with a
+     * different username).
      */
     @Transactional
     public String add(String tenantId, String username, String email, String password, String displayName,
                       Role role) {
         String name = (displayName == null || displayName.isBlank()) ? username : displayName.trim();
-        String kcUserId = keycloak.createUser(username, email, password, name, true);
-        UserService.AppUser user = users.provision(issuer, kcUserId, email, name);
+        String idpUserId = idp.createUser(username, email, password, name, true);
+        UserService.AppUser user = users.provision(issuer, idpUserId, email, name);
 
         setTenant(tenantId);
         String membershipId = "mb-" + UUID.randomUUID();
@@ -92,7 +93,7 @@ public class MemberService {
     /**
      * Admit an EXISTING account to the org — the federated-login half of {@link #add}.
      *
-     * <p>Someone who signs in with GitHub (or any brokered identity provider) has no password, and no Keycloak
+     * <p>Someone who signs in with GitHub (or any brokered identity provider) has no password, and no IdP
      * account at all until their first sign-in creates one. {@link #add} therefore cannot reach them: it creates
      * a user with a password. So they sign in once, are told they belong to no organization, and an admin admits
      * the account that by then exists — looked up by exact username or e-mail.
@@ -102,14 +103,14 @@ public class MemberService {
      */
     @Transactional
     public Optional<String> invite(String tenantId, String usernameOrEmail, Role role) {
-        Optional<KeycloakAdminClient.KeycloakUser> found = keycloak.findUser(usernameOrEmail);
+        Optional<IdpUser> found = idp.findUser(usernameOrEmail);
         if (found.isEmpty()) {
             return Optional.empty();
         }
-        KeycloakAdminClient.KeycloakUser kc = found.get();
+        IdpUser idpUser = found.get();
         // Idempotent on (issuer, subject): their first sign-in already provisioned this row, so this refreshes
         // it rather than duplicating it. Pass the identity we just read, since provision() overwrites both.
-        UserService.AppUser user = users.provision(issuer, kc.id(), kc.email(), kc.name());
+        UserService.AppUser user = users.provision(issuer, idpUser.subject(), idpUser.email(), idpUser.name());
 
         setTenant(tenantId);
         if (membershipId(user.userId()).isPresent()) {
@@ -151,7 +152,7 @@ public class MemberService {
     }
 
     /** Remove a member from the org: delete their membership (its role grants cascade). Returns false if the
-     *  user was not a member. The Keycloak login is intentionally left intact — it may belong to other orgs. */
+     *  user was not a member. The IdP login is intentionally left intact — it may belong to other orgs. */
     @Transactional
     public boolean remove(String tenantId, String userId) {
         setTenant(tenantId);
