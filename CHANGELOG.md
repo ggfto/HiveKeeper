@@ -1,3 +1,10 @@
+# [0.20.0](https://github.com/ggfto/HiveKeeper/compare/v0.19.2...v0.20.0) (2026-09-08)
+
+
+### Features
+
+* **prod:** make the production identity provider a choice, and support Authentik 2025.x ([#67](https://github.com/ggfto/HiveKeeper/issues/67)) ([1f51134](https://github.com/ggfto/HiveKeeper/commit/1f5113472f7af51e7098c8e99ba596b803881049))
+
 ## [0.19.2](https://github.com/ggfto/HiveKeeper/compare/v0.19.1...v0.19.2) (2026-09-08)
 
 
