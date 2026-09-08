@@ -76,6 +76,19 @@ class MemberControllerSecurityTest {
     }
 
     @Test
+    void theRecoveryLinkReachesTheClientInTheResponseBody() throws Exception {
+        // Under Authentik this link is the new teammate's ONLY way in, and it cannot be re-issued — dropping
+        // it between the service and the JSON would strand the account silently.
+        when(members.add(eq("acme"), eq("bob"), any(), eq("pw"), any(), eq(Role.VIEWER)))
+                .thenReturn(new MemberService.Added("usr-bob", "https://authentik/if/flow/recovery/?t=abc"));
+        mvc.perform(post("/api/members").contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"username\":\"bob\",\"password\":\"pw\",\"role\":\"viewer\"}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.userId").value("usr-bob"))
+                .andExpect(jsonPath("$.recoveryLink").value("https://authentik/if/flow/recovery/?t=abc"));
+    }
+
+    @Test
     void addingAnOwnerRequiresOwnerOnTheOrg() throws Exception {
         when(members.add(eq("acme"), eq("ann"), any(), eq("pw"), any(), eq(Role.OWNER)))
                 .thenReturn(new MemberService.Added("usr-ann", null));

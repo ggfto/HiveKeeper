@@ -53,7 +53,11 @@ HIVEKEEPER_CONSOLE_URL=https://hivekeeper.example.org \
   ./deploy/authentik/bootstrap.sh
 ```
 
-The API token needs permission to manage providers, applications and brands.
+The API token needs permission to manage providers, applications, flows and brands.
+
+The script adapts to the Authentik version it finds: `redirect_uris` became a list of objects in 2024.10 and
+was a newline-separated string before, so it tries the current shape and falls back. A line like
+`>> this Authentik does not take redirect_uris as a list` is that probe succeeding, not an error.
 
 ## Two settings that are load-bearing
 
@@ -72,9 +76,13 @@ Set the provider's `sub_mode` to `user_id` (in the UI: *Subject mode → Based o
 
 Adding a teammate mints a one-time recovery link (see below). Authentik refuses that call unless a recovery
 flow is set as the **active brand's default** — *"The current brand must have a recovery flow configured to
-use a recovery link"* — and adding a teammate then fails with a message saying so. The bootstrap script binds
-the built-in `default-recovery-flow` when the brand has none; if your Authentik has no recovery flow at all,
-import one first (*Flows → Import*, "Recovery with email verification") and re-run the script.
+use a recovery link"* — and adding a teammate then fails with a message saying so.
+
+Authentik ships **no** recovery flow: out of the box the only flow that touches passwords is
+`default-password-change`, whose designation is `stage_configuration`, not `recovery`. So the bootstrap
+script creates a minimal one (`hivekeeper-recovery`) bound to the same prompt + user-write stages that flow
+already uses, and sets it as the brand default — but only when the brand has none, so your own choice is
+never overwritten.
 
 ## What differs from Keycloak
 
@@ -97,6 +105,18 @@ password field in the add form is ignored under Authentik.
 Admitting an existing account (the no-password path, for anyone who signs in through a federated provider),
 roles, org scoping and JWT validation are unchanged — those live in HiveKeeper's own database, not the IdP.
 
+## Verifying against a real instance
+
+`AuthentikLiveIT` runs the gateway's Authentik client against a live server. It is skipped unless you ask for
+it, so it never gates CI:
+
+```bash
+AUTHENTIK_IT_URL=http://localhost:9000 AUTHENTIK_IT_TOKEN=$HIVEKEEPER_AUTHENTIK_API_TOKEN   ./gradlew :hive-gateway:test --tests '*AuthentikLiveIT*'
+```
+
+The mocked unit tests pin the conversation we believe Authentik has; this one pins the conversation it
+actually has. Run it after any Authentik version bump.
+
 ## Troubleshooting
 
 | Symptom | Cause |
@@ -106,3 +126,5 @@ roles, org scoping and JWT validation are unchanged — those live in HiveKeeper
 | `Authentik created 'x' but issued no recovery link ... set a recovery flow` | No recovery flow set as the brand's default. The named account was left behind — delete it in Authentik before retrying. |
 | Token rejected: `iss` mismatch | `HIVEKEEPER_OIDC_ISSUER` must be the URL the **browser** logs in at, not the container name. The gateway reaches the API over the container network separately. |
 | Token rejected, JWKS empty | The provider has no asymmetric signing key, so Authentik signed with HS256. Give it a certificate keypair. |
+| Every API call answers 403 right after a first boot | `AUTHENTIK_BOOTSTRAP_TOKEN` has to be set on the **worker** as well as the server — the worker is what applies the blueprint that creates the token. The compose file sets both. |
+| `creating the Authentik user failed: HTTP 400 {"username":["This field is required."]}` on a request that clearly sent one | Authentik's router drops chunked request bodies and rejects the JDK client's h2c upgrade. `AuthentikAdminClient` pins HTTP/1.1 and buffers, so this should not resurface unless that is changed. |

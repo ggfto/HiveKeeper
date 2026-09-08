@@ -4,8 +4,8 @@
 #
 # Idempotent: safe to re-run on every stack start. It creates what is missing and updates what has drifted.
 #
-# Runs as the `authentik-init` service in docker-compose.authentik.yml (an image with curl + jq). It also runs
-# standalone against an Authentik you already operate:
+# Needs bash, curl and jq. Runs as the `authentik-init` service in docker-compose.authentik.yml, which
+# installs them into a plain alpine image. It also runs standalone against an Authentik you already operate:
 #
 #   AUTHENTIK_URL=https://sso.example.org \
 #   HIVEKEEPER_AUTHENTIK_API_TOKEN=... \
@@ -74,46 +74,68 @@ SCOPES=$(scope_mappings)
 [ "${SCOPES}" != "[]" ] || echo ">> warning: no openid/email/profile scope mappings found; tokens may lack claims"
 
 # --- OAuth2/OIDC provider ------------------------------------------------------------------------
-PROVIDER_ID=$(api "${AUTHENTIK_URL}/api/v3/providers/oauth2/?name=${APP_NAME}-provider" \
-  | jq -r '.results[0].pk // empty')
+# Authentik changed the shape of `redirect_uris` in 2024.10: it used to be a newline-separated STRING of
+# regexes, and became a list of {matching_mode, url} objects. Both are in the field, so build both payloads
+# and let the server pick — the older API rejects the list with 400 "Not a valid string.".
+PROVIDER_ID=$(api "${AUTHENTIK_URL}/api/v3/providers/oauth2/?name=${APP_NAME}-provider"   | jq -r '.results[0].pk // empty')
 
-PROVIDER_PAYLOAD=$(jq -n \
-  --arg name "${APP_NAME}-provider" \
-  --arg client_id "${CLIENT_ID}" \
-  --arg redirect "${CONSOLE_URL}" \
-  --argjson flow "${AUTH_FLOW}" \
-  --argjson key "${SIGNING_KEY}" \
-  --argjson scopes "${SCOPES}" \
-  '{
-     name: $name,
-     authorization_flow: $flow,
-     client_type: "public",
-     client_id: $client_id,
-     redirect_uris: [{matching_mode: "regex", url: ($redirect + "(/.*)?")}],
-     sub_mode: "user_id",
-     issuer_mode: "per_provider",
-     signing_key: $key,
-     property_mappings: $scopes
-   }')
+REDIRECT_REGEX="${CONSOLE_URL}(/.*)?"
+
+provider_payload() {   # $1: "list" (2024.10+) or "string" (older)
+  local redirect
+  if [ "$1" = "list" ]; then
+    redirect=$(jq -n --arg u "${REDIRECT_REGEX}" '[{matching_mode: "regex", url: $u}]')
+  else
+    redirect=$(jq -n --arg u "${REDIRECT_REGEX}" '$u')
+  fi
+  jq -n     --arg name "${APP_NAME}-provider"     --arg client_id "${CLIENT_ID}"     --arg flow "${AUTH_FLOW}"     --arg key "${SIGNING_KEY}"     --argjson redirect "${redirect}"     --argjson scopes "${SCOPES}"     '{
+       name: $name,
+       authorization_flow: $flow,
+       client_type: "public",
+       client_id: $client_id,
+       redirect_uris: $redirect,
+       sub_mode: "user_id",
+       issuer_mode: "per_provider",
+       signing_key: $key,
+       property_mappings: $scopes
+     }'
+}
+
+# Write the provider with whichever shape this Authentik accepts. Echoes the pk; prints the server's own
+# error and fails if BOTH shapes are rejected, rather than leaving a half-configured instance behind.
+save_provider() {
+  local method url shape body code
+  if [ -z "${PROVIDER_ID}" ]; then
+    method=POST; url="${AUTHENTIK_URL}/api/v3/providers/oauth2/"
+  else
+    method=PUT;  url="${AUTHENTIK_URL}/api/v3/providers/oauth2/${PROVIDER_ID}/"
+  fi
+  for shape in list string; do
+    body=$(curl -s -w '
+%{http_code}' -X "${method}" -H "${AUTH_HEADER}" -H "${CONTENT_JSON}"       -d "$(provider_payload "${shape}")" "${url}")
+    code=$(echo "${body}" | tail -n1)
+    body=$(echo "${body}" | sed '$d')
+    if [ "${code}" = "200" ] || [ "${code}" = "201" ]; then
+      echo "${body}" | jq -r '.pk'
+      return 0
+    fi
+    echo ">> this Authentik does not take redirect_uris as a ${shape} (HTTP ${code}); using the other shape" >&2
+  done
+  echo "!! could not save the provider: ${body}" >&2
+  return 1
+}
 
 if [ -z "${PROVIDER_ID}" ]; then
   echo ">> creating OAuth2 provider '${APP_NAME}-provider'"
-  PROVIDER_ID=$(api -X POST -H "${CONTENT_JSON}" -d "${PROVIDER_PAYLOAD}" \
-    "${AUTHENTIK_URL}/api/v3/providers/oauth2/" | jq -r '.pk')
 else
   echo ">> updating OAuth2 provider '${APP_NAME}-provider'"
-  api -X PUT -H "${CONTENT_JSON}" -d "${PROVIDER_PAYLOAD}" \
-    "${AUTHENTIK_URL}/api/v3/providers/oauth2/${PROVIDER_ID}/" >/dev/null
 fi
-
-# Older Authentik releases take redirect_uris as a newline-separated STRING rather than a list of objects.
-# If the create/update above was rejected for that reason, the provider is unusable, so say which shape failed
-# rather than leaving a half-configured instance behind.
-[ -n "${PROVIDER_ID}" ] && [ "${PROVIDER_ID}" != "null" ] \
-  || { echo "!! could not create the provider — if this Authentik predates 2024.10, redirect_uris must be a string"; exit 1; }
+PROVIDER_ID=$(save_provider)
+[ -n "${PROVIDER_ID}" ] && [ "${PROVIDER_ID}" != "null" ] || { echo "!! no provider pk came back"; exit 1; }
 
 # --- application ---------------------------------------------------------------------------------
-APP_UUID=$(api "${AUTHENTIK_URL}/api/v3/core/applications/?slug=${APP_NAME}" | jq -r '.results[0].pk // empty')
+# Applications are addressed by SLUG in the REST path, not by pk — a pk there answers 404.
+APP_EXISTS=$(api "${AUTHENTIK_URL}/api/v3/core/applications/?slug=${APP_NAME}" | jq -r '.results[0].slug // empty')
 
 APP_PAYLOAD=$(jq -n \
   --arg slug "${APP_NAME}" \
@@ -121,36 +143,67 @@ APP_PAYLOAD=$(jq -n \
   --argjson provider "${PROVIDER_ID}" \
   '{name: "HiveKeeper", slug: $slug, provider: $provider, meta_launch_url: $launch, open_in_new_tab: true}')
 
-if [ -z "${APP_UUID}" ]; then
+if [ -z "${APP_EXISTS}" ]; then
   echo ">> creating application '${APP_NAME}' for ${CONSOLE_URL}"
   api -X POST -H "${CONTENT_JSON}" -d "${APP_PAYLOAD}" \
     "${AUTHENTIK_URL}/api/v3/core/applications/" >/dev/null
 else
   echo ">> updating application '${APP_NAME}' for ${CONSOLE_URL}"
   api -X PUT -H "${CONTENT_JSON}" -d "${APP_PAYLOAD}" \
-    "${AUTHENTIK_URL}/api/v3/core/applications/${APP_UUID}/" >/dev/null
+    "${AUTHENTIK_URL}/api/v3/core/applications/${APP_NAME}/" >/dev/null
 fi
 
 # --- recovery flow on the brand ------------------------------------------------------------------
-# Adding a teammate mints a one-time recovery link so the admin never knows their password; that API needs a
-# recovery flow bound to the brand. Only set it when it is missing, so an operator's own choice is kept.
+# Adding a teammate mints a one-time recovery link so the admin never learns their password, and Authentik
+# refuses that call unless a recovery flow is the active brand's default.
+#
+# Authentik ships NO recovery flow: out of the box the only flow that touches passwords is
+# `default-password-change`, whose designation is stage_configuration, not recovery. So create a minimal one
+# — the same prompt + user_write stages that flow already uses, which is exactly "set a new password" — and
+# bind it. The stages are reused, not duplicated, so an operator who customises them gets both paths at once.
+ensure_recovery_flow() {
+  local existing pk stage order
+  existing=$(api "${AUTHENTIK_URL}/api/v3/flows/instances/?designation=recovery"     | jq -r '.results[0].pk // empty')
+  if [ -n "${existing}" ]; then
+    echo "${existing}"
+    return 0
+  fi
+
+  echo ">> creating recovery flow '${RECOVERY_SLUG}'" >&2
+  pk=$(api -X POST -H "${CONTENT_JSON}" "${AUTHENTIK_URL}/api/v3/flows/instances/" -d "$(jq -n         --arg slug "${RECOVERY_SLUG}"         '{name: "HiveKeeper recovery", slug: $slug, title: "Set your password",
+          designation: "recovery", authentication: "require_unauthenticated"}')"       | jq -r '.pk // empty')
+  [ -n "${pk}" ] || { echo "!! could not create the recovery flow" >&2; return 1; }
+
+  # require_unauthenticated above is deliberate: it also stops an admin from spending the teammate's link
+  # inside their own logged-in session.
+  order=0
+  for stage in default-password-change-prompt default-password-change-write; do
+    local stage_pk
+    stage_pk=$(api "${AUTHENTIK_URL}/api/v3/stages/all/?name=${stage}" | jq -r '.results[0].pk // empty')
+    [ -n "${stage_pk}" ] || { echo "!! stage ${stage} not found" >&2; return 1; }
+    api -X POST -H "${CONTENT_JSON}" "${AUTHENTIK_URL}/api/v3/flows/bindings/"       -d "$(jq -n --arg t "${pk}" --arg s "${stage_pk}" --argjson o "${order}"             '{target: $t, stage: $s, order: $o}')" >/dev/null
+    order=$((order + 1))
+  done
+  echo "${pk}"
+}
+
+RECOVERY_SLUG="${HIVEKEEPER_RECOVERY_SLUG:-hivekeeper-recovery}"
 BRAND=$(api "${AUTHENTIK_URL}/api/v3/core/brands/?ordering=domain" | jq -r '.results[0]')
 BRAND_UUID=$(echo "${BRAND}" | jq -r '.brand_uuid // empty')
 BRAND_RECOVERY=$(echo "${BRAND}" | jq -r '.flow_recovery // empty')
 
 if [ -z "${BRAND_UUID}" ]; then
-  echo ">> warning: no brand found; set a recovery flow by hand or adding teammates will fail"
+  echo ">> warning: no brand found; adding teammates will fail until one has a recovery flow"
 elif [ -n "${BRAND_RECOVERY}" ]; then
   echo ">> brand already has a recovery flow"
 else
-  RECOVERY_FLOW=$(api "${AUTHENTIK_URL}/api/v3/flows/instances/?slug=default-recovery-flow" \
-    | jq -r '.results[0].pk // empty')
+  # Only set it when missing, so an operator's own choice is never overwritten.
+  RECOVERY_FLOW=$(ensure_recovery_flow)
   if [ -z "${RECOVERY_FLOW}" ]; then
-    echo ">> warning: no default-recovery-flow to bind; adding teammates will fail until one exists"
+    echo ">> warning: no recovery flow available; adding teammates will fail"
   else
-    echo ">> binding default-recovery-flow to the brand"
-    api -X PATCH -H "${CONTENT_JSON}" -d "$(jq -n --arg f "${RECOVERY_FLOW}" '{flow_recovery: $f}')" \
-      "${AUTHENTIK_URL}/api/v3/core/brands/${BRAND_UUID}/" >/dev/null
+    echo ">> binding recovery flow to the brand"
+    api -X PATCH -H "${CONTENT_JSON}" -d "$(jq -n --arg f "${RECOVERY_FLOW}" '{flow_recovery: $f}')"       "${AUTHENTIK_URL}/api/v3/core/brands/${BRAND_UUID}/" >/dev/null
   fi
 fi
 

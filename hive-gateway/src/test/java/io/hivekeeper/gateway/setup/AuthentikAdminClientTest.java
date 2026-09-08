@@ -137,8 +137,9 @@ class AuthentikAdminClientTest {
 
     @Test
     void duplicateUsernameBecomesAnIdpAdminException() {
+        // The exact body a live Authentik 2024.8 returns, not an invented one.
         server.expect(requestTo(USERS)).andRespond(withBadRequest()
-                .body("{\"username\":[\"User with this Username already exists.\"]}")
+                .body("{\"username\":[\"This field must be unique.\"]}")
                 .contentType(MediaType.APPLICATION_JSON));
 
         IdpAdminException e = assertThrows(IdpAdminException.class,
@@ -148,6 +149,20 @@ class AuthentikAdminClientTest {
         // Authentik-specific exception here would surface as an unmapped 500.
         assertTrue(e.getMessage().contains("already exists"), e.getMessage());
         assertTrue(e.getMessage().contains("johndoe"), e.getMessage());
+    }
+
+    @Test
+    void anotherRejectedFieldIsNotReportedAsADuplicate() {
+        // Authentik keys every validation error by field, so "the body mentions username" is not the same as
+        // "the username is taken" — the real complaint has to reach the operator intact.
+        server.expect(requestTo(USERS)).andRespond(withBadRequest()
+                .body("{\"username\":[\"This field is required.\"]}")
+                .contentType(MediaType.APPLICATION_JSON));
+
+        IdpAdminException e = assertThrows(IdpAdminException.class,
+                () -> client.createAdmin("johndoe", "j@x", "pw", "John"));
+        assertTrue(e.getMessage().contains("This field is required"), e.getMessage());
+        assertTrue(!e.getMessage().contains("already exists"), e.getMessage());
     }
 
     @Test

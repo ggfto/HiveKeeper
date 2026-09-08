@@ -5,9 +5,13 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.context.annotation.Profile;
 import org.springframework.http.MediaType;
+import org.springframework.http.client.BufferingClientHttpRequestFactory;
+import org.springframework.http.client.ClientHttpRequestFactory;
+import org.springframework.http.client.JdkClientHttpRequestFactory;
 import org.springframework.stereotype.Component;
 import org.springframework.web.client.RestClient;
 import org.springframework.web.client.RestClientResponseException;
+import java.net.http.HttpClient;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -40,13 +44,34 @@ public class AuthentikAdminClient implements IdpAdminClient {
     public AuthentikAdminClient(
             @Value("${hivekeeper.authentik.base-url:http://localhost:9000}") String baseUrl,
             @Value("${hivekeeper.authentik.api-token}") String apiToken) {
-        this(RestClient.builder(), baseUrl, apiToken);
+        this(RestClient.builder().requestFactory(authentikCompatibleRequests()), baseUrl, apiToken);
     }
 
     /**
-     * Visible for tests: the only way to point a {@code MockRestServiceServer} at this client. Spring uses the
-     * annotated constructor above — {@code RestClient.Builder} is not a bean here, since the gateway does not
-     * pull in {@code spring-boot-restclient}, so it must not become a constructor dependency.
+     * A request factory Authentik's front-end router actually accepts. The JDK's default HTTP client does two
+     * things it chokes on, and both fail confusingly rather than loudly:
+     *
+     * <ul>
+     *   <li>it offers an <b>h2c upgrade</b> on plaintext ({@code Upgrade: h2c}), which the router answers with
+     *       a bare {@code 400 Invalid HTTP request received};</li>
+     *   <li>it streams the body with <b>chunked</b> transfer-encoding, which reaches Django with an EMPTY
+     *       body — so Authentik replies {@code 400 {"username":["This field is required."]}} about a field
+     *       that was in fact sent.</li>
+     * </ul>
+     *
+     * <p>Pinning HTTP/1.1 drops the upgrade, and buffering the body sets a {@code Content-Length}. The bodies
+     * here are a handful of fields, so buffering costs nothing.
+     */
+    private static ClientHttpRequestFactory authentikCompatibleRequests() {
+        HttpClient http1 = HttpClient.newBuilder().version(HttpClient.Version.HTTP_1_1).build();
+        return new BufferingClientHttpRequestFactory(new JdkClientHttpRequestFactory(http1));
+    }
+
+    /**
+     * Visible for tests: the only way to point a {@code MockRestServiceServer} at this client, which installs
+     * its own request factory on the builder. Spring uses the annotated constructor above —
+     * {@code RestClient.Builder} is not a bean here, since the gateway does not pull in
+     * {@code spring-boot-restclient}, so it must not become a constructor dependency.
      */
     AuthentikAdminClient(RestClient.Builder http, String baseUrl, String apiToken) {
         this.http = http.build();
@@ -94,12 +119,16 @@ public class AuthentikAdminClient implements IdpAdminClient {
             }
             userId = created.get("pk").toString();
         } catch (RestClientResponseException e) {
-            // Authentik answers a duplicate username with 400 and a field-keyed body:
-            // {"username":["User with this Username already exists."]}
-            if (e.getStatusCode().value() == 400 && e.getResponseBodyAsString().contains("username")) {
+            // Authentik answers a duplicate username with 400 and a field-keyed body — verified against a live
+            // 2024.8 instance: {"username":["This field must be unique."]}. Matching on the field name alone
+            // would misreport any other rejected field as "already exists".
+            if (e.getStatusCode().value() == 400 && e.getResponseBodyAsString().contains("must be unique")) {
                 throw new IdpAdminException("a user '" + username + "' already exists in Authentik");
             }
-            throw new IdpAdminException("creating the Authentik user failed: HTTP " + e.getStatusCode().value());
+            // Authentik answers every rejected field with a keyed body, and the status alone says nothing
+            // about which field it disliked — so pass it on, or the operator is left guessing.
+            throw new IdpAdminException("creating the Authentik user failed: HTTP "
+                    + e.getStatusCode().value() + " " + brief(e.getResponseBodyAsString()));
         }
 
         // Past this point the account exists. A failure below leaves it there with no way in, which is why the
@@ -201,6 +230,15 @@ public class AuthentikAdminClient implements IdpAdminClient {
         return pk == null
                 ? Optional.empty()
                 : Optional.of(new IdpUser(pk.toString(), str(u.get("email")), str(u.get("name"))));
+    }
+
+    /** A response body short enough to put in an error message without dumping a page of HTML into a log. */
+    private static String brief(String body) {
+        if (body == null || body.isBlank()) {
+            return "";
+        }
+        String oneLine = body.strip().replaceAll("\s+", " ");
+        return oneLine.length() <= 300 ? oneLine : oneLine.substring(0, 300) + "…";
     }
 
     private static String str(Object o) {
