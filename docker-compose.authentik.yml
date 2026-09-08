@@ -4,8 +4,11 @@
 #
 #   docker compose -f docker-compose.yml -f docker-compose.postgres.yml -f docker-compose.authentik.yml up -d --build
 #
-# Sign in at the console with the user you create via the Authentik admin panel.
-# Admin console: http://localhost:9000/if/admin/
+# The authentik-init service configures the 'hivekeeper' application + provider for you (see
+# deploy/authentik/bootstrap.sh). Do NOT build the provider by hand without reading that script: its subject
+# mode and the brand's recovery flow are load-bearing, and getting either wrong produces accounts that are
+# created and then cannot sign in.
+# Admin console: http://localhost:9000/if/admin/ (akadmin / ${AUTHENTIK_BOOTSTRAP_PASSWORD})
 #
 # Issuer note: tokens are minted for the BROWSER-facing URL (http://localhost:9000), so the gateway validates
 # the `iss` claim against that — while it calls the Authentik API over the CONTAINER network (http://authentik-server:9000).
@@ -48,11 +51,18 @@ services:
       AUTHENTIK_POSTGRESQL__NAME: authentik
       AUTHENTIK_POSTGRESQL__USER: authentik
       AUTHENTIK_POSTGRESQL__PASSWORD: ${AUTHENTIK_DB_PASSWORD:-authentik}
-      AUTHENTIK_SECRET_KEY: ${AUTHENTIK_SECRET_KEY:-changeme-generate-a-random-key-in-production}
+      # Django's SECRET_KEY for Authentik: whoever knows it can forge signed session cookies for the
+      # IdP, so there is no safe default to fall back to. `:?` refuses to start rather than quietly
+      # running on a value published in this repository.
+      AUTHENTIK_SECRET_KEY: ${AUTHENTIK_SECRET_KEY:?generate one with `openssl rand -hex 32`}
       AUTHENTIK_ERROR_REPORTING__ENABLED: "false"
-      # Bootstrap token for initial admin account (first-time only)
+      # Seeds the akadmin account on FIRST boot only. The bootstrap token becomes the API token that both
+      # authentik-init and the gateway authenticate with, so it is one variable, not two.
+      # These must ALSO be set on the worker: the worker is what applies the bootstrap blueprint that creates
+      # the account and its token. With them on the server alone, akadmin is created but the token never is,
+      # and every API call answers 403.
       AUTHENTIK_BOOTSTRAP_PASSWORD: ${AUTHENTIK_BOOTSTRAP_PASSWORD:-admin}
-      AUTHENTIK_BOOTSTRAP_TOKEN: ${AUTHENTIK_BOOTSTRAP_TOKEN}
+      AUTHENTIK_BOOTSTRAP_TOKEN: ${HIVEKEEPER_AUTHENTIK_API_TOKEN:?set it in .env (see .env.authentik.example)}
     ports:
       - "${HIVEKEEPER_AUTHENTIK_PORT:-9000}:9000"
     volumes:
@@ -74,8 +84,15 @@ services:
       AUTHENTIK_POSTGRESQL__NAME: authentik
       AUTHENTIK_POSTGRESQL__USER: authentik
       AUTHENTIK_POSTGRESQL__PASSWORD: ${AUTHENTIK_DB_PASSWORD:-authentik}
-      AUTHENTIK_SECRET_KEY: ${AUTHENTIK_SECRET_KEY:-changeme-generate-a-random-key-in-production}
+      # Django's SECRET_KEY for Authentik: whoever knows it can forge signed session cookies for the
+      # IdP, so there is no safe default to fall back to. `:?` refuses to start rather than quietly
+      # running on a value published in this repository.
+      AUTHENTIK_SECRET_KEY: ${AUTHENTIK_SECRET_KEY:?generate one with `openssl rand -hex 32`}
       AUTHENTIK_ERROR_REPORTING__ENABLED: "false"
+      # The worker applies the bootstrap blueprint, so it — not the server — is what actually creates the
+      # akadmin account and its API token. See the note on authentik-server.
+      AUTHENTIK_BOOTSTRAP_PASSWORD: ${AUTHENTIK_BOOTSTRAP_PASSWORD:-admin}
+      AUTHENTIK_BOOTSTRAP_TOKEN: ${HIVEKEEPER_AUTHENTIK_API_TOKEN:?set it in .env (see .env.authentik.example)}
     volumes:
       - authentik-media:/media
       - authentik-certs:/certs
@@ -86,6 +103,26 @@ services:
       authentik-redis:
         condition: service_healthy
     restart: unless-stopped
+
+  # Creates/reconciles the 'hivekeeper' application, its OAuth2 provider and the brand's recovery flow.
+  # Idempotent, so it runs on every `up`. Runs to completion and exits; `restart: "no"` keeps compose from
+  # treating that as a crash.
+  authentik-init:
+    # Alpine + the two tools the script needs. The authentik server image looks like the obvious choice but
+    # ships no curl, so the script cannot run there.
+    image: alpine:3.20
+    entrypoint: ["/bin/sh", "-c", "apk add --no-cache bash curl jq >/dev/null && exec bash /bootstrap.sh"]
+    environment:
+      AUTHENTIK_URL: http://authentik-server:9000
+      HIVEKEEPER_AUTHENTIK_API_TOKEN: ${HIVEKEEPER_AUTHENTIK_API_TOKEN:?set it in .env}
+      HIVEKEEPER_CONSOLE_URL: ${HIVEKEEPER_CONSOLE_URL:-http://localhost:8080}
+      HIVEKEEPER_APP_NAME: hivekeeper
+      HIVEKEEPER_OIDC_CLIENT_ID: hive-gateway
+    volumes:
+      - ./deploy/authentik/bootstrap.sh:/bootstrap.sh:ro
+    depends_on:
+      - authentik-server
+    restart: "no"
 
   gateway:
     environment:
@@ -101,6 +138,7 @@ services:
       HIVEKEEPER_TENANTKEY_ENABLED: "false"
     depends_on:
       - authentik-server
+      - authentik-init
 
 volumes:
   authentik-db-data:

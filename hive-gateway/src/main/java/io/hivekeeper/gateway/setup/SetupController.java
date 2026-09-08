@@ -43,7 +43,7 @@ public class SetupController {
             return ResponseEntity.ok(Map.of("tenantId", result.tenantId()));
         } catch (SetupException e) {
             return ResponseEntity.status(e.status()).body(Map.of("error", e.getMessage()));
-        } catch (KeycloakAdminException e) {
+        } catch (IdpAdminException e) {
             return ResponseEntity.status(502).body(Map.of("error", e.getMessage()));
         }
     }

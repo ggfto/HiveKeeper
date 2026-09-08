@@ -1,5 +1,6 @@
-import { describe, it, expect } from 'vitest'
+import { describe, it, expect, vi } from 'vitest'
 import { screen } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
 import { renderWithAuth, fakeGateway } from '../test/renderWithAuth'
 import { MembersPage } from './MembersPage'
 
@@ -24,5 +25,37 @@ describe('MembersPage', () => {
     })
     renderWithAuth(<MembersPage />, { gateway })
     expect(await screen.findByText(/needs an organization admin/i)).toBeInTheDocument()
+  })
+
+  it('surfaces the recovery link the IdP returned for a new teammate', async () => {
+    // Under Authentik the link is the only way in for the new person, and the gateway cannot re-issue it, so
+    // it has to survive on screen rather than flash past in a toast.
+    const gateway = fakeGateway({
+      members: () => Promise.resolve([]),
+      addMember: () =>
+        Promise.resolve({ userId: 'usr-bob', recoveryLink: 'https://authentik/if/flow/recovery/?token=abc' }),
+    })
+    renderWithAuth(<MembersPage />, { gateway })
+
+    await userEvent.type(await screen.findByLabelText(/username/i), 'bob')
+    await userEvent.type(screen.getByLabelText(/password/i), 'throwaway')
+    await userEvent.click(screen.getByRole('button', { name: /add member/i }))
+
+    expect(await screen.findByText('https://authentik/if/flow/recovery/?token=abc')).toBeInTheDocument()
+  })
+
+  it('shows no recovery panel when the IdP forces the change itself', async () => {
+    const gateway = fakeGateway({
+      members: () => Promise.resolve([]),
+      addMember: () => Promise.resolve({ userId: 'usr-bob' }),   // Keycloak: no link
+    })
+    renderWithAuth(<MembersPage />, { gateway })
+
+    await userEvent.type(await screen.findByLabelText(/username/i), 'bob')
+    await userEvent.type(screen.getByLabelText(/password/i), 'throwaway')
+    await userEvent.click(screen.getByRole('button', { name: /add member/i }))
+
+    expect(await screen.findByText(/added bob/i)).toBeInTheDocument()
+    expect(screen.queryByText(/only shown once/i)).not.toBeInTheDocument()
   })
 })

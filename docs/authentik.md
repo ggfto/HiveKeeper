@@ -1,212 +1,130 @@
-# Authentik Integration for HiveKeeper
+---
+title: Authentik as the identity provider
+description: Run HiveKeeper's OIDC mode against Authentik instead of Keycloak, and what differs.
+---
 
-HiveKeeper now supports **Authentik** as an identity provider alternative to Keycloak.
+HiveKeeper's OIDC mode works against [Authentik](https://goauthentik.io/) as well as Keycloak. The gateway is
+provider-agnostic: it validates JWTs from whatever issuer you point it at, and talks to the IdP's admin API
+only to create accounts. Which client it uses is one property.
 
-## 🚀 Quick Start
+Everything on [Authentication](/authentication/) still applies — this page is only the Authentik-specific
+part. If you have no IdP preference, use Keycloak: it is the default and has one fewer moving part.
 
-### 1. Start with Authentik
+## Selecting the provider
+
+```properties
+hivekeeper.idp=authentik      # or `keycloak`, the default
+```
+
+Set it through the `oidc-authentik` profile, which carries it along with the Authentik URLs:
+
+```
+SPRING_PROFILES_ACTIVE=postgres,oidc,oidc-authentik
+```
+
+:::note[The `oidc` profile stays on]
+`oidc-authentik` is layered **on top of** `oidc`, not instead of it. Every OIDC bean — the resource-server
+config, first-run setup, member management — requires `oidc`; the extra profile only overrides the
+IdP-specific settings. Dropping `oidc` leaves the gateway with no authentication at all.
+:::
+
+## Running the dev stack
 
 ```bash
-docker compose -f docker-compose.yml \
-               -f docker-compose.postgres.yml \
-               -f docker-compose.authentik.yml up -d --build
+cp .env.authentik.example .env      # then fill in the two required secrets
+docker compose -f docker-compose.yml -f docker-compose.postgres.yml -f docker-compose.authentik.yml up -d --build
 ```
 
-### 2. Configure Authentik
+`.env` needs two values with no safe default — generate both with `openssl rand -hex 32`:
 
-1. Access the admin panel: http://localhost:9000/if/admin/
-2. Initial login: `akadmin` / `admin` (or the password set in `AUTHENTIK_BOOTSTRAP_PASSWORD`)
-3. Create an API Token:
-   - **Authentik Admin** → **Tokens & App passwords** → **Create Token**
-   - User: akadmin
-   - Intent: API Token
-   - Copy the generated token
+| Variable | What it is |
+| --- | --- |
+| `HIVEKEEPER_AUTHENTIK_API_TOKEN` | Seeded as the `akadmin` API token on first boot, then used by both the bootstrap job and the gateway. One token, both jobs. |
+| `AUTHENTIK_SECRET_KEY` | Signs Authentik's own sessions. |
 
-4. Configure the environment variable:
-```bash
-export HIVEKEEPER_AUTHENTIK_API_TOKEN="your-token-here"
-```
-
-5. Restart the gateway to apply the token:
-```bash
-docker compose restart gateway
-```
-
-### 3. Configure the OAuth2/OIDC Application
-
-Run the bootstrap script (or configure manually via the panel):
+The `authentik-init` service then runs `deploy/authentik/bootstrap.sh`, which creates the `hivekeeper`
+application, its OAuth2 provider, and the brand's recovery flow. It is idempotent, so it re-runs on every
+`up` and reconciles drift. The same script works standalone against an Authentik you already operate:
 
 ```bash
-docker compose exec authentik-server /bootstrap.sh
+AUTHENTIK_URL=https://sso.example.org \
+HIVEKEEPER_AUTHENTIK_API_TOKEN=... \
+HIVEKEEPER_CONSOLE_URL=https://hivekeeper.example.org \
+  ./deploy/authentik/bootstrap.sh
 ```
 
-**OR manually via the admin panel:**
+The API token needs permission to manage providers, applications, flows and brands.
 
-1. **Create Provider** (Providers → Create):
-   - Name: `hivekeeper-provider`
-   - Type: `OAuth2/OpenID Provider`
-   - Authorization flow: `default-authentication-flow`
-   - Client type: `Public`
-   - Client ID: `hive-gateway`
-   - Redirect URIs: `http://localhost:3000/*`
-   - Subject mode: `Based on the User's ID`
+The script adapts to the Authentik version it finds: `redirect_uris` became a list of objects in 2024.10 and
+was a newline-separated string before, so it tries the current shape and falls back. A line like
+`>> this Authentik does not take redirect_uris as a list` is that probe succeeding, not an error.
 
-2. **Create Application** (Applications → Create):
-   - Name: `HiveKeeper`
-   - Slug: `hivekeeper`
-   - Provider: `hivekeeper-provider`
-   - Launch URL: `http://localhost:3000`
+## Two settings that are load-bearing
 
-### 4. First Setup
+If you build the provider by hand instead, these two are not cosmetic. Both fail in the same nasty way — the
+account is created and *then* cannot sign in.
 
-Access the console: http://localhost:3000
+### Subject mode must be "Based on the User's ID"
 
-The gateway will display the **setup token** in the logs:
+When the gateway provisions someone it stores the Authentik `pk` as their OIDC subject, and later matches
+them by the `sub` claim in their token. Authentik's **default** subject mode is a salted hash of the id, which
+never equals the `pk` — so the first admin is created, and their very first sign-in resolves to nobody.
+
+Set the provider's `sub_mode` to `user_id` (in the UI: *Subject mode → Based on the User's ID*).
+
+### The brand needs a recovery flow
+
+Adding a teammate mints a one-time recovery link (see below). Authentik refuses that call unless a recovery
+flow is set as the **active brand's default** — *"The current brand must have a recovery flow configured to
+use a recovery link"* — and adding a teammate then fails with a message saying so.
+
+Authentik ships **no** recovery flow: out of the box the only flow that touches passwords is
+`default-password-change`, whose designation is `stage_configuration`, not `recovery`. So the bootstrap
+script creates a minimal one (`hivekeeper-recovery`) bound to the same prompt + user-write stages that flow
+already uses, and sets it as the brand default — but only when the brand has none, so your own choice is
+never overwritten.
+
+## What differs from Keycloak
+
+### Adding a teammate hands you a link, not a password
+
+Keycloak can mark a password temporary and pin an `UPDATE_PASSWORD` action, so an admin's throwaway password
+stops working the moment the teammate signs in. **Authentik has no equivalent flag.** Setting a password and
+calling it temporary would mean the admin keeps a working credential for someone else's account forever.
+
+So under Authentik the gateway creates the account with *no usable password* and asks Authentik for a
+one-time recovery link. The console shows it after the add:
+
+> Send this link to bob — they set their own password with it; you never see it.
+
+It is shown **once** and cannot be re-issued. If you lose it, remove the member and add them again. The
+password field in the add form is ignored under Authentik.
+
+### Everything else is the same
+
+Admitting an existing account (the no-password path, for anyone who signs in through a federated provider),
+roles, org scoping and JWT validation are unchanged — those live in HiveKeeper's own database, not the IdP.
+
+## Verifying against a real instance
+
+`AuthentikLiveIT` runs the gateway's Authentik client against a live server. It is skipped unless you ask for
+it, so it never gates CI:
+
 ```bash
-docker compose logs gateway | grep "setup token"
+AUTHENTIK_IT_URL=http://localhost:9000 AUTHENTIK_IT_TOKEN=$HIVEKEEPER_AUTHENTIK_API_TOKEN   ./gradlew :hive-gateway:test --tests '*AuthentikLiveIT*'
 ```
 
-Use the token to create the first organization and the first admin.
+The mocked unit tests pin the conversation we believe Authentik has; this one pins the conversation it
+actually has. Run it after any Authentik version bump.
 
-## 📖 Architecture
+## Troubleshooting
 
-```
-┌─────────────┐         ┌──────────────┐         ┌─────────────┐
-│   Browser   │◄───────►│  Authentik   │         │  PostgreSQL │
-│  (Console)  │  OIDC   │   Server     │◄───────►│  (identities│
-└─────────────┘         └──────────────┘         │   + config) │
-       │                       ▲                  └─────────────┘
-       │                       │
-       │                       │ Admin API
-       │                       │ (create users)
-       │                       │
-       ▼                       │
-┌─────────────┐         ┌──────────────┐
-│  HiveKeeper │◄───────►│  PostgreSQL  │
-│   Gateway   │  JWT    │  (app data)  │
-└─────────────┘ validation  └──────────┘
-```
-
-## 🔑 Differences: Keycloak vs Authentik
-
-| Aspect | Keycloak | Authentik |
-|---------|----------|-----------|
-| **Spring Profile** | `postgres,oidc` | `postgres,oidc,oidc-authentik` |
-| **Admin Credentials** | Username + Password | API Token |
-| **Issuer URL** | `/realms/{realm}` | `/application/o/{app}/` |
-| **JWKS URL** | `/realms/{realm}/protocol/openid-connect/certs` | `/application/o/{app}/jwks/` |
-| **User Creation** | Via `kcadm.sh` or REST API with realm admin | Via REST API with token |
-| **Federated Login** | Native brokers (GitHub, Google, etc.) | Sources (GitHub, Google, LDAP, etc.) |
-
-## 📝 Production
-
-Add to your `docker-compose.prod.yml` or configure separately:
-
-### Required Environment Variables
-
-```env
-# Authentik
-AUTHENTIK_SECRET_KEY=<generated-with-openssl-rand-hex-32>
-AUTHENTIK_BOOTSTRAP_PASSWORD=<initial-admin-password>
-AUTHENTIK_BOOTSTRAP_TOKEN=<optional-api-token>
-AUTHENTIK_DB_PASSWORD=<postgres-password-for-authentik>
-
-# HiveKeeper Gateway
-HIVEKEEPER_OIDC_ISSUER=https://auth.yourdomain.com/application/o/hivekeeper/
-HIVEKEEPER_OIDC_JWK_SET_URI=https://auth.yourdomain.com/application/o/hivekeeper/jwks/
-HIVEKEEPER_AUTHENTIK_BASE_URL=https://auth.yourdomain.com
-HIVEKEEPER_AUTHENTIK_API_TOKEN=<authentik-api-token>
-HIVEKEEPER_CONSOLE_URL=https://hivekeeper.yourdomain.com
-```
-
-### Reverse Proxy (Caddy)
-
-```caddyfile
-auth.yourdomain.com {
-    reverse_proxy authentik-server:9000
-}
-```
-
-## 💻 Code
-
-The integration was implemented as an **abstraction over identity providers**:
-
-- **Interface**: `IdpAdminClient` (common contract)
-- **Implementations**:
-  - `KeycloakAdminClient` (profile: `oidc` or `oidc-keycloak`)
-  - `AuthentikAdminClient` (profile: `oidc-authentik`)
-- **Consumer**: `SetupService` (injects `IdpAdminClient` via Spring)
-
-### Example: User Creation
-
-```java
-// Generic code - works with both IdPs
-String userId = idpAdminClient.createUser(
-    "johndoe",
-    "john@example.com",
-    "initialPassword",
-    "John Doe",
-    false  // temporary password
-);
-```
-
-## 🔄 Migration from Keycloak to Authentik
-
-There is no automatic user migration. To switch IdPs:
-
-1. **Export** users from Keycloak (via Admin Console or REST API)
-2. **Recreate** users in Authentik via script:
-```bash
-for user in users.json; do
-  curl -X POST https://auth.yourdomain.com/api/v3/core/users/ \
-    -H "Authorization: Bearer $TOKEN" \
-    -d "$user"
-done
-```
-3. Update the profile and environment variables
-4. Restart the stack
-
-## 🐛 Troubleshooting
-
-### "Authentik did not return the new user's pk"
-- Verify the token has admin permissions
-- Check Authentik logs: `docker compose logs authentik-server`
-
-### "401 Unauthorized" on setup
-- Confirm `HIVEKEEPER_AUTHENTIK_API_TOKEN` is configured
-- Test the token manually:
-```bash
-curl -H "Authorization: Bearer $TOKEN" \
-  http://localhost:9000/api/v3/core/users/
-```
-
-### Gateway doesn't validate JWTs
-- Confirm `HIVEKEEPER_OIDC_ISSUER` matches the token issuer
-- Inspect a JWT at https://jwt.io and check the `iss` claim
-- Verify JWKS is accessible:
-```bash
-curl http://localhost:9000/application/o/hivekeeper/jwks/
-```
-
-### Users created but can't login
-- Verify the application redirect URIs match your console URL
-- Check the authorization flow is set correctly
-- Confirm the provider is assigned to the application
-
-### Bootstrap script fails
-- Ensure Authentik is fully started: `docker compose logs authentik-server`
-- Verify the API token is valid
-- Check network connectivity between containers
-
-### JWT audience validation fails
-- Confirm `HIVEKEEPER_OIDC_AUDIENCE` matches the client ID
-- Add an audience mapper in the provider if needed
-- Check the JWT `aud` or `azp` claim
-
-## 📚 References
-
-- [Authentik Documentation](https://docs.goauthentik.io/)
-- [Authentik API Reference](https://docs.goauthentik.io/developer-docs/api)
-- [OAuth2/OIDC Provider Setup](https://docs.goauthentik.io/docs/providers/oauth2/)
-- [Authentik Flows](https://docs.goauthentik.io/docs/flow/)
-- [Integration Patterns](https://docs.goauthentik.io/docs/providers/oauth2/client_credentials)
+| Symptom | Cause |
+| --- | --- |
+| Gateway exits at startup: `No qualifying bean of type 'IdpAdminClient'` | `hivekeeper.idp` is set to something that is neither `keycloak` nor `authentik` (a typo fails loudly rather than silently picking the wrong IdP). |
+| First admin is created but cannot sign in | Provider subject mode is not `user_id`. |
+| `Authentik created 'x' but issued no recovery link ... set a recovery flow` | No recovery flow set as the brand's default. The named account was left behind — delete it in Authentik before retrying. |
+| Token rejected: `iss` mismatch | `HIVEKEEPER_OIDC_ISSUER` must be the URL the **browser** logs in at, not the container name. The gateway reaches the API over the container network separately. |
+| Token rejected, JWKS empty | The provider has no asymmetric signing key, so Authentik signed with HS256. Give it a certificate keypair. |
+| Every API call answers 403 right after a first boot | `AUTHENTIK_BOOTSTRAP_TOKEN` has to be set on the **worker** as well as the server — the worker is what applies the blueprint that creates the token. The compose file sets both. |
+| `creating the Authentik user failed: HTTP 400 {"username":["This field is required."]}` on a request that clearly sent one | Authentik's router drops chunked request bodies and rejects the JDK client's h2c upgrade. `AuthentikAdminClient` pins HTTP/1.1 and buffers, so this should not resurface unless that is changed. |

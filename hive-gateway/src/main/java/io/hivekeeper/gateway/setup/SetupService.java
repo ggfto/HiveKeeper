@@ -94,7 +94,7 @@ public class SetupService {
         }
 
         String name = isBlank(displayName) ? username.trim() : displayName.trim();
-        String idpUserId = idp.createUser(username.trim(), email, password, name);
+        String idpUserId = idp.createAdmin(username.trim(), email, password, name);
 
         String tenantId = slug(orgName);
         // A random operator key keeps the not-null/unique column satisfied (for automation parity); this org

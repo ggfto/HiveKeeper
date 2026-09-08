@@ -5,7 +5,7 @@ import io.hivekeeper.gateway.access.AccessGuard;
 import io.hivekeeper.gateway.access.Principal;
 import io.hivekeeper.gateway.access.ResourceScope;
 import io.hivekeeper.gateway.access.Role;
-import io.hivekeeper.gateway.setup.KeycloakAdminException;
+import io.hivekeeper.gateway.setup.IdpAdminException;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -66,7 +66,8 @@ class MemberControllerSecurityTest {
 
     @Test
     void addingAViewerRequiresAdminOnTheOrg() throws Exception {
-        when(members.add(eq("acme"), eq("bob"), any(), eq("pw"), any(), eq(Role.VIEWER))).thenReturn("usr-bob");
+        when(members.add(eq("acme"), eq("bob"), any(), eq("pw"), any(), eq(Role.VIEWER)))
+                .thenReturn(new MemberService.Added("usr-bob", null));
         mvc.perform(post("/api/members").contentType(MediaType.APPLICATION_JSON)
                         .content("{\"username\":\"bob\",\"password\":\"pw\",\"role\":\"viewer\"}"))
                 .andExpect(status().isOk())
@@ -75,8 +76,22 @@ class MemberControllerSecurityTest {
     }
 
     @Test
+    void theRecoveryLinkReachesTheClientInTheResponseBody() throws Exception {
+        // Under Authentik this link is the new teammate's ONLY way in, and it cannot be re-issued — dropping
+        // it between the service and the JSON would strand the account silently.
+        when(members.add(eq("acme"), eq("bob"), any(), eq("pw"), any(), eq(Role.VIEWER)))
+                .thenReturn(new MemberService.Added("usr-bob", "https://authentik/if/flow/recovery/?t=abc"));
+        mvc.perform(post("/api/members").contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"username\":\"bob\",\"password\":\"pw\",\"role\":\"viewer\"}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.userId").value("usr-bob"))
+                .andExpect(jsonPath("$.recoveryLink").value("https://authentik/if/flow/recovery/?t=abc"));
+    }
+
+    @Test
     void addingAnOwnerRequiresOwnerOnTheOrg() throws Exception {
-        when(members.add(eq("acme"), eq("ann"), any(), eq("pw"), any(), eq(Role.OWNER))).thenReturn("usr-ann");
+        when(members.add(eq("acme"), eq("ann"), any(), eq("pw"), any(), eq(Role.OWNER)))
+                .thenReturn(new MemberService.Added("usr-ann", null));
         mvc.perform(post("/api/members").contentType(MediaType.APPLICATION_JSON)
                         .content("{\"username\":\"ann\",\"password\":\"pw\",\"role\":\"owner\"}"))
                 .andExpect(status().isOk());
@@ -143,7 +158,7 @@ class MemberControllerSecurityTest {
     @Test
     void aDuplicateKeycloakLoginRenders409() throws Exception {
         when(members.add(any(), any(), any(), any(), any(), any()))
-                .thenThrow(new KeycloakAdminException("a user 'bob' already exists in realm hivekeeper"));
+                .thenThrow(new IdpAdminException("a user 'bob' already exists in realm hivekeeper"));
         mvc.perform(post("/api/members").contentType(MediaType.APPLICATION_JSON)
                         .content("{\"username\":\"bob\",\"password\":\"pw\",\"role\":\"viewer\"}"))
                 .andExpect(status().isConflict())

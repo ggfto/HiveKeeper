@@ -1,6 +1,8 @@
 package io.hivekeeper.gateway.setup;
 
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.context.annotation.Profile;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
@@ -19,14 +21,22 @@ import java.util.Optional;
  * the configured admin credentials to get a short-lived token, then creates the user in the application realm
  * and returns the new user's id (which becomes the {@code sub} of the JWTs they will later sign in with).
  *
- * <p>Only present under the {@code oidc} profile when using Keycloak. The admin credentials are configuration
- * the operator provides for their own Keycloak; they are never exposed to clients.
+ * <p>Present under the {@code oidc} profile unless the operator selected another provider with
+ * {@code hivekeeper.idp} — Keycloak is the default, so an existing deployment that sets nothing keeps this
+ * client. The provider is chosen by that property and NOT by the profile list, because every OIDC bean
+ * (setup, members, the resource-server config) requires the {@code oidc} profile: a provider expressed as a
+ * second profile would have to be activated alongside {@code oidc}, leaving two {@link IdpAdminClient} beans
+ * for one injection point.
+ *
+ * <p>The admin credentials are configuration the operator provides for their own Keycloak; they are never
+ * exposed to clients.
  */
 @Component
-@Profile({"oidc", "oidc-keycloak"})
+@Profile("oidc")
+@ConditionalOnProperty(name = "hivekeeper.idp", havingValue = "keycloak", matchIfMissing = true)
 public class KeycloakAdminClient implements IdpAdminClient {
 
-    private final RestClient http = RestClient.create();
+    private final RestClient http;
     private final String baseUrl;
     private final String realm;
     private final String adminRealm;
@@ -34,6 +44,7 @@ public class KeycloakAdminClient implements IdpAdminClient {
     private final String adminUsername;
     private final String adminPassword;
 
+    @Autowired
     public KeycloakAdminClient(
             @Value("${hivekeeper.keycloak.base-url:http://localhost:8081}") String baseUrl,
             @Value("${hivekeeper.keycloak.realm:hivekeeper}") String realm,
@@ -41,6 +52,17 @@ public class KeycloakAdminClient implements IdpAdminClient {
             @Value("${hivekeeper.keycloak.admin-client:admin-cli}") String adminClient,
             @Value("${hivekeeper.keycloak.admin-username:admin}") String adminUsername,
             @Value("${hivekeeper.keycloak.admin-password:admin}") String adminPassword) {
+        this(RestClient.builder(), baseUrl, realm, adminRealm, adminClient, adminUsername, adminPassword);
+    }
+
+    /**
+     * Visible for tests: the only way to point a {@code MockRestServiceServer} at this client. Spring uses the
+     * annotated constructor above — {@code RestClient.Builder} is not a bean here, since the gateway does not
+     * pull in {@code spring-boot-restclient}, so it must not become a constructor dependency.
+     */
+    KeycloakAdminClient(RestClient.Builder http, String baseUrl, String realm, String adminRealm,
+                        String adminClient, String adminUsername, String adminPassword) {
+        this.http = http.build();
         this.baseUrl = trimTrailingSlash(baseUrl);
         this.realm = realm;
         this.adminRealm = adminRealm;
@@ -50,23 +72,19 @@ public class KeycloakAdminClient implements IdpAdminClient {
     }
 
     /**
-     * Create a realm user with a permanent password and no pending actions, returning their Keycloak id. Used
-     * by first-run setup for the very first admin, who must be able to sign in immediately.
-     */
-    public String createUser(String username, String email, String password, String displayName) {
-        return createUser(username, email, password, displayName, false);
-    }
-
-    /**
      * Create a realm user and return their Keycloak id. A display name is split into first/last because
      * Keycloak's user-profile requires a first + last name — a user created without them is "not fully set up"
-     * and cannot sign in until they complete a profile prompt. When {@code temporary} is true the password is
-     * marked temporary and an {@code UPDATE_PASSWORD} required action is set, so the new teammate is forced to
-     * choose their own password at first sign-in (the admin only ever sets a throwaway one); when false the
-     * password is permanent and no action is pending (the first-run admin).
+     * and cannot sign in until they complete a profile prompt. When {@code mustSetOwnPassword} is true the
+     * password is marked temporary and an {@code UPDATE_PASSWORD} required action is set, so the new teammate
+     * is forced to choose their own password at first sign-in (the admin only ever sets a throwaway one); when
+     * false the password is permanent and no action is pending (the first-run admin).
+     *
+     * <p>The returned {@link CreatedUser#recoveryLink()} is always null: Keycloak enforces the change with the
+     * required action, so there is no link to pass on. Authentik, which has no such flag, returns one instead.
      */
-    public String createUser(String username, String email, String password, String displayName,
-                             boolean temporary) {
+    @Override
+    public CreatedUser createUser(String username, String email, String password, String displayName,
+                                  boolean mustSetOwnPassword) {
         String dn = (displayName == null || displayName.isBlank()) ? username : displayName.trim();
         String[] parts = dn.split("\\s+", 2);
         String firstName = parts[0];
@@ -85,21 +103,22 @@ public class KeycloakAdminClient implements IdpAdminClient {
                             "lastName", lastName,
                             "enabled", true,
                             "emailVerified", true,
-                            "requiredActions", temporary ? List.of("UPDATE_PASSWORD") : List.of(),
+                            "requiredActions", mustSetOwnPassword ? List.of("UPDATE_PASSWORD") : List.of(),
                             "credentials", List.of(Map.of(
-                                    "type", "password", "value", password, "temporary", temporary))))
+                                    "type", "password", "value", password,
+                                    "temporary", mustSetOwnPassword))))
                     .retrieve()
                     .toBodilessEntity();
             String location = created.getHeaders().getFirst("Location");
             if (location == null || !location.contains("/")) {
-                throw new KeycloakAdminException("Keycloak did not return the new user's id");
+                throw new IdpAdminException("Keycloak did not return the new user's id");
             }
-            return location.substring(location.lastIndexOf('/') + 1);
+            return new CreatedUser(location.substring(location.lastIndexOf('/') + 1), null);
         } catch (RestClientResponseException e) {
             if (e.getStatusCode().value() == 409) {
-                throw new KeycloakAdminException("a user '" + username + "' already exists in realm " + realm);
+                throw new IdpAdminException("a user '" + username + "' already exists in realm " + realm);
             }
-            throw new KeycloakAdminException("creating the Keycloak user failed: HTTP " + e.getStatusCode().value());
+            throw new IdpAdminException("creating the Keycloak user failed: HTTP " + e.getStatusCode().value());
         }
     }
 
@@ -122,23 +141,28 @@ public class KeycloakAdminClient implements IdpAdminClient {
      * that by then exists. Hence: look up, do not create.
      */
     public Optional<KeycloakUser> findKeycloakUser(String usernameOrEmail) {
-        String query = enc(usernameOrEmail.trim());
+        String query = usernameOrEmail.trim();
         String token = adminToken();
         try {
             // exact=true: a substring match could admit the wrong person to an organization.
-            List<Map<String, Object>> byUsername = search(token, "username=" + query + "&exact=true");
+            List<Map<String, Object>> byUsername = search(token, "username", query);
             return byUsername.isEmpty()
-                    ? user(search(token, "email=" + query + "&exact=true"))
+                    ? user(search(token, "email", query))
                     : user(byUsername);
         } catch (RestClientResponseException e) {
-            throw new KeycloakAdminException("looking the Keycloak user up failed: HTTP " + e.getStatusCode().value());
+            throw new IdpAdminException("looking the Keycloak user up failed: HTTP " + e.getStatusCode().value());
         }
     }
 
+    /**
+     * One exact-match query against the realm's users. The value goes in as a URI VARIABLE, never pre-encoded
+     * into the string: {@code RestClient} encodes the template it is handed, so an already-escaped value comes
+     * out double-encoded ({@code b%40x} → {@code b%2540x}) and matches nobody with an e-mail address.
+     */
     @SuppressWarnings("unchecked")
-    private List<Map<String, Object>> search(String token, String query) {
+    private List<Map<String, Object>> search(String token, String field, String value) {
         List<Map<String, Object>> found = http.get()
-                .uri(baseUrl + "/admin/realms/" + realm + "/users?" + query)
+                .uri(baseUrl + "/admin/realms/" + realm + "/users?" + field + "={value}&exact=true", value)
                 .header("Authorization", "Bearer " + token)
                 .retrieve()
                 .body(List.class);
@@ -185,11 +209,11 @@ public class KeycloakAdminClient implements IdpAdminClient {
                     .body(Map.class);
             Object token = body == null ? null : body.get("access_token");
             if (token == null) {
-                throw new KeycloakAdminException("Keycloak admin token response had no access_token");
+                throw new IdpAdminException("Keycloak admin token response had no access_token");
             }
             return token.toString();
         } catch (RestClientResponseException e) {
-            throw new KeycloakAdminException("Keycloak admin authentication failed: HTTP " + e.getStatusCode().value()
+            throw new IdpAdminException("Keycloak admin authentication failed: HTTP " + e.getStatusCode().value()
                     + " (check hivekeeper.keycloak.admin-username/password)");
         }
     }

@@ -4,7 +4,7 @@ import io.hivekeeper.gateway.access.AccessGuard;
 import io.hivekeeper.gateway.access.Principal;
 import io.hivekeeper.gateway.access.ResourceScope;
 import io.hivekeeper.gateway.access.Role;
-import io.hivekeeper.gateway.setup.KeycloakAdminException;
+import io.hivekeeper.gateway.setup.IdpAdminException;
 import org.springframework.context.annotation.Profile;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.DeleteMapping;
@@ -33,7 +33,16 @@ public class MemberController {
     public record UpdateMember(String role) {
     }
 
-    public record MemberResponse(String userId) {
+    /**
+     * A member that was just added or admitted. {@code recoveryLink} is present only when the IdP needs the new
+     * teammate to follow a one-time link to choose their own password (Authentik); it is null under Keycloak,
+     * which forces the change at first sign-in instead, and null when admitting an account that already exists.
+     * The field is purely additive: a client that does not know about it reads {@code userId} as before.
+     */
+    public record MemberResponse(String userId, String recoveryLink) {
+        public MemberResponse(String userId) {
+            this(userId, null);
+        }
     }
 
     public record ApiError(String error, String detail) {
@@ -58,9 +67,11 @@ public class MemberController {
      * Add a teammate. Two shapes, distinguished by the password:
      *
      * <ul>
-     *   <li><b>with a password</b> — create a brand-new login (they change it at first sign-in);</li>
+     *   <li><b>with a password</b> — create a brand-new login. The admin never keeps a working credential for
+     *       it: Keycloak forces the password to be changed at first sign-in, while Authentik returns a
+     *       {@code recoveryLink} the admin passes on so the teammate sets the first password themselves;</li>
      *   <li><b>without one</b> — <i>admit an account that already exists</i>. This is the only way to add
-     *       somebody who signs in through an identity provider: a GitHub user has no password, and no Keycloak
+     *       somebody who signs in through an identity provider: a GitHub user has no password, and no IdP
      *       account at all until their first sign-in creates one. They sign in once, are told they belong to no
      *       organization, and an admin then admits them by username or e-mail.</li>
      * </ul>
@@ -85,12 +96,12 @@ public class MemberController {
                                 "no account for '" + req.username().trim() + "'. Someone signing in with an "
                                         + "identity provider must sign in once before they can be added.")));
             }
-            String userId = members.add(p.tenantId(), req.username().trim(), req.email(), req.password(),
-                    req.name(), role);
-            return ResponseEntity.ok(new MemberResponse(userId));
+            MemberService.Added added = members.add(p.tenantId(), req.username().trim(), req.email(),
+                    req.password(), req.name(), role);
+            return ResponseEntity.ok(new MemberResponse(added.userId(), added.recoveryLink()));
         } catch (MemberService.AlreadyAMemberException e) {
             return ResponseEntity.status(409).body(new ApiError("already_a_member", e.getMessage()));
-        } catch (KeycloakAdminException e) {
+        } catch (IdpAdminException e) {
             return ResponseEntity.status(409).body(new ApiError("user_exists", e.getMessage()));
         }
     }

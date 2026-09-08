@@ -3,6 +3,7 @@ package io.hivekeeper.gateway.member;
 import io.hivekeeper.gateway.access.AccessService;
 import io.hivekeeper.gateway.access.ResourceScope;
 import io.hivekeeper.gateway.access.Role;
+import io.hivekeeper.gateway.setup.IdpAdminClient;
 import io.hivekeeper.gateway.setup.KeycloakAdminClient;
 import io.hivekeeper.gateway.setup.SetupService;
 import org.junit.jupiter.api.Test;
@@ -70,15 +71,16 @@ class MembersIT {
 
     @Test
     void addsListsReRolesAndRemovesAMemberUnderRealRls() {
-        // bootstrap the first org + owner (setup uses the 4-arg createUser with a permanent password)
-        when(keycloak.createUser(eq("owner"), any(), eq("pw"), any())).thenReturn("kc-owner");
+        // bootstrap the first org + owner (setup uses createAdmin, i.e. a permanent password)
+        when(keycloak.createAdmin(eq("owner"), any(), eq("pw"), any())).thenReturn("kc-owner");
         String tenant = setup.setup(setup.setupToken(), "Acme Corp", "owner", "pw", "o@x", "Olivia Owner")
                 .tenantId();
         assertEquals("acme-corp", tenant);
 
-        // add a teammate as a viewer (the add path uses the 5-arg createUser with temporary = true)
-        when(keycloak.createUser(eq("bob"), any(), any(), any(), eq(true))).thenReturn("kc-bob");
-        String bob = members.add(tenant, "bob", "b@x", "tmp-pw", "Bob Builder", Role.VIEWER);
+        // add a teammate as a viewer (the add path uses createUser with mustSetOwnPassword = true)
+        when(keycloak.createUser(eq("bob"), any(), any(), any(), eq(true)))
+                .thenReturn(new IdpAdminClient.CreatedUser("kc-bob", null));
+        String bob = members.add(tenant, "bob", "b@x", "tmp-pw", "Bob Builder", Role.VIEWER).userId();
 
         // both people show up, and bob resolves as a viewer (not an admin) under real RLS + grant resolution
         List<MemberService.Member> roster = members.list(tenant);

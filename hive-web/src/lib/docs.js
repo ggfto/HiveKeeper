@@ -11,6 +11,7 @@ const ORDER = [
   'getting-started',
   'capabilities',
   'authentication',
+  'authentik',
   'device-configuration',
   'deployment',
   'production',

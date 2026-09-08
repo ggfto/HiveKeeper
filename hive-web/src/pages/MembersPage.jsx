@@ -5,6 +5,7 @@ import { useAuth } from '../context/AuthProvider'
 import { useToast } from '../context/ToastProvider'
 import { MembersList } from '../components/organisms/MembersList'
 import { AddMemberForm } from '../components/organisms/AddMemberForm'
+import { RecoveryLinkNotice } from '../components/molecules/RecoveryLinkNotice'
 
 /**
  * The active organization's people: who belongs, their role, and adding / re-roling / removing them. Managing
@@ -16,6 +17,8 @@ export function MembersPage() {
   const { toast } = useToast()
   const [members, setMembers] = useState(null)
   const [busy, setBusy] = useState(false)
+  // Set only under an IdP that hands back a one-time link instead of forcing a password change (Authentik).
+  const [recovery, setRecovery] = useState(null)
 
   const load = useCallback(async () => {
     const list = await gateway.members().catch((e) => (e.status === 403 ? 'forbidden' : null))
@@ -31,8 +34,10 @@ export function MembersPage() {
   const onAdd = async (body) => {
     setBusy(true)
     try {
-      await gateway.addMember(body)
+      const added = await gateway.addMember(body)
       toast(`Added ${body.username}.`, 'success')
+      // A toast would be gone before it could be copied, and the gateway cannot mint the link again.
+      setRecovery(added?.recoveryLink ? { link: added.recoveryLink, username: body.username } : null)
       await load()
       return true
     } catch (e) {
@@ -77,6 +82,11 @@ export function MembersPage() {
     <div className="space-y-4">
       <MriPageHeader title="Members" icon={Users} count={count} countLabel="people" />
       <MembersList members={members} me={me} onChangeRole={onChangeRole} onRemove={onRemove} busy={busy} />
+      <RecoveryLinkNotice
+        link={recovery?.link}
+        username={recovery?.username}
+        onDismiss={() => setRecovery(null)}
+      />
       <AddMemberForm onAdd={onAdd} busy={busy} />
     </div>
   )
