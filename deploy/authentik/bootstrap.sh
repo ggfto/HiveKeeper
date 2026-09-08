@@ -79,12 +79,32 @@ SCOPES=$(scope_mappings)
 # and let the server pick — the older API rejects the list with 400 "Not a valid string.".
 PROVIDER_ID=$(api "${AUTHENTIK_URL}/api/v3/providers/oauth2/?name=${APP_NAME}-provider"   | jq -r '.results[0].pk // empty')
 
-REDIRECT_REGEX="${CONSOLE_URL}(/.*)?"
+# The console posts back to exactly one URI: `window.location.origin + "/"` — see
+# hive-web/src/lib/oidcConfig.js, which uses it for BOTH redirect_uri and post_logout_redirect_uri. So the
+# provider gets that one value and nothing wider.
+
+# The browser's origin never carries a path, so drop anything the operator appended to CONSOLE_URL.
+console_origin() {
+  printf '%s' "$1" | sed -E 's#^([a-zA-Z][a-zA-Z0-9+.-]*://[^/]+).*#\1#'
+}
+
+# Escape regex metacharacters. Authentik matches the legacy string form of redirect_uris as a REGULAR
+# EXPRESSION (re.fullmatch), so a pattern built by plain concatenation is dangerously loose: an unescaped dot
+# matches any character, so https://hivekeeper.example.org would also match https://hivekeeper-example.org —
+# a domain an attacker can register. Against a public client using PKCE that is enough to have the
+# authorization code delivered to them. jq does the escaping because its regex and string semantics are
+# well defined; sed bracket expressions are not portable enough to trust with this.
+regex_escape() {
+  jq -rn --arg s "$1" '$s | gsub("(?<c>[.\\[\\]^$*+?(){}|\\\\])"; "\\" + .c)'
+}
+
+REDIRECT_URI="$(console_origin "${CONSOLE_URL}")/"
+REDIRECT_REGEX="^$(regex_escape "${REDIRECT_URI}")\$"
 
 provider_payload() {   # $1: "list" (2024.10+) or "string" (older)
   local redirect
   if [ "$1" = "list" ]; then
-    redirect=$(jq -n --arg u "${REDIRECT_REGEX}" '[{matching_mode: "regex", url: $u}]')
+    redirect=$(jq -n --arg u "${REDIRECT_URI}" '[{matching_mode: "strict", url: $u}]')
   else
     redirect=$(jq -n --arg u "${REDIRECT_REGEX}" '$u')
   fi

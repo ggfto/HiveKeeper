@@ -51,7 +51,10 @@ services:
       AUTHENTIK_POSTGRESQL__NAME: authentik
       AUTHENTIK_POSTGRESQL__USER: authentik
       AUTHENTIK_POSTGRESQL__PASSWORD: ${AUTHENTIK_DB_PASSWORD:-authentik}
-      AUTHENTIK_SECRET_KEY: ${AUTHENTIK_SECRET_KEY:-changeme-generate-a-random-key-in-production}
+      # Django's SECRET_KEY for Authentik: whoever knows it can forge signed session cookies for the
+      # IdP, so there is no safe default to fall back to. `:?` refuses to start rather than quietly
+      # running on a value published in this repository.
+      AUTHENTIK_SECRET_KEY: ${AUTHENTIK_SECRET_KEY:?generate one with `openssl rand -hex 32`}
       AUTHENTIK_ERROR_REPORTING__ENABLED: "false"
       # Seeds the akadmin account on FIRST boot only. The bootstrap token becomes the API token that both
       # authentik-init and the gateway authenticate with, so it is one variable, not two.
@@ -81,7 +84,10 @@ services:
       AUTHENTIK_POSTGRESQL__NAME: authentik
       AUTHENTIK_POSTGRESQL__USER: authentik
       AUTHENTIK_POSTGRESQL__PASSWORD: ${AUTHENTIK_DB_PASSWORD:-authentik}
-      AUTHENTIK_SECRET_KEY: ${AUTHENTIK_SECRET_KEY:-changeme-generate-a-random-key-in-production}
+      # Django's SECRET_KEY for Authentik: whoever knows it can forge signed session cookies for the
+      # IdP, so there is no safe default to fall back to. `:?` refuses to start rather than quietly
+      # running on a value published in this repository.
+      AUTHENTIK_SECRET_KEY: ${AUTHENTIK_SECRET_KEY:?generate one with `openssl rand -hex 32`}
       AUTHENTIK_ERROR_REPORTING__ENABLED: "false"
       # The worker applies the bootstrap blueprint, so it — not the server — is what actually creates the
       # akadmin account and its API token. See the note on authentik-server.
