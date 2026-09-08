@@ -17,8 +17,8 @@
 #     Authentik's DEFAULT sub mode (a salted hash of the id) the `sub` in the token would never match, and the
 #     first admin would be created and then be unable to sign in.
 #   * the brand's recovery flow — adding a teammate asks Authentik for a one-time recovery link so the admin
-#     never holds a working password for someone else's account. With no recovery flow bound, that call 404s
-#     and adding a teammate fails.
+#     never holds a working password for someone else's account. Authentik refuses that call unless a recovery
+#     flow is the active brand's default, so adding a teammate fails until one is bound.
 set -euo pipefail
 
 AUTHENTIK_URL="${AUTHENTIK_URL:-http://authentik-server:9000}"

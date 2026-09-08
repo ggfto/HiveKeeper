@@ -96,9 +96,12 @@ class AuthentikAdminClientTest {
 
     @Test
     void createTeammateFailsLoudlyWhenNoRecoveryFlowIsConfigured() {
+        // Authentik reports this as a 400 whose body names the cause, not as its own status code.
         server.expect(requestTo(USERS)).andRespond(withSuccess("{\"pk\":99}", MediaType.APPLICATION_JSON));
-        server.expect(requestTo(USERS + "99/recovery/"))
-                .andRespond(withStatus(org.springframework.http.HttpStatus.NOT_FOUND));
+        server.expect(requestTo(USERS + "99/recovery/")).andRespond(withBadRequest()
+                .body("{\"detail\":\"The current brand must have a recovery flow configured "
+                        + "to use a recovery link\"}")
+                .contentType(MediaType.APPLICATION_JSON));
 
         IdpAdminException e = assertThrows(IdpAdminException.class,
                 () -> client.createUser("bob", "b@x", "pw", "Bob", true));
@@ -106,6 +109,19 @@ class AuthentikAdminClientTest {
         // A user who can never sign in is worse than a failed add, so the message must name the fix.
         assertTrue(e.getMessage().contains("recovery flow"), e.getMessage());
         assertTrue(e.getMessage().contains("bob"), e.getMessage());
+        assertTrue(e.getMessage().contains("delete the account"), e.getMessage());
+    }
+
+    @Test
+    void anotherRecoveryFailureStillSaysTheAccountWasLeftBehind() {
+        server.expect(requestTo(USERS)).andRespond(withSuccess("{\"pk\":99}", MediaType.APPLICATION_JSON));
+        server.expect(requestTo(USERS + "99/recovery/"))
+                .andRespond(withStatus(org.springframework.http.HttpStatus.FORBIDDEN));
+
+        IdpAdminException e = assertThrows(IdpAdminException.class,
+                () -> client.createUser("bob", "b@x", "pw", "Bob", true));
+        assertTrue(e.getMessage().contains("403"), e.getMessage());
+        assertTrue(e.getMessage().contains("delete the account"), e.getMessage());
     }
 
     @Test

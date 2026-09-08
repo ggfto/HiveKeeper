@@ -131,9 +131,12 @@ public class AuthentikAdminClient implements IdpAdminClient {
     /**
      * Ask Authentik for the one-time link that lets a new teammate set their own password.
      *
-     * <p>This needs a recovery flow bound to the brand; without one Authentik answers 404 and there is no way
-     * for the teammate to get in, so we fail loudly with the fix rather than returning a user who can never
-     * sign in. {@code deploy/authentik/bootstrap.sh} binds the built-in {@code default-recovery-flow}.
+     * <p>This needs a recovery flow set as the active brand's default; without one there is no way for the
+     * teammate to get in at all, so we fail loudly with the fix rather than returning a user who can never
+     * sign in. {@code deploy/authentik/bootstrap.sh} binds one when the brand has none.
+     *
+     * <p>Authentik reports that particular misconfiguration as a 400/403 whose body says so — not as a
+     * distinct status — so the hint keys off the message rather than the code.
      */
     private String recoveryLink(String userId, String username) {
         try {
@@ -144,12 +147,14 @@ public class AuthentikAdminClient implements IdpAdminClient {
                     .body(Map.class);
             Object link = body == null ? null : body.get("link");
             if (link == null || link.toString().isBlank()) {
-                throw new IdpAdminException("Authentik returned no recovery link for '" + username + "'");
+                throw new IdpAdminException("Authentik created '" + username + "' but returned no recovery"
+                        + " link — delete the account in Authentik and retry");
             }
             return link.toString();
         } catch (RestClientResponseException e) {
-            String hint = e.getStatusCode().value() == 404
-                    ? "; set a recovery flow on the Authentik brand (default-recovery-flow)"
+            String detail = e.getResponseBodyAsString();
+            String hint = detail.toLowerCase().contains("recovery flow")
+                    ? "; set a recovery flow as the default on the Authentik brand"
                     : "";
             throw new IdpAdminException("Authentik created '" + username + "' but issued no recovery link"
                     + " (HTTP " + e.getStatusCode().value() + ")" + hint

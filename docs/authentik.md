@@ -70,9 +70,11 @@ Set the provider's `sub_mode` to `user_id` (in the UI: *Subject mode → Based o
 
 ### The brand needs a recovery flow
 
-Adding a teammate mints a one-time recovery link (see below). That API answers 404 when no recovery flow is
-bound to the brand, and adding a teammate fails with a message saying exactly that. The bootstrap script binds
-the built-in `default-recovery-flow` when the brand has none.
+Adding a teammate mints a one-time recovery link (see below). Authentik refuses that call unless a recovery
+flow is set as the **active brand's default** — *"The current brand must have a recovery flow configured to
+use a recovery link"* — and adding a teammate then fails with a message saying so. The bootstrap script binds
+the built-in `default-recovery-flow` when the brand has none; if your Authentik has no recovery flow at all,
+import one first (*Flows → Import*, "Recovery with email verification") and re-run the script.
 
 ## What differs from Keycloak
 
@@ -101,6 +103,6 @@ roles, org scoping and JWT validation are unchanged — those live in HiveKeeper
 | --- | --- |
 | Gateway exits at startup: `No qualifying bean of type 'IdpAdminClient'` | `hivekeeper.idp` is set to something that is neither `keycloak` nor `authentik` (a typo fails loudly rather than silently picking the wrong IdP). |
 | First admin is created but cannot sign in | Provider subject mode is not `user_id`. |
-| `Authentik created 'x' but issued no recovery link ... set a recovery flow` | No recovery flow on the brand. |
+| `Authentik created 'x' but issued no recovery link ... set a recovery flow` | No recovery flow set as the brand's default. The named account was left behind — delete it in Authentik before retrying. |
 | Token rejected: `iss` mismatch | `HIVEKEEPER_OIDC_ISSUER` must be the URL the **browser** logs in at, not the container name. The gateway reaches the API over the container network separately. |
 | Token rejected, JWKS empty | The provider has no asymmetric signing key, so Authentik signed with HS256. Give it a certificate keypair. |
