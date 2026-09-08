@@ -1,3 +1,10 @@
+## [0.19.2](https://github.com/ggfto/HiveKeeper/compare/v0.19.1...v0.19.2) (2026-09-08)
+
+
+### Bug Fixes
+
+* **deps:** patch the 14 vulnerable transitive dependencies ([#66](https://github.com/ggfto/HiveKeeper/issues/66)) ([23f6c19](https://github.com/ggfto/HiveKeeper/commit/23f6c19b2140b8c77e13863e2fe53af5f7803950))
+
 ## [0.19.1](https://github.com/ggfto/HiveKeeper/compare/v0.19.0...v0.19.1) (2026-09-08)
 
 
