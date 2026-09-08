@@ -21,8 +21,8 @@ stack with `cloudflared` as the only ingress.
 
 Two machines, and the split is the whole point.
 
-**The server** runs the control plane: the console, the gateway, Keycloak, Postgres, Caddy. It faces the
-internet.
+**The server** runs the control plane: the console, the gateway, Postgres, Caddy — and an identity provider,
+which is the one part you choose. It faces the internet.
 
 **The agent** runs *inside the network your access points are on* — your office, your rack, the closet with
 the switch. It reaches the APs over SSH on the LAN, resolves their credentials **locally**, and dials **out**
@@ -33,7 +33,7 @@ Three ports on the server:
 
 | Port | For | Behind the proxy? |
 | --- | --- | --- |
-| 80, 443 | The console and Keycloak | **Yes** — Caddy terminates TLS and gets the certificate. |
+| 80, 443 | The console, and Keycloak if you run it here | **Yes** — Caddy terminates TLS and gets the certificate. |
 | 9443 | **The agents** | **No.** |
 
 That last row is not an oversight. An agent authenticates with a TLS **client certificate**, which the gateway
@@ -70,14 +70,31 @@ backup without the key is a pile of ciphertext, and no CA means re-enrolling eve
 
 Then set `HIVEKEEPER_ACME_EMAIL` in `.env.prod` — Let's Encrypt sends expiry warnings there.
 
-## 2. Bring the stack up
+## 2. Pick an identity provider
+
+`docker-compose.prod.yml` does not decide where people sign in. Layer exactly one overlay on it — both set the
+gateway's issuer, so listing both would silently apply whichever came last.
+
+| Overlay | What it does | Choose it when |
+| --- | --- | --- |
+| `docker-compose.prod.keycloak.yml` | Runs **Keycloak** in this stack, served by Caddy at `/auth`. Adds a second Postgres, which the backup job then also dumps. | You want the whole control plane self-contained on this machine. This is the long-standing shape and remains the default. |
+| `docker-compose.prod.authentik.yml` | Points the gateway at an **Authentik you already operate**. Adds no services here at all. | You already run Authentik as your SSO and would rather have one identity provider than two. See [Authentik as the identity provider](/authentik/). |
+
+:::note[Upgrading from before the split]
+This file used to include Keycloak directly. If your deployment predates the overlays, add
+`-f docker-compose.prod.keycloak.yml` to every `docker compose` command below and nothing else changes —
+same services, same volumes, same data.
+:::
+
+## 3. Bring the stack up
 
 ```sh
-docker compose --env-file .env.prod -f docker-compose.prod.yml up -d
+docker compose --env-file .env.prod   -f docker-compose.prod.yml -f docker-compose.prod.keycloak.yml up -d
 ```
 
-Caddy gets a certificate for your domain by itself. `keycloak-init` configures the realm and the console's
-client, then exits — that is not a crash.
+Caddy gets a certificate for your domain by itself. Under the Keycloak overlay, `keycloak-init` configures the
+realm and the console's client, then exits — that is not a crash. Under the Authentik overlay there is no init
+container here: you run [`deploy/authentik/bootstrap.sh`](/authentik/) once against your own instance instead.
 
 Now create the first organization and its owner. The gateway prints a one-time setup token on first boot, so
 completing setup requires access to the server:
@@ -89,7 +106,7 @@ docker compose --env-file .env.prod -f docker-compose.prod.yml logs gateway | gr
 Open `https://hivekeeper.example.org`, paste the token, and choose your admin username and password. The
 endpoint locks itself the moment the first organization exists.
 
-## 3. Sign in with GitHub (optional)
+## 4. Sign in with GitHub (optional)
 
 GitHub is OAuth2, not OpenID Connect: it hands out an opaque token, no `id_token`, and publishes no JWKS for
 user login. The gateway validates JWTs by signature, issuer and audience, so it can never accept a GitHub token
@@ -113,7 +130,7 @@ sign-in creates one** — so you cannot add them to your organization in advance
 2. You go to **Members → Add member → Existing account** and add them by username or e-mail.
 3. They reload, and they are in.
 
-## 4. Run the agent, on-prem
+## 5. Run the agent, on-prem
 
 On a machine **on the same network as your access points** — not the server.
 
@@ -184,7 +201,7 @@ each agent and stored encrypted; scope it to that repository only. A push that f
 The `backup` service takes a `pg_dump` of **both** databases every 24h (configurable), keeps 14 days, and
 writes to the `pg-backups` volume.
 
-Both, because either alone is useless: restore the gateway's database without Keycloak's, and every role grant
+Under the Keycloak overlay, both — because either alone is useless: restore the gateway's database without Keycloak's, and every role grant
 points at a user id that no longer exists — nobody can sign in, you included.
 
 What backups do **not** cover, and you must:
@@ -198,10 +215,10 @@ What backups do **not** cover, and you must:
 To restore:
 
 ```sh
-docker compose --env-file .env.prod -f docker-compose.prod.yml up -d postgres keycloak-db
+docker compose --env-file .env.prod -f docker-compose.prod.yml   -f docker-compose.prod.keycloak.yml up -d postgres keycloak-db   # keycloak-db only on that overlay
 zcat backups/hivekeeper-<stamp>.sql.gz | docker compose ... exec -T postgres psql -U postgres -d hivekeeper
 zcat backups/keycloak-<stamp>.sql.gz   | docker compose ... exec -T keycloak-db psql -U keycloak -d keycloak
-docker compose --env-file .env.prod -f docker-compose.prod.yml up -d
+docker compose --env-file .env.prod -f docker-compose.prod.yml -f docker-compose.prod.<idp>.yml up -d
 ```
 
 Restore into empty databases, with the **same** `.env.prod` you backed up.
@@ -214,8 +231,8 @@ silently upgrade your control plane at three in the morning.
 ```sh
 # Read the release notes first: https://github.com/ggfto/HiveKeeper/releases
 sed -i 's/^HIVEKEEPER_TAG=.*/HIVEKEEPER_TAG=0.7.0/' .env.prod
-docker compose --env-file .env.prod -f docker-compose.prod.yml pull
-docker compose --env-file .env.prod -f docker-compose.prod.yml up -d
+docker compose --env-file .env.prod -f docker-compose.prod.yml -f docker-compose.prod.<idp>.yml pull
+docker compose --env-file .env.prod -f docker-compose.prod.yml -f docker-compose.prod.<idp>.yml up -d
 ```
 
 Flyway migrates the schema on start. Take a backup first — migrations are not reversible.

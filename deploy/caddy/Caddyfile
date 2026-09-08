@@ -17,6 +17,11 @@
 	# Keycloak, at /auth (KC_HTTP_RELATIVE_PATH). One hostname, one certificate, one DNS record — a
 	# self-hoster should not need a second subdomain just to sign in.
 	#
+	# Only reachable under docker-compose.prod.keycloak.yml. With the Authentik overlay there is no `keycloak`
+	# service and this route answers 502 — harmless, because sign-in then happens on your Authentik's own
+	# hostname and nothing ever links here. Caddy resolves upstreams per request, so the missing service does
+	# not stop it from starting or from serving the console.
+	#
 	# `handle`, NOT `handle_path`: handle_path strips the matched prefix, and Keycloak is *serving* at /auth,
 	# so it needs to receive it. Stripping it turns every Keycloak URL into a 404.
 	handle /auth/* {
