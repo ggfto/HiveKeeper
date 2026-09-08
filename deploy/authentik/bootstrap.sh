@@ -218,11 +218,17 @@ ensure_recovery_flow() {
 
   echo ">> creating recovery flow '${RECOVERY_SLUG}'" >&2
   pk=$(api -X POST -H "${CONTENT_JSON}" "${AUTHENTIK_URL}/api/v3/flows/instances/" -d "$(jq -n         --arg slug "${RECOVERY_SLUG}"         '{name: "HiveKeeper recovery", slug: $slug, title: "Set your password",
-          designation: "recovery", authentication: "require_unauthenticated"}')"       | jq -r '.pk // empty')
+          designation: "recovery", authentication: "none"}')"       | jq -r '.pk // empty')
   [ -n "${pk}" ] || { echo "!! could not create the recovery flow" >&2; return 1; }
 
-  # require_unauthenticated above is deliberate: it also stops an admin from spending the teammate's link
-  # inside their own logged-in session.
+  # `authentication: none` is deliberate, not laziness. Authentik 2025.x evaluates a flow's authentication
+  # requirement against the session that ASKS for the link — which is the gateway's own API call,
+  # authenticated as the token's user. Under require_unauthenticated the recovery endpoint answers
+  # 400 "Recovery flow not applicable to user" and no link is ever issued. It worked on 2024.8.
+  #
+  # It is safe because the flow cannot mint an account for a passer-by: default-password-change-write ships
+  # with user_creation_mode=never_create, so with no pending user the flow dead-ends. The only way in stays
+  # the one-time flow_token carried by the link.
   order=0
   for stage in default-password-change-prompt default-password-change-write; do
     local stage_pk
