@@ -43,9 +43,16 @@ api "${AUTHENTIK_URL}/api/v3/core/applications/" >/dev/null \
   || { echo "!! Authentik did not answer at ${AUTHENTIK_URL} (or the API token is wrong)"; exit 1; }
 
 # --- prerequisites -------------------------------------------------------------------------------
-AUTH_FLOW=$(api "${AUTHENTIK_URL}/api/v3/flows/instances/?designation=authentication" \
-  | jq -r '[.results[] | select(.slug == "default-authentication-flow")][0].pk // empty')
-[ -n "${AUTH_FLOW}" ] || { echo "!! no default-authentication-flow in this Authentik"; exit 1; }
+# A provider's authorization_flow takes a flow whose designation is AUTHORIZATION — the consent step run
+# once the user is already signed in. Not default-authentication-flow: that one's designation is
+# `authentication`, and Authentik accepts it here without complaint, then denies the browser at sign-in with
+# "Flow does not apply to current user", because an authenticated user makes an authentication flow moot.
+# The failure is invisible to every API-level check; only a real browser login shows it.
+AUTH_FLOW=$(api "${AUTHENTIK_URL}/api/v3/flows/instances/?designation=authorization" \
+  | jq -r '[.results[] | select(.slug == "default-provider-authorization-implicit-consent")][0].pk
+           // [.results[] | select(.slug == "default-provider-authorization-explicit-consent")][0].pk
+           // .results[0].pk // empty')
+[ -n "${AUTH_FLOW}" ] || { echo "!! no authorization flow in this Authentik"; exit 1; }
 
 # Required on providers from Authentik 2025.x; the field did not exist before it, and older servers ignore
 # it. Prefer the provider-specific flow when one is present, since that is what a logout from THIS
@@ -218,11 +225,17 @@ ensure_recovery_flow() {
 
   echo ">> creating recovery flow '${RECOVERY_SLUG}'" >&2
   pk=$(api -X POST -H "${CONTENT_JSON}" "${AUTHENTIK_URL}/api/v3/flows/instances/" -d "$(jq -n         --arg slug "${RECOVERY_SLUG}"         '{name: "HiveKeeper recovery", slug: $slug, title: "Set your password",
-          designation: "recovery", authentication: "require_unauthenticated"}')"       | jq -r '.pk // empty')
+          designation: "recovery", authentication: "none"}')"       | jq -r '.pk // empty')
   [ -n "${pk}" ] || { echo "!! could not create the recovery flow" >&2; return 1; }
 
-  # require_unauthenticated above is deliberate: it also stops an admin from spending the teammate's link
-  # inside their own logged-in session.
+  # `authentication: none` is deliberate, not laziness. Authentik 2025.x evaluates a flow's authentication
+  # requirement against the session that ASKS for the link — which is the gateway's own API call,
+  # authenticated as the token's user. Under require_unauthenticated the recovery endpoint answers
+  # 400 "Recovery flow not applicable to user" and no link is ever issued. It worked on 2024.8.
+  #
+  # It is safe because the flow cannot mint an account for a passer-by: default-password-change-write ships
+  # with user_creation_mode=never_create, so with no pending user the flow dead-ends. The only way in stays
+  # the one-time flow_token carried by the link.
   order=0
   for stage in default-password-change-prompt default-password-change-write; do
     local stage_pk
