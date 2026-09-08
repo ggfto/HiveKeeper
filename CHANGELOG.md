@@ -1,3 +1,10 @@
+## [0.19.1](https://github.com/ggfto/HiveKeeper/compare/v0.19.0...v0.19.1) (2026-09-08)
+
+
+### Bug Fixes
+
+* **oidc:** make the Authentik provider actually work, and close an OAuth redirect hole ([#65](https://github.com/ggfto/HiveKeeper/issues/65)) ([d3c4b2b](https://github.com/ggfto/HiveKeeper/commit/d3c4b2bd07e5bc76c08d6e95edeb14b1ed874254))
+
 # [0.19.0](https://github.com/ggfto/HiveKeeper/compare/v0.18.1...v0.19.0) (2026-09-03)
 
 
