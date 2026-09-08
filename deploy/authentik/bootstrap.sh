@@ -43,9 +43,16 @@ api "${AUTHENTIK_URL}/api/v3/core/applications/" >/dev/null \
   || { echo "!! Authentik did not answer at ${AUTHENTIK_URL} (or the API token is wrong)"; exit 1; }
 
 # --- prerequisites -------------------------------------------------------------------------------
-AUTH_FLOW=$(api "${AUTHENTIK_URL}/api/v3/flows/instances/?designation=authentication" \
-  | jq -r '[.results[] | select(.slug == "default-authentication-flow")][0].pk // empty')
-[ -n "${AUTH_FLOW}" ] || { echo "!! no default-authentication-flow in this Authentik"; exit 1; }
+# A provider's authorization_flow takes a flow whose designation is AUTHORIZATION — the consent step run
+# once the user is already signed in. Not default-authentication-flow: that one's designation is
+# `authentication`, and Authentik accepts it here without complaint, then denies the browser at sign-in with
+# "Flow does not apply to current user", because an authenticated user makes an authentication flow moot.
+# The failure is invisible to every API-level check; only a real browser login shows it.
+AUTH_FLOW=$(api "${AUTHENTIK_URL}/api/v3/flows/instances/?designation=authorization" \
+  | jq -r '[.results[] | select(.slug == "default-provider-authorization-implicit-consent")][0].pk
+           // [.results[] | select(.slug == "default-provider-authorization-explicit-consent")][0].pk
+           // .results[0].pk // empty')
+[ -n "${AUTH_FLOW}" ] || { echo "!! no authorization flow in this Authentik"; exit 1; }
 
 # Required on providers from Authentik 2025.x; the field did not exist before it, and older servers ignore
 # it. Prefer the provider-specific flow when one is present, since that is what a logout from THIS
