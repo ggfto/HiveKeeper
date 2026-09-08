@@ -105,6 +105,112 @@ password field in the add form is ignored under Authentik.
 Admitting an existing account (the no-password path, for anyone who signs in through a federated provider),
 roles, org scoping and JWT validation are unchanged — those live in HiveKeeper's own database, not the IdP.
 
+## Migrating an existing deployment from Keycloak
+
+Your organizations, sites, groups, role grants and audit history all survive: `membership` and `role_grant`
+reference `app_user.user_id`, an internal id that never changes. Only the *login key* — the
+`(oidc_issuer, oidc_subject)` pair on `app_user` — belongs to the old IdP, and re-keying it is the whole
+migration.
+
+:::caution[Read this before you start]
+Until the re-key lands, an account that signs in through Authentik resolves to nobody and the console says it
+belongs to no organization. That is the failure mode you should expect, and it is reversible — `/api/me` looks
+users up, it never creates them, so a premature sign-in leaves no duplicate row behind. What is *not*
+reversible is losing the old values, so step 1 is not optional.
+:::
+
+### 1. Back up, and write down what you are changing
+
+```sh
+docker compose --env-file .env.prod -f docker-compose.prod.yml exec -T postgres \
+  pg_dump -U postgres hivekeeper | gzip > hivekeeper-pre-authentik.sql.gz
+
+# The current login keys — your rollback values. Keep this output.
+docker compose --env-file .env.prod -f docker-compose.prod.yml exec -T postgres \
+  psql -U postgres -d hivekeeper -c \
+  'select user_id, oidc_issuer, oidc_subject, email, name from app_user order by created_at;'
+```
+
+Keep the Keycloak database and its volume until you have signed in through Authentik. Rolling back is only
+cheap while both halves still exist.
+
+### 2. Configure Authentik
+
+Run [the bootstrap script](#running-the-dev-stack) against your instance. It creates the application, the
+provider with `sub_mode: user_id`, and the brand's recovery flow.
+
+### 3. Make sure each person exists in Authentik, and get their `pk`
+
+```sh
+curl -sf -H "Authorization: Bearer $HIVEKEEPER_AUTHENTIK_API_TOKEN" \
+  "$AUTHENTIK_URL/api/v3/core/users/?email=olivia@example.org" \
+  | jq -r '.results[] | "\(.pk)\t\(.username)\t\(.email)"'
+```
+
+That `pk` is what `sub_mode: user_id` puts in the `sub` claim, so it is exactly what `app_user.oidc_subject`
+must become. If someone has no account yet, create one — the console's **Add member** flow does this for a new
+teammate, but for a person who is *already* a member you want the account only, so create it in Authentik
+directly and hand them a recovery link.
+
+### 4. Re-key `app_user`
+
+One statement per person, in a transaction, keyed on the `user_id` you recorded in step 1:
+
+```sql
+begin;
+
+update app_user
+   set oidc_issuer  = 'https://sso.example.org/application/o/hivekeeper/',
+       oidc_subject = '42'
+ where user_id = 'usr-....';
+
+-- Exactly the rows you meant, and no other. Anything else: rollback.
+select user_id, oidc_issuer, oidc_subject, email from app_user;
+
+commit;
+```
+
+The issuer must match `HIVEKEEPER_OIDC_ISSUER` **character for character**, trailing slash included — the
+gateway compares the `iss` claim to it as a string.
+
+### 5. Switch the overlay and restart
+
+```sh
+docker compose --env-file .env.prod \
+  -f docker-compose.prod.yml -f docker-compose.prod.authentik.yml up -d
+```
+
+Note that the Keycloak services are not stopped by this — they are simply no longer part of the composition.
+Take them down deliberately, once sign-in works:
+
+```sh
+docker compose --env-file .env.prod \
+  -f docker-compose.prod.yml -f docker-compose.prod.keycloak.yml stop keycloak keycloak-init keycloak-db
+```
+
+Leave the `keycloak-db-data` volume in place until you are confident. It is the only copy of the old
+identities, and it costs nothing to keep.
+
+### 6. Verify, in this order
+
+1. `GET /api/mode` reports the Authentik issuer and `hive-gateway` as the client id.
+2. Sign in at the console. You land on your organization with your existing role — that is the re-key working.
+3. The fleet still lists devices, and the audit log still attributes past actions to you.
+
+If sign-in succeeds but the console says you belong to no organization, the re-key did not match: the `sub` in
+your token is not what you wrote into `oidc_subject`. Check the provider's subject mode is *Based on the
+User's ID* rather than the default hash.
+
+### Rolling back
+
+```sh
+docker compose --env-file .env.prod \
+  -f docker-compose.prod.yml -f docker-compose.prod.keycloak.yml up -d
+```
+
+then restore the `oidc_issuer` / `oidc_subject` values you recorded in step 1. Nothing else has to be undone —
+no membership, grant or device record was touched.
+
 ## Verifying against a real instance
 
 `AuthentikLiveIT` runs the gateway's Authentik client against a live server. It is skipped unless you ask for

@@ -1,0 +1,42 @@
+# Identity-provider overlay: an AUTHENTIK YOU ALREADY OPERATE. It adds no services — the gateway simply
+# validates tokens from your Authentik and calls its admin API to provision users. Layer it on the base:
+#
+#   docker compose --env-file .env.prod -f docker-compose.prod.yml -f docker-compose.prod.authentik.yml up -d
+#
+# The alternative is docker-compose.prod.keycloak.yml, which runs Keycloak inside this stack. Layer exactly
+# ONE of the two: they both set the gateway's issuer, and the last one listed would silently win.
+#
+# Before the first `up`, configure the Authentik side once — the application, its OAuth2 provider (subject
+# mode "Based on the User's ID", which the gateway depends on) and the brand's recovery flow:
+#
+#   AUTHENTIK_URL=https://sso.example.org \
+#   HIVEKEEPER_AUTHENTIK_API_TOKEN=... \
+#   HIVEKEEPER_CONSOLE_URL=https://hivekeeper.example.org \
+#     ./deploy/authentik/bootstrap.sh
+#
+# See docs/authentik.md, including "Migrating from Keycloak" if this stack has been running on Keycloak:
+# existing accounts keep their organizations and roles, but their app_user row has to be re-keyed to the
+# Authentik subject first, or nobody can sign in.
+
+name: hivekeeper
+
+services:
+  gateway:
+    environment:
+      # oidc-authentik carries hivekeeper.idp=authentik, which is what selects the Authentik client over the
+      # default Keycloak one. It is layered ON TOP of oidc, not instead of it — every OIDC bean requires the
+      # plain `oidc` profile, so dropping it would leave the gateway with no authentication at all.
+      SPRING_PROFILES_ACTIVE: postgres,oidc,oidc-authentik,mtls
+
+      # Where the BROWSER signs in. Tokens are minted for this URL and the gateway checks `iss` against it, so
+      # it must be the public Authentik URL — not an internal address. The console reads it back from
+      # /api/mode, so nothing is baked into its bundle.
+      HIVEKEEPER_OIDC_ISSUER: ${HIVEKEEPER_AUTHENTIK_URL:?set it, e.g. https://sso.example.org}/application/o/${HIVEKEEPER_AUTHENTIK_APP:-hivekeeper}/
+      HIVEKEEPER_OIDC_JWK_SET_URI: ${HIVEKEEPER_AUTHENTIK_URL}/application/o/${HIVEKEEPER_AUTHENTIK_APP:-hivekeeper}/jwks/
+      HIVEKEEPER_OIDC_AUDIENCE: hive-gateway
+      HIVEKEEPER_OIDC_CLIENT_ID: hive-gateway
+
+      # First-run setup and "add a teammate" provision accounts through Authentik's admin API. The token needs
+      # permission to manage users; bootstrap.sh additionally needs providers, applications, flows and brands.
+      HIVEKEEPER_AUTHENTIK_BASE_URL: ${HIVEKEEPER_AUTHENTIK_URL}
+      HIVEKEEPER_AUTHENTIK_API_TOKEN: ${HIVEKEEPER_AUTHENTIK_API_TOKEN:?set it}

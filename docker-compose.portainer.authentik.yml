@@ -1,0 +1,173 @@
+# HiveKeeper behind a Cloudflare Tunnel, signing in against an AUTHENTIK YOU ALREADY OPERATE.
+#
+# Sibling of docker-compose.portainer.yml, which runs Keycloak inside the stack. Two files rather than a base
+# plus an overlay, because a Portainer Git stack deploys ONE compose path — there is no `-f a.yml -f b.yml`
+# to layer with. Keep them in step: everything except the identity provider is meant to be identical.
+#
+# In Portainer: Stacks -> Add stack -> Repository, compose path `docker-compose.portainer.authentik.yml`.
+# Paste the variables from deploy/portainer/stack.env.example, plus the two below.
+#
+# Configure the Authentik side ONCE before the first deploy — the application, its OAuth2 provider (subject
+# mode "Based on the User's ID", which the gateway depends on) and the brand's recovery flow:
+#
+#   AUTHENTIK_URL=https://sso.example.org #   HIVEKEEPER_AUTHENTIK_API_TOKEN=... #   HIVEKEEPER_CONSOLE_URL=https://hivekeeper.example.org #     ./deploy/authentik/bootstrap.sh
+#
+# Migrating a stack that has been running on Keycloak? Organizations, roles and history all survive — only
+# the login key on app_user has to be re-keyed. See docs/authentik.md, "Migrating an existing deployment
+# from Keycloak", and do it before you switch the stack over.
+
+name: hivekeeper
+
+services:
+  # Mints the CA, the truststore and the gateway's server certificate into the `pki` volume — but only if
+  # they are absent. Runs to completion on every `up` and exits 0; `restart: "no"` keeps that from looking
+  # like a crash. It also prints ca.pem to its log every time, which is how you get the certificate onto a
+  # new agent machine without a shell on the host.
+  pki-init:
+    build:
+      context: .
+      dockerfile: deploy/portainer/pki-init.Dockerfile
+    environment:
+      HIVEKEEPER_AGENT_DOMAIN: ${HIVEKEEPER_AGENT_DOMAIN:?set it — the hostname agents dial, e.g. agents.example.org}
+      HIVEKEEPER_PKI_STORE_PASSWORD: ${HIVEKEEPER_PKI_STORE_PASSWORD:?set it — openssl rand -hex 24}
+    volumes:
+      - pki:/pki
+    restart: "no"
+
+  gateway:
+    image: ${HIVEKEEPER_REGISTRY:-ghcr.io/ggfto}/hivekeeper-gateway:${HIVEKEEPER_TAG:?pin a version — never :latest in production}
+    environment:
+      # postgres = durable jobs + RLS multi-tenancy; oidc = per-user login; mtls = the agent TLS listener.
+      # oidc-authentik carries hivekeeper.idp=authentik, layered ON TOP of oidc — never instead of it.
+      SPRING_PROFILES_ACTIVE: postgres,oidc,oidc-authentik,mtls
+      SERVER_ADDRESS: 0.0.0.0
+
+      # Not variables, deliberately. Both are switches that turn a hardened deployment back into a
+      # development one, and neither belongs somewhere it can be flipped by a typo in a web form.
+      # With the static tenant key on, one leaked header value is an owner of the whole organization.
+      HIVEKEEPER_TENANTKEY_ENABLED: "false"
+      HIVEKEEPER_CRYPTO_ALLOW_INSECURE_DEV_KEY: "false"
+
+      HIVEKEEPER_DB_URL: jdbc:postgresql://postgres:5432/hivekeeper
+      HIVEKEEPER_DB_USER: hivekeeper_app
+      HIVEKEEPER_DB_PASSWORD: ${HIVEKEEPER_DB_PASSWORD:?set it}
+      HIVEKEEPER_DB_ADMIN_USER: postgres
+      HIVEKEEPER_DB_ADMIN_PASSWORD: ${HIVEKEEPER_DB_ADMIN_PASSWORD:?set it}
+
+      # Encrypts secrets at rest in the database. BACK THIS UP: losing it does not lose the data, it makes
+      # the data permanently unreadable, which is worse because it looks fine until you try to open it.
+      HIVEKEEPER_CRYPTO_KEY: ${HIVEKEEPER_CRYPTO_KEY:?set it — openssl rand -base64 32}
+
+      # Sign-in happens on the Authentik you operate, on ITS hostname — not under /auth on this one. The
+      # console reads the issuer back from /api/mode, so nothing is baked into its bundle.
+      HIVEKEEPER_OIDC_ISSUER: ${HIVEKEEPER_AUTHENTIK_URL:?set it, e.g. https://sso.example.org}/application/o/${HIVEKEEPER_AUTHENTIK_APP:-hivekeeper}/
+      HIVEKEEPER_OIDC_JWK_SET_URI: ${HIVEKEEPER_AUTHENTIK_URL}/application/o/${HIVEKEEPER_AUTHENTIK_APP:-hivekeeper}/jwks/
+      HIVEKEEPER_OIDC_AUDIENCE: hive-gateway
+      HIVEKEEPER_OIDC_CLIENT_ID: hive-gateway
+
+      # First-run setup and "add a teammate" provision accounts through Authentik's admin API.
+      HIVEKEEPER_AUTHENTIK_BASE_URL: ${HIVEKEEPER_AUTHENTIK_URL}
+      HIVEKEEPER_AUTHENTIK_API_TOKEN: ${HIVEKEEPER_AUTHENTIK_API_TOKEN:?set it}
+
+      # The agent-facing TLS listener (9443) and the CA that signs agent certificates. One password for all
+      # three stores, the same one pki-init generated them with.
+      HIVEKEEPER_TLS_KEYSTORE: /pki/gateway.p12
+      HIVEKEEPER_TLS_KEYSTORE_PASSWORD: ${HIVEKEEPER_PKI_STORE_PASSWORD:?set it}
+      HIVEKEEPER_TLS_TRUSTSTORE: /pki/truststore.p12
+      HIVEKEEPER_TLS_TRUSTSTORE_PASSWORD: ${HIVEKEEPER_PKI_STORE_PASSWORD:?set it}
+      HIVEKEEPER_CA_KEYSTORE: /pki/ca.p12
+      HIVEKEEPER_CA_KEYSTORE_PASSWORD: ${HIVEKEEPER_PKI_STORE_PASSWORD:?set it}
+    volumes:
+      # Read-only: the gateway signs with the CA key but must never rewrite the PKI.
+      - pki:/pki:ro
+    depends_on:
+      pki-init:
+        condition: service_completed_successfully
+      postgres:
+        condition: service_healthy
+    restart: unless-stopped
+
+  web:
+    image: ${HIVEKEEPER_REGISTRY:-ghcr.io/ggfto}/hivekeeper-web:${HIVEKEEPER_TAG:?pin a version}
+    environment:
+      HIVEKEEPER_GATEWAY_ORIGIN: http://gateway:8090
+    depends_on:
+      gateway:
+        condition: service_healthy
+    restart: unless-stopped
+
+  postgres:
+    build:
+      context: .
+      dockerfile: deploy/portainer/postgres.Dockerfile
+    environment:
+      POSTGRES_PASSWORD: ${HIVEKEEPER_DB_ADMIN_PASSWORD:?set it}
+      POSTGRES_DB: hivekeeper
+      # The restricted role the app connects as (NOSUPERUSER, NOBYPASSRLS): row-level security is the hard
+      # wall between organizations, and it does not apply to a superuser.
+      HIVEKEEPER_DB_PASSWORD: ${HIVEKEEPER_DB_PASSWORD:?set it}
+    volumes:
+      - pg-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d hivekeeper"]
+      interval: 10s
+      timeout: 5s
+      retries: 20
+    restart: unless-stopped
+
+  backup:
+    build:
+      context: .
+      dockerfile: deploy/portainer/backup.Dockerfile
+    environment:
+      HIVEKEEPER_DB_ADMIN_PASSWORD: ${HIVEKEEPER_DB_ADMIN_PASSWORD:?set it}
+      HIVEKEEPER_BACKUP_INTERVAL_HOURS: ${HIVEKEEPER_BACKUP_INTERVAL_HOURS:-24}
+      HIVEKEEPER_BACKUP_RETENTION_DAYS: ${HIVEKEEPER_BACKUP_RETENTION_DAYS:-14}
+    volumes:
+      - pg-backups:/backups
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: unless-stopped
+
+  # Creates the tunnel through the Cloudflare API (idempotent), renders the ingress from the hostname
+  # variables, and upserts a proxied CNAME per hostname. Exits 0; the runner starts after it.
+  cloudflared-init:
+    build:
+      context: .
+      dockerfile: deploy/portainer/cloudflared-init.Dockerfile
+    environment:
+      # Scopes it needs: Account > Cloudflare Tunnel > Edit, and Zone > DNS > Edit on the zone below.
+      CF_API_TOKEN: ${CF_API_TOKEN:?set it — see the scopes in the comment above}
+      CF_ACCOUNT_ID: ${CF_ACCOUNT_ID:?set it}
+      CF_ZONE_ID: ${CF_ZONE_ID:?set it}
+      TUNNEL_NAME: ${TUNNEL_NAME:-hivekeeper}
+      HIVEKEEPER_DOMAIN: ${HIVEKEEPER_DOMAIN:?set it}
+      HIVEKEEPER_AGENT_DOMAIN: ${HIVEKEEPER_AGENT_DOMAIN:?set it}
+      # No /auth rule: there is no Keycloak here, and a route to a service that does not exist would
+      # turn every sign-in into a 502 that reads like an outage.
+      HIVEKEEPER_KEYCLOAK_INGRESS: "false"
+    volumes:
+      - cf-runtime:/etc/cloudflared
+    restart: "no"
+
+  cloudflared:
+    image: cloudflare/cloudflared:${CLOUDFLARED_VERSION:-latest}
+    command: tunnel --no-autoupdate --config /etc/cloudflared/config.yml run
+    volumes:
+      # Read-only: only the init container writes here.
+      - cf-runtime:/etc/cloudflared:ro
+    depends_on:
+      cloudflared-init:
+        condition: service_completed_successfully
+      web:
+        condition: service_started
+      gateway:
+        condition: service_started
+    restart: unless-stopped
+
+volumes:
+  pki:
+  pg-data:
+  pg-backups:
+  cf-runtime:

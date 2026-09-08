@@ -1,10 +1,15 @@
 #!/bin/sh
-# Periodic logical backups of BOTH databases HiveKeeper depends on, into the pg-backups volume.
+# Periodic logical backups of the databases HiveKeeper depends on, into the pg-backups volume.
 #
-# Both, because either one alone is useless:
 #   hivekeeper  the fleet, the org/site/group model, role grants, the audit log, durable jobs, PPSK metadata.
-#   keycloak    the identities those role grants point AT. Restore the gateway's database alone and every
-#               membership refers to a user id that no longer exists — nobody can sign in, including you.
+#   keycloak    the identities those role grants point AT — only when Keycloak runs INSIDE this stack
+#               (docker-compose.prod.keycloak.yml). Then both matter, because either alone is useless:
+#               restore the gateway's database without Keycloak's and every membership refers to a user id
+#               that no longer exists — nobody can sign in, including you.
+#
+# Under an identity provider you operate separately (docker-compose.prod.authentik.yml) there is no second
+# database here, and KEYCLOAK_DB_PASSWORD is unset — that half is skipped. Backing up THAT provider is then
+# just as load-bearing, and just as much your job, as the files listed below.
 #
 # What this does NOT back up, and you must:
 #   * .env.prod          HIVEKEEPER_CRYPTO_KEY decrypts the secrets inside these dumps. Restoring the dump
@@ -43,7 +48,11 @@ dump() {
 while true; do
   # Neither failure stops the other: a broken Keycloak dump must not also cost you the fleet's.
   dump postgres postgres hivekeeper "${HIVEKEEPER_DB_ADMIN_PASSWORD}" || true
-  dump keycloak-db keycloak keycloak "${KEYCLOAK_DB_PASSWORD}" || true
+  # Only when Keycloak is part of this stack. Without the guard an external-IdP deployment would log a failed
+  # dump on every cycle and still call the run a success, which is how a real backup failure gets ignored.
+  if [ -n "${KEYCLOAK_DB_PASSWORD:-}" ]; then
+    dump keycloak-db keycloak keycloak "${KEYCLOAK_DB_PASSWORD}" || true
+  fi
 
   # Prune, but only ever completed dumps (*.sql.gz, never *.part).
   find "$BACKUP_DIR" -name '*.sql.gz' -type f -mtime "+${RETENTION_DAYS}" -print -delete \
