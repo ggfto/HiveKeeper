@@ -75,7 +75,7 @@ class SetupIT {
     void bootstrapsTheFirstOrgAndAdminThenLocks() {
         assertEquals(Boolean.FALSE, status().get("initialized"), "starts uninitialized");
 
-        when(keycloak.createUser(eq("admin"), any(), eq("pw"), any())).thenReturn("kc-sub-1");
+        when(keycloak.createAdmin(eq("admin"), any(), eq("pw"), any())).thenReturn("kc-sub-1");
 
         Map<String, Object> body = Map.of(
                 "setupToken", setup.setupToken(), "orgName", "Acme Corp",

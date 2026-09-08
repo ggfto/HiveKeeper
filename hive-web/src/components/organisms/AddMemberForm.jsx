@@ -6,8 +6,9 @@ import { ROLE_OPTIONS, suggestPassword } from '../../lib/members'
 /**
  * Add a teammate to the active organization, in one of two ways.
  *
- * **Create a login** — a Keycloak user is created with the temporary password set here (they change it at
- * first sign-in).
+ * **Create a login** — an IdP user is created from the throwaway password set here. The admin never keeps a
+ * working credential for it: Keycloak marks that password temporary and forces a change at first sign-in,
+ * while Authentik ignores it entirely and returns a one-time recovery link instead (the page shows it).
  *
  * **Admit an existing account** — for anyone who signs in through an identity provider. A GitHub user has no
  * password, and no account at all until their first sign-in creates one, so they cannot be created in advance:

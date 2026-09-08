@@ -65,19 +65,28 @@ public class MemberService {
                 MEMBER);
     }
 
+    /** A teammate that was just added: their user id, plus the link they must follow to set their own password
+     *  when the IdP works that way (Authentik) rather than forcing the change at sign-in (Keycloak). */
+    public record Added(String userId, String recoveryLink) {
+    }
+
     /**
-     * Add a teammate: create their IdP login with a temporary password (forced password change on first sign-in),
+     * Add a teammate: create their IdP login so that <em>they</em>, not the admin, end up owning the password,
      * provision the app_user keyed by the new IdP subject, then write an active membership + a single org-scoped
-     * role grant. Returns the new user id. A duplicate username surfaces as an IdP-specific exception (the
+     * role grant. A duplicate username surfaces as {@link io.hivekeeper.gateway.setup.IdpAdminException} (the
      * controller maps it to 409). IdP user is created first because its subject becomes the app_user's OIDC
      * subject; if the DB writes then fail the transaction rolls back but the IdP user remains (retry with a
      * different username).
+     *
+     * <p>How the admin is kept out of the new account depends on the provider, so the result may carry a
+     * recovery link the caller has to pass on — see {@link IdpAdminClient#createUser}.
      */
     @Transactional
-    public String add(String tenantId, String username, String email, String password, String displayName,
-                      Role role) {
+    public Added add(String tenantId, String username, String email, String password, String displayName,
+                     Role role) {
         String name = (displayName == null || displayName.isBlank()) ? username : displayName.trim();
-        String idpUserId = idp.createUser(username, email, password, name, true);
+        IdpAdminClient.CreatedUser created = idp.createUser(username, email, password, name, true);
+        String idpUserId = created.subject();
         UserService.AppUser user = users.provision(issuer, idpUserId, email, name);
 
         setTenant(tenantId);
@@ -87,7 +96,7 @@ public class MemberService {
         jdbc.update("insert into role_grant (grant_id, membership_id, tenant_id, role, scope_type, scope_id) "
                         + "values (?, ?, ?, ?, 'org', null)",
                 "g-" + UUID.randomUUID(), membershipId, tenantId, role.name().toLowerCase());
-        return user.userId();
+        return new Added(user.userId(), created.recoveryLink());
     }
 
     /**

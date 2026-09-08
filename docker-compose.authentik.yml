@@ -4,8 +4,11 @@
 #
 #   docker compose -f docker-compose.yml -f docker-compose.postgres.yml -f docker-compose.authentik.yml up -d --build
 #
-# Sign in at the console with the user you create via the Authentik admin panel.
-# Admin console: http://localhost:9000/if/admin/
+# The authentik-init service configures the 'hivekeeper' application + provider for you (see
+# deploy/authentik/bootstrap.sh). Do NOT build the provider by hand without reading that script: its subject
+# mode and the brand's recovery flow are load-bearing, and getting either wrong produces accounts that are
+# created and then cannot sign in.
+# Admin console: http://localhost:9000/if/admin/ (akadmin / ${AUTHENTIK_BOOTSTRAP_PASSWORD})
 #
 # Issuer note: tokens are minted for the BROWSER-facing URL (http://localhost:9000), so the gateway validates
 # the `iss` claim against that — while it calls the Authentik API over the CONTAINER network (http://authentik-server:9000).
@@ -50,9 +53,10 @@ services:
       AUTHENTIK_POSTGRESQL__PASSWORD: ${AUTHENTIK_DB_PASSWORD:-authentik}
       AUTHENTIK_SECRET_KEY: ${AUTHENTIK_SECRET_KEY:-changeme-generate-a-random-key-in-production}
       AUTHENTIK_ERROR_REPORTING__ENABLED: "false"
-      # Bootstrap token for initial admin account (first-time only)
+      # Seeds the akadmin account on FIRST boot only. The bootstrap token becomes the API token that both
+      # authentik-init and the gateway authenticate with, so it is one variable, not two.
       AUTHENTIK_BOOTSTRAP_PASSWORD: ${AUTHENTIK_BOOTSTRAP_PASSWORD:-admin}
-      AUTHENTIK_BOOTSTRAP_TOKEN: ${AUTHENTIK_BOOTSTRAP_TOKEN}
+      AUTHENTIK_BOOTSTRAP_TOKEN: ${HIVEKEEPER_AUTHENTIK_API_TOKEN:?set it in .env (see .env.authentik.example)}
     ports:
       - "${HIVEKEEPER_AUTHENTIK_PORT:-9000}:9000"
     volumes:
@@ -87,6 +91,24 @@ services:
         condition: service_healthy
     restart: unless-stopped
 
+  # Creates/reconciles the 'hivekeeper' application, its OAuth2 provider and the brand's recovery flow.
+  # Idempotent, so it runs on every `up`. Runs to completion and exits; `restart: "no"` keeps compose from
+  # treating that as a crash.
+  authentik-init:
+    image: ghcr.io/goauthentik/server:2024.8.3
+    entrypoint: ["/bin/bash", "/bootstrap.sh"]
+    environment:
+      AUTHENTIK_URL: http://authentik-server:9000
+      HIVEKEEPER_AUTHENTIK_API_TOKEN: ${HIVEKEEPER_AUTHENTIK_API_TOKEN:?set it in .env}
+      HIVEKEEPER_CONSOLE_URL: ${HIVEKEEPER_CONSOLE_URL:-http://localhost:8080}
+      HIVEKEEPER_APP_NAME: hivekeeper
+      HIVEKEEPER_OIDC_CLIENT_ID: hive-gateway
+    volumes:
+      - ./deploy/authentik/bootstrap.sh:/bootstrap.sh:ro
+    depends_on:
+      - authentik-server
+    restart: "no"
+
   gateway:
     environment:
       SPRING_PROFILES_ACTIVE: postgres,oidc,oidc-authentik
@@ -101,6 +123,7 @@ services:
       HIVEKEEPER_TENANTKEY_ENABLED: "false"
     depends_on:
       - authentik-server
+      - authentik-init
 
 volumes:
   authentik-db-data:

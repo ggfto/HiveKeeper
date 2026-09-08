@@ -54,7 +54,7 @@ class SetupServiceTest {
     @Test
     void setupCreatesTheIdpAdminTheOrgAndAnOwnerGrant() {
         uninitialized();
-        when(idp.createUser("admin", "a@x", "pw", "admin")).thenReturn("idp-123");
+        when(idp.createAdmin("admin", "a@x", "pw", "admin")).thenReturn("idp-123");
         when(users.provision(eq(ISSUER), eq("idp-123"), any(), eq("admin")))
                 .thenReturn(new UserService.AppUser("usr-1", "a@x", "admin"));
 
@@ -62,7 +62,7 @@ class SetupServiceTest {
         SetupService.SetupResult result = setup.setup(setup.setupToken(), "Acme Corp", "admin", "pw", "a@x", null);
 
         assertEquals("acme-corp", result.tenantId());                 // org name -> url-safe tenant id
-        verify(idp).createUser("admin", "a@x", "pw", "admin");        // admin created in IdP first
+        verify(idp).createAdmin("admin", "a@x", "pw", "admin");        // admin created in IdP first
         verify(jdbc).update(contains("insert into tenant"), eq("acme-corp"), eq("Acme Corp"), anyString());
         verify(jdbc).update(contains("insert into membership"), anyString(), eq("usr-1"), eq("acme-corp"));
         verify(jdbc).update(contains("insert into role_grant"), anyString(), anyString(), eq("acme-corp"));

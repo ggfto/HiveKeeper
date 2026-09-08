@@ -59,6 +59,7 @@ export default defineConfig({
         { label: 'Getting started', link: '/getting-started/' },
         { label: 'Capabilities', link: '/capabilities/' },
         { label: 'Authentication', link: '/authentication/' },
+        { label: 'Authentik as the IdP', link: '/authentik/' },
         { label: 'Device configuration', link: '/device-configuration/' },
         { label: 'Deployment (dev stack)', link: '/deployment/' },
         { label: 'Running in production', link: '/production/' },

@@ -1,6 +1,6 @@
 # HiveKeeper
 
-> **🆕 Authentik Support**: HiveKeeper now supports [Authentik](https://goauthentik.io/) as an identity provider alongside Keycloak. See [README-AUTHENTIK.md](README-AUTHENTIK.md) for quick start.
+> **Identity provider**: OIDC mode runs against Keycloak (the default) or [Authentik](https://goauthentik.io/) — see [docs/authentik.md](docs/authentik.md).
 
 Open-source tooling to manage **Aerohive / Extreme Networks HiveOS (IQ Engine)** access points
 — AP230 / AP250 / AP630 (AP410 later) — **standalone over SSH, with no vendor cloud**
