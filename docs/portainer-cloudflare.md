@@ -72,8 +72,16 @@ This is a second, independent credential in front of mutual TLS, not a replaceme
 
 ## 2. Deploy the stack
 
-In Portainer: **Stacks → Add stack → Repository**, pointing at this repository with the compose path
-`docker-compose.portainer.yml`. Paste the variables from `deploy/portainer/stack.env.example` into the
+In Portainer: **Stacks → Add stack → Repository**, pointing at this repository with the compose path for the
+identity provider you want:
+
+| Compose path | Identity provider |
+| --- | --- |
+| `docker-compose.portainer.yml` | **Keycloak**, inside the stack, muxed onto `/auth` of the console hostname. |
+| `docker-compose.portainer.authentik.yml` | An **Authentik you already operate**. Nothing identity-related runs here, and the tunnel gets no `/auth` rule. See [Authentik as the identity provider](/authentik/), including the migration runbook if this stack has been running on Keycloak. |
+
+A Portainer Git stack deploys one compose path, so these are sibling files rather than a base plus an
+overlay — unlike [the Caddy path](/production/), where you layer `-f docker-compose.prod.<idp>.yml`. Paste the variables from `deploy/portainer/stack.env.example` into the
 **Environment variables** panel and fill them in.
 
 Generate secrets with `openssl rand -base64 32` for keys and `openssl rand -hex 24` for passwords.

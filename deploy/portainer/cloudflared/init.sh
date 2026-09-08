@@ -55,12 +55,20 @@ mkdir -p "$OUT"
 # failing every handshake and every certificate renewal — closed, and silently. A tcp: ingress is a raw
 # byte pipe, so the TLS session runs end to end from the agent to the gateway with the certificate intact.
 # The other end of that pipe is a `cloudflared access tcp` sidecar next to the agent (agent-compose.yml).
+# The /auth rule exists only when Keycloak is part of this stack. Under an identity provider you operate
+# separately, sign-in happens on ITS hostname and there is no `keycloak` service here — a rule pointing at one
+# would send every /auth request into a 502 that looks like an outage rather than a misconfiguration.
+AUTH_RULE=""
+if [ "${HIVEKEEPER_KEYCLOAK_INGRESS:-true}" = "true" ]; then
+  AUTH_RULE="  - hostname: $HIVEKEEPER_DOMAIN
+    path: ^/auth(/.*)?\$
+    service: http://keycloak:8080
+"
+fi
+
 cat > "$INGRESS" <<EOF
 ingress:
-  - hostname: $HIVEKEEPER_DOMAIN
-    path: ^/auth(/.*)?$
-    service: http://keycloak:8080
-
+$AUTH_RULE
   - hostname: $HIVEKEEPER_DOMAIN
     service: http://web:8080
 
