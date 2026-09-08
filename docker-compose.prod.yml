@@ -71,7 +71,14 @@ services:
       # WHERE users sign in is not decided here — layer an identity-provider overlay on top of this file:
       # docker-compose.prod.keycloak.yml (self-hosted Keycloak, as before) or
       # docker-compose.prod.authentik.yml (an Authentik you already operate). Each supplies the issuer, the
-      # JWKS URI and the admin-API coordinates for its provider. The gateway will not start without them.
+      # JWKS URI and the admin-API coordinates for its provider.
+      #
+      # The placeholder below is deliberate. Compose cannot express "an overlay is required", and the gateway
+      # carries a DEVELOPMENT default for this property — so running this file alone would otherwise start a
+      # control plane that validates tokens against localhost and fails every login for a reason nothing on
+      # screen explains. An invalid issuer that names its own fix is worse to ignore and faster to diagnose:
+      # it shows up in /api/mode and in the first token rejection.
+      HIVEKEEPER_OIDC_ISSUER: https://layer-an-identity-provider-overlay.invalid/
 
       # The agent-facing TLS listener (port 9443) and the CA that signs agent certificates.
       HIVEKEEPER_TLS_KEYSTORE: /pki/gateway.p12
