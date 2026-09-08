@@ -43,9 +43,15 @@ api "${AUTHENTIK_URL}/api/v3/core/applications/" >/dev/null \
   || { echo "!! Authentik did not answer at ${AUTHENTIK_URL} (or the API token is wrong)"; exit 1; }
 
 # --- prerequisites -------------------------------------------------------------------------------
-AUTH_FLOW=$(api "${AUTHENTIK_URL}/api/v3/flows/instances/?slug=default-authentication-flow" \
-  | jq -r '.results[0].pk // empty')
+AUTH_FLOW=$(api "${AUTHENTIK_URL}/api/v3/flows/instances/?designation=authentication" \
+  | jq -r '[.results[] | select(.slug == "default-authentication-flow")][0].pk // empty')
 [ -n "${AUTH_FLOW}" ] || { echo "!! no default-authentication-flow in this Authentik"; exit 1; }
+
+# Required on providers from Authentik 2025.x; the field did not exist before it, and older servers ignore
+# it. Prefer the provider-specific flow when one is present, since that is what a logout from THIS
+# application should run.
+INVALIDATION_FLOW=$(api "${AUTHENTIK_URL}/api/v3/flows/instances/?designation=invalidation&ordering=slug" \
+  | jq -r '[.results[] | select(.slug == "default-provider-invalidation-flow")][0].pk // .results[0].pk // empty')
 
 SIGNING_KEY=$(api "${AUTHENTIK_URL}/api/v3/crypto/certificatekeypairs/?has_key=true&ordering=name" \
   | jq -r '.results[0].pk // empty')
@@ -108,7 +114,17 @@ provider_payload() {   # $1: "list" (2024.10+) or "string" (older)
   else
     redirect=$(jq -n --arg u "${REDIRECT_REGEX}" '$u')
   fi
-  jq -n     --arg name "${APP_NAME}-provider"     --arg client_id "${CLIENT_ID}"     --arg flow "${AUTH_FLOW}"     --arg key "${SIGNING_KEY}"     --argjson redirect "${redirect}"     --argjson scopes "${SCOPES}"     '{
+  # invalidation_flow is only sent when the server offered one: it is required from Authentik 2025.x and did
+  # not exist before, so an empty string would be rejected by the very releases it is meant to support.
+  jq -n \
+    --arg name "${APP_NAME}-provider" \
+    --arg client_id "${CLIENT_ID}" \
+    --arg flow "${AUTH_FLOW}" \
+    --arg invalidation "${INVALIDATION_FLOW}" \
+    --arg key "${SIGNING_KEY}" \
+    --argjson redirect "${redirect}" \
+    --argjson scopes "${SCOPES}" \
+    '{
        name: $name,
        authorization_flow: $flow,
        client_type: "public",
@@ -118,7 +134,8 @@ provider_payload() {   # $1: "list" (2024.10+) or "string" (older)
        issuer_mode: "per_provider",
        signing_key: $key,
        property_mappings: $scopes
-     }'
+     }
+     + (if $invalidation == "" then {} else {invalidation_flow: $invalidation} end)'
 }
 
 # Write the provider with whichever shape this Authentik accepts. Echoes the pk; prints the server's own
@@ -139,7 +156,12 @@ save_provider() {
       echo "${body}" | jq -r '.pk'
       return 0
     fi
-    echo ">> this Authentik does not take redirect_uris as a ${shape} (HTTP ${code}); using the other shape" >&2
+    # Retry the other shape ONLY when that is what was rejected. Any other 400 - a missing required field,
+    # say - is not a shape problem, and blaming redirect_uris for it buries the server's real message.
+    case "${body}" in
+      *redirect_uris*) echo ">> this Authentik does not take redirect_uris as a ${shape} (HTTP ${code})" >&2 ;;
+      *) echo "!! the provider was rejected (HTTP ${code}): ${body}" >&2; return 1 ;;
+    esac
   done
   echo "!! could not save the provider: ${body}" >&2
   return 1
@@ -155,7 +177,12 @@ PROVIDER_ID=$(save_provider)
 
 # --- application ---------------------------------------------------------------------------------
 # Applications are addressed by SLUG in the REST path, not by pk — a pk there answers 404.
-APP_EXISTS=$(api "${AUTHENTIK_URL}/api/v3/core/applications/?slug=${APP_NAME}" | jq -r '.results[0].slug // empty')
+# The match is client-side on purpose: on Authentik 2025.x a ?slug= filter here narrows the pagination
+# COUNT but not the results array, so results[0] is simply the first application in the instance. Trusting
+# it made this script decide an application it had never created already existed, PUT to a slug that did
+# not exist, and die on the 404.
+APP_EXISTS=$(api "${AUTHENTIK_URL}/api/v3/core/applications/" \
+  | jq -r --arg s "${APP_NAME}" '[.results[] | select(.slug == $s)][0].slug // empty')
 
 APP_PAYLOAD=$(jq -n \
   --arg slug "${APP_NAME}" \
@@ -199,7 +226,8 @@ ensure_recovery_flow() {
   order=0
   for stage in default-password-change-prompt default-password-change-write; do
     local stage_pk
-    stage_pk=$(api "${AUTHENTIK_URL}/api/v3/stages/all/?name=${stage}" | jq -r '.results[0].pk // empty')
+    stage_pk=$(api "${AUTHENTIK_URL}/api/v3/stages/all/" \
+      | jq -r --arg n "${stage}" '[.results[] | select(.name == $n)][0].pk // empty')
     [ -n "${stage_pk}" ] || { echo "!! stage ${stage} not found" >&2; return 1; }
     api -X POST -H "${CONTENT_JSON}" "${AUTHENTIK_URL}/api/v3/flows/bindings/"       -d "$(jq -n --arg t "${pk}" --arg s "${stage_pk}" --argjson o "${order}"             '{target: $t, stage: $s, order: $o}')" >/dev/null
     order=$((order + 1))
