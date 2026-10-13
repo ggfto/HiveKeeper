@@ -44,6 +44,17 @@ class FrameCodecTest {
     }
 
     @Test
+    void roundTripsResumeAcknowledgementAndFailureFrames() {
+        List<Frame> frames = List.of(
+                new Frame.Resume("agent-1", "job-1", 3),
+                new Frame.Ack("job-1", 3),
+                new Frame.JobFailed("job-1", "SSH_FAILED", "Connection refused"));
+        for (Frame frame : frames) {
+            assertEquals(frame, codec.fromJson(codec.toJson(frame), Frame.class));
+        }
+    }
+
+    @Test
     void roundTripsConnectionManagementFrames() {
         assertEquals(new Frame.Hello("agent-1", "1.0"),
                 codec.fromJson(codec.toJson(new Frame.Hello("agent-1", "1.0")), Frame.class));
