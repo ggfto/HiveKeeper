@@ -5,12 +5,17 @@
 # Terminate TLS in front of this for the browser-facing API (see docker-compose.prod.yml) — but NOT for the
 # agent's mTLS port, which must reach the gateway unterminated or client-certificate auth cannot work.
 
-FROM --platform=$BUILDPLATFORM eclipse-temurin:25-jdk AS build
+# Bases are pinned by digest: a tag can be repointed upstream at any time, and the image the scan passes has to
+# be the exact image this file builds tomorrow. Dependabot's docker ecosystem still moves the pins (it reads
+# tag@digest and bumps the digest), and the `apt-get upgrade` in the runtime stage keeps pulling Ubuntu's
+# security patches whatever the pin says — so the pin costs reproducibility nothing. These are the
+# multi-platform manifest-list digests, so a buildx build still resolves the right arch per platform.
+FROM --platform=$BUILDPLATFORM eclipse-temurin:25-jdk@sha256:8c0a84ea11c8f6ed52600fc19f1040121f2a162998e9f50a5faebbbad9172dcc AS build
 WORKDIR /src
 COPY . .
 RUN chmod +x ./gradlew && ./gradlew --no-daemon :hive-gateway:installDist -x test
 
-FROM eclipse-temurin:25-jre
+FROM eclipse-temurin:25-jre@sha256:fcd7fd7b387f94bb2ac461478a7436ad8e349924c374ea8313919624dceae636
 # Patch the base image's OS packages (a JRE base drifts behind the distro's security fixes between its own
 # rebuilds), and add curl for the healthcheck below. The image scan in CI fails the build on a fixable
 # CRITICAL/HIGH, so this is what keeps a published image from shipping one.
