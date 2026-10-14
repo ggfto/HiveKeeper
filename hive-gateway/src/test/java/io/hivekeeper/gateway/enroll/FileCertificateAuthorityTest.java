@@ -1,5 +1,7 @@
 package io.hivekeeper.gateway.enroll;
 
+import org.bouncycastle.asn1.x509.SubjectPublicKeyInfo;
+import org.bouncycastle.operator.jcajce.JcaContentVerifierProviderBuilder;
 import org.bouncycastle.pkcs.PKCS10CertificationRequest;
 import org.junit.jupiter.api.Test;
 
@@ -40,6 +42,22 @@ class FileCertificateAuthorityTest {
         assertDoesNotThrow(() -> leaf.verify(caCert.getPublicKey()));
         // Issued for client authentication.
         assertTrue(leaf.getExtendedKeyUsage().contains("1.3.6.1.5.5.7.3.2"), "EKU clientAuth");
+    }
+
+    @Test
+    void preservesTheVerifiedCsrPublicKeyInTheSignedLeaf() throws Exception {
+        FileCertificateAuthority ca = ca();
+        PKCS10CertificationRequest csr = new PKCS10CertificationRequest(
+                CaFixtures.newCsr("agent-7").getEncoded());
+        assertTrue(csr.isSignatureValid(new JcaContentVerifierProviderBuilder()
+                .build(csr.getSubjectPublicKeyInfo())));
+
+        X509Certificate leaf = ca.sign(csr, "agent-7", Duration.ofDays(90));
+
+        assertEquals(csr.getSubjectPublicKeyInfo(),
+                SubjectPublicKeyInfo.getInstance(leaf.getPublicKey().getEncoded()));
+        assertDoesNotThrow(() -> leaf.verify(ca.caChain().get(0).getPublicKey()));
+        assertDoesNotThrow(() -> leaf.checkValidity());
     }
 
     @Test

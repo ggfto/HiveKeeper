@@ -1,6 +1,12 @@
 dependencies {
     // Transport: sshj is the primary SSH client (exec + interactive shell + SCP/SFTP).
     implementation(libs.sshj)
+    // Align sshj's Bouncy Castle transitives for every consumer, including server and CLI.
+    constraints {
+        implementation(libs.bcpkix)
+        implementation("org.bouncycastle:bcprov-jdk18on:${libs.versions.bouncycastle.get()}")
+        implementation("org.bouncycastle:bcutil-jdk18on:${libs.versions.bouncycastle.get()}")
+    }
     // Git-backed backup store.
     implementation(libs.jgit)
     // Logging facade only (no binding here — adapters choose the binding).

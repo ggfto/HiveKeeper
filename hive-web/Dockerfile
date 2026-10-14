@@ -9,7 +9,12 @@
 # build-time input is the code itself.
 
 # --- build stage ---------------------------------------------------------------
-FROM --platform=$BUILDPLATFORM node:26-alpine AS build
+# Bases are pinned by digest: a tag can be repointed upstream at any time, and the image the scan passes has to
+# be the exact image this file builds tomorrow. Dependabot's docker ecosystem still moves the pins (it reads
+# tag@digest and bumps the digest), and the `apk upgrade` in the runtime stage keeps pulling the distro's
+# security patches whatever the pin says — so the pin costs reproducibility nothing. Digests are the
+# multi-platform manifest-list digests, so a buildx build still resolves the right arch per platform.
+FROM --platform=$BUILDPLATFORM node:26-alpine@sha256:143494b1da2945f061539253adc65e4f1569ddf07da2d384c022c791a9d90a4a AS build
 # Install corepack explicitly rather than relying on the one the base image used to bundle: Node 25+ unbundled
 # corepack, so `corepack enable` alone is "not found" (exit 127) on those images. This keeps the build working
 # across Node versions while corepack stays the single source of the pnpm version (package.json packageManager).
@@ -29,7 +34,7 @@ COPY docs/ /docs/
 RUN pnpm build
 
 # --- runtime stage -------------------------------------------------------------
-FROM nginxinc/nginx-unprivileged:1.31-alpine
+FROM nginxinc/nginx-unprivileged:1.31-alpine@sha256:884e0b7f42f303641b0f4e78755aea647521dca0b89ca3be7992ad78b5c07434
 
 # Patch the base image's OS packages — an Alpine base drifts behind the distro's security fixes between its own
 # rebuilds, and the CI image scan fails the build on a fixable CRITICAL/HIGH. Briefly root to run apk, then

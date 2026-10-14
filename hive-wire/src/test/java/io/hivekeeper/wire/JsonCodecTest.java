@@ -12,11 +12,23 @@ import org.junit.jupiter.api.Test;
 import java.util.List;
 import java.util.UUID;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class JsonCodecTest {
 
     private final JsonCodec codec = new JsonCodec();
+
+    @Test
+    void rejectsRepeatedUnknownTypeIdsWithoutBreakingKnownCommands() {
+        for (int i = 0; i < 32; i++) {
+            String json = "{\"@type\":\"UnknownCommand" + i + "\"}";
+            assertThrows(IllegalArgumentException.class, () -> codec.fromJson(json, Command.class));
+        }
+
+        Command command = Command.Inventory.of(DeviceRef.ssh("192.168.1.10"));
+        assertEquals(command, codec.fromJson(codec.toJson(command), Command.class));
+    }
 
     @Test
     void roundTripsInventoryCommandPolymorphically() {

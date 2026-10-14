@@ -10,9 +10,11 @@ dependencies {
     // Agent enrollment: parse the agent's PKCS#10 CSR and sign a leaf cert with the file-backed CA.
     implementation(libs.bcpkix)
 
-    implementation(platform("org.springframework.boot:spring-boot-dependencies:4.1.0"))
+    implementation(platform("org.springframework.boot:spring-boot-dependencies:4.1.1"))
+    // Boot 4.1.1 still manages Jackson 3.1.5; align the Jackson 3 modules on the security patch.
+    implementation(platform("tools.jackson:jackson-bom:3.1.7"))
     // Override Tomcat version to fix CVE-2026-65182 (security constraint bypass)
-    // Spring Boot 4.1.0 ships with Tomcat 11.0.22; 11.0.25 contains the fix.
+    // Spring Boot 4.1.1 ships with Tomcat 11.0.24; 11.0.25 contains the fix.
     // This override can be removed when Spring Boot BOM is updated to include 11.0.25+
     constraints {
         implementation("org.apache.tomcat.embed:tomcat-embed-core:11.0.25")
