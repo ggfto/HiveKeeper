@@ -10,12 +10,12 @@ dependencies {
     // compatibility issues. We run via the `application` plugin instead of bootRun.
     implementation(platform("org.springframework.boot:spring-boot-dependencies:4.1.1"))
     // Boot 4.1.1 still manages Jackson 3.1.5; align the Jackson 3 modules on the security patch.
-    implementation(platform("tools.jackson:jackson-bom:3.1.7"))
+    implementation(platform("tools.jackson:jackson-bom:3.2.3"))
     // Override Tomcat version to fix CVE-2026-65182 (security constraint bypass)
     // Spring Boot 4.1.1 ships with Tomcat 11.0.24; 11.0.25 contains the fix.
     constraints {
-        implementation("org.apache.tomcat.embed:tomcat-embed-core:11.0.25")
-        implementation("org.apache.tomcat.embed:tomcat-embed-websocket:11.0.25")
+        implementation("org.apache.tomcat.embed:tomcat-embed-core:11.0.27")
+        implementation("org.apache.tomcat.embed:tomcat-embed-websocket:11.0.27")
     }
     implementation("org.springframework.boot:spring-boot-starter-web")
     runtimeOnly("org.springframework.boot:spring-boot-starter-logging")
