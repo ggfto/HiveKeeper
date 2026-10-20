@@ -14,7 +14,7 @@
 # tag@digest and bumps the digest), and the `apk upgrade` in the runtime stage keeps pulling the distro's
 # security patches whatever the pin says — so the pin costs reproducibility nothing. Digests are the
 # multi-platform manifest-list digests, so a buildx build still resolves the right arch per platform.
-FROM --platform=$BUILDPLATFORM node:26-alpine@sha256:143494b1da2945f061539253adc65e4f1569ddf07da2d384c022c791a9d90a4a AS build
+FROM --platform=$BUILDPLATFORM node:26-alpine@sha256:6f08a523443ddedf52941874c203475b0ad503e859ad70cb26ab8be9a517dbd5 AS build
 # Install corepack explicitly rather than relying on the one the base image used to bundle: Node 25+ unbundled
 # corepack, so `corepack enable` alone is "not found" (exit 127) on those images. This keeps the build working
 # across Node versions while corepack stays the single source of the pnpm version (package.json packageManager).
