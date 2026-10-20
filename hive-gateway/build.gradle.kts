@@ -12,13 +12,13 @@ dependencies {
 
     implementation(platform("org.springframework.boot:spring-boot-dependencies:4.1.1"))
     // Boot 4.1.1 still manages Jackson 3.1.5; align the Jackson 3 modules on the security patch.
-    implementation(platform("tools.jackson:jackson-bom:3.1.7"))
+    implementation(platform("tools.jackson:jackson-bom:3.2.3"))
     // Override Tomcat version to fix CVE-2026-65182 (security constraint bypass)
     // Spring Boot 4.1.1 ships with Tomcat 11.0.24; 11.0.25 contains the fix.
     // This override can be removed when Spring Boot BOM is updated to include 11.0.25+
     constraints {
-        implementation("org.apache.tomcat.embed:tomcat-embed-core:11.0.25")
-        implementation("org.apache.tomcat.embed:tomcat-embed-websocket:11.0.25")
+        implementation("org.apache.tomcat.embed:tomcat-embed-core:11.0.27")
+        implementation("org.apache.tomcat.embed:tomcat-embed-websocket:11.0.27")
     }
     implementation("org.springframework.boot:spring-boot-starter-web")
     implementation("org.springframework.boot:spring-boot-starter-websocket")
@@ -33,7 +33,7 @@ dependencies {
     // Pinned ahead of the Spring Boot 4.1.0 BOM (which still ships 42.7.11): CVE-2026-54291 is a
     // SCRAM-SHA-256-PLUS downgrade / MITM-protection bypass, fixed in 42.7.12. Gradle resolves to the higher
     // version, so this also lifts the copy pulled transitively by flyway-database-postgresql.
-    runtimeOnly("org.postgresql:postgresql:42.7.13")
+    runtimeOnly("org.postgresql:postgresql:42.7.14")
     implementation("org.flywaydb:flyway-core")
     runtimeOnly("org.flywaydb:flyway-database-postgresql")
     // Spring Boot 4 moved Flyway auto-configuration out of spring-boot-autoconfigure into its own module;
